@@ -17,8 +17,6 @@ import re
 import shutil
 from pathlib import Path
 
-from PIL import Image, ImageOps
-
 BASE_DIR = Path(__file__).resolve().parent
 SITE_DIR = BASE_DIR / "site"
 OUT_DIR = BASE_DIR / "_site"
@@ -35,6 +33,9 @@ published = {}
 
 def publish_image(source):
     """Write the resized copies of one picture and return their site paths."""
+    # Imported here so web.py can share the roster's key names without Pillow.
+    from PIL import Image, ImageOps
+
     if source in published:
         return published[source]
     path = (BASE_DIR / source).resolve()

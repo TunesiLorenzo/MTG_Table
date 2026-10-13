@@ -1,0 +1,29 @@
+/* The editor and publish bar on /public. Only the local preview loads this, on
+   top of site/site.css. */
+main { padding-bottom: 130px; }
+.editor-card { display: grid; gap: 14px; margin-bottom: 26px; border-color: #6b5a2c; }
+.editor-field { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 12px; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.editor-picture { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.editor-picture img { flex: none; width: 74px; height: 52px; border: 1px solid var(--line); border-radius: 9px; object-fit: cover; }
+.editor-cards { display: grid; gap: 14px; }
+.editor-cards:empty { display: none; }
+.editor-card input, .editor-card select { width: 100%; min-width: 0; min-height: 42px; padding: 0 12px; border: 1px solid #4b425c; border-radius: 12px; background: #100d19; color: #fff; font: inherit; }
+.editor-card button, #publish-button { min-height: 42px; padding: 0 18px; border: 1px solid #a477fa; border-radius: 12px; background: linear-gradient(135deg, #925bf8, #7044cf); color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.editor-card .editor-add, .editor-card .editor-remove { border-color: #4a3d63; background: transparent; color: #d4c3f5; }
+.editor-card .editor-add { justify-self: start; }
+.editor-card .editor-remove { flex: none; padding: 0 13px; }
+.editor-actions { display: flex; align-items: center; gap: 14px; }
+.editor-status.error { color: #ffb5c5; font-size: .82rem; }
+
+#publish-bar { position: fixed; z-index: 10; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-top: 1px solid #6b5a2c; background: #15111ff5; font-size: .85rem; }
+.publish-tag { flex: none; color: var(--gold); font-size: .69rem; font-weight: 800; letter-spacing: .18em; }
+#publish-state { flex: 1; min-width: 0; color: var(--muted); }
+#publish-state.success { color: #5ed49a; }
+#publish-state.error { color: #ffb5c5; }
+#publish-button { flex: none; }
+#publish-button:disabled { opacity: .45; cursor: default; }
+
+@media (max-width: 560px) {
+  .editor-field { grid-template-columns: 1fr; gap: 6px; }
+  .publish-tag { display: none; }
+}

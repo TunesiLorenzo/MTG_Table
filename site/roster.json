@@ -1,8 +1,14 @@
 {
   "players": {
-    "Borgo": { "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif" },
-    "Coach": { "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg" },
-    "Curti": { "portrait": "Backgrounds/Players/VoltiBase/curti.jpg" }
+    "Borgo": {
+      "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif"
+    },
+    "Coach": {
+      "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg"
+    },
+    "Curti": {
+      "portrait": "Backgrounds/Players/VoltiBase/curti.jpg"
+    }
   },
   "decks": {
     "Arcades": {
@@ -16,27 +22,38 @@
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
       "art": "Backgrounds/Players/Cloud.png",
-      "cards": ["Backgrounds/Commander/Cloud.webp"]
+      "cards": [
+        "Backgrounds/Commander/Cloud.webp"
+      ]
     },
     "Commodoro": {
       "commander": "Commodore Guff",
       "art": "Backgrounds/Players/CommodorGuff.png",
-      "cards": ["Backgrounds/Commander/CommodorGuff.webp"]
+      "cards": [
+        "Backgrounds/Commander/CommodorGuff.webp"
+      ]
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
       "art": "Backgrounds/Players/Scarecrow.png",
-      "cards": ["Backgrounds/Commander/Dwight_O_lantern.webp"]
+      "cards": [
+        "Backgrounds/Commander/Dwight_O_lantern.webp"
+      ]
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
       "art": "Backgrounds/Players/TMNT.png",
-      "cards": ["Backgrounds/Commander/LeonardoTMNT.webp", "Backgrounds/Commander/DinaEssenceBrewer.webp"]
+      "cards": [
+        "Backgrounds/Commander/LeonardoTMNT.webp",
+        "Backgrounds/Commander/DinaEssenceBrewer.webp"
+      ]
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
       "art": "Backgrounds/Players/Narset.png",
-      "cards": ["Backgrounds/Commander/Narset.jpg"]
+      "cards": [
+        "Backgrounds/Commander/Narset.jpg"
+      ]
     },
     "Niv-Mizzet": {
       "art": "Backgrounds/Players/NivMizzet.jpg"
@@ -48,17 +65,23 @@
     "Urza": {
       "commander": "Urza, Lord High Artificer",
       "art": "Backgrounds/Players/Urza.png",
-      "cards": ["Backgrounds/Commander/Urza.jpg"]
+      "cards": [
+        "Backgrounds/Commander/Urza.jpg"
+      ]
     },
     "Yuna": {
       "commander": "Yuna, Grand Summoner",
       "art": "Backgrounds/Players/Yuna.png",
-      "cards": ["Backgrounds/Commander/Yuna.jpg"]
+      "cards": [
+        "Backgrounds/Commander/Yuna.jpg"
+      ]
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
       "art": "Backgrounds/Players/Zulhodok.png",
-      "cards": ["Backgrounds/Commander/Zhulodok.jpg"]
+      "cards": [
+        "Backgrounds/Commander/Zhulodok.jpg"
+      ]
     }
   }
 }

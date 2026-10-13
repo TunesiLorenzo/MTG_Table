@@ -125,7 +125,15 @@ most played deck, and a player without a `portrait` gets their initial. Only
 pictures named here are published; the rest of `Backgrounds/`, the sounds, and
 the other pages stay out of the site.
 
-To see it before pushing (needs `pip install pillow`):
+**`/public`** on the local server is the same page against the live results,
+with two additions that exist only there. Every player and deck page ends in an
+editor for its roster entry: commander name, art and cards for a deck, portrait
+and background for a player, each picked from the pictures in `Backgrounds/`.
+And the bar along the bottom shows what GitHub does not have yet and has a
+**Commit & push** button, which commits `game_history.json`, `site/` and
+`Backgrounds/` (nothing else) and pushes `main`.
+
+To build the exact published copy instead (needs `pip install pillow`):
 
 ```
 python build_site.py

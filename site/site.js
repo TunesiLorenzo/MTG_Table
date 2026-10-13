@@ -21,6 +21,10 @@ let historicalWins = [];
 const roster = { players: new Map(), decks: new Map() };
 let stats = { players: [], decks: [], playerIndex: new Map(), deckIndex: new Map() };
 
+/* Called after every view is drawn. Nothing on the published site uses it; the
+   local preview at /public replaces it to add its editor to the page. */
+let afterRender = () => {};
+
 const keyOf = (value) => String(value).trim().toLocaleLowerCase();
 
 function escapeHtml(value) {
@@ -285,6 +289,7 @@ function route() {
   if (kind === "player" && name) app.innerHTML = playerView(name);
   else if (kind === "deck" && name) app.innerHTML = deckView(name);
   else app.innerHTML = homeView();
+  afterRender();
 }
 
 window.addEventListener("hashchange", () => { route(); window.scrollTo(0, 0); });
@@ -301,6 +306,7 @@ async function start() {
     games = Array.isArray(history.games) ? history.games : [];
     historicalWins = Array.isArray(history.historical_wins) ? history.historical_wins : [];
     for (const group of ["players", "decks"]) {
+      roster[group].clear();
       for (const [name, entry] of Object.entries(pictures[group] || {})) roster[group].set(keyOf(name), entry);
     }
     stats = aggregate();

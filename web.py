@@ -14,16 +14,19 @@ import copy
 import json
 import os
 import re
+import subprocess
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 import bledom_led
+import build_site
 import bulb_control
 import cues
 import lighting
@@ -67,6 +70,23 @@ GAME_DECK_MAX = 80
 game_history = []
 historical_wins = []
 history_lock = threading.Lock()
+
+# The public leaderboard in site/ is what GitHub Pages shows. /public serves the
+# same page from here against the live results, with an editor for its roster
+# (which picture and commander belong to which player and deck) and a button
+# that commits and pushes, which is what republishes the real one.
+SITE_DIR = BASE_DIR / "site"
+ROSTER_FILE = SITE_DIR / "roster.json"
+ROSTER_GROUPS = ("players", "decks")
+ROSTER_PICTURE_DIR = BASE_DIR / "Backgrounds"
+ROSTER_PICTURE_EXTENSIONS = {".jpg", ".jpeg", ".jfif", ".png", ".webp"}
+ROSTER_COMMANDER_MAX = 120
+# Everything the public site is built from, and so everything a publish
+# commits. Code and the rest of the working tree are left for a normal commit.
+PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds")
+PUBLISH_BRANCH = "main"
+roster_lock = threading.Lock()
+publish_lock = threading.Lock()
 
 # One saved light plan per person, so a table adapts to whoever turns up: each
 # file is one player's entry out of the config, named after the profile, and is
@@ -911,6 +931,159 @@ def delete_historical_wins(entry_id):
             historical_wins.insert(index, removed)
             raise
     return ok("Historical wins removed")
+
+
+# -----------------------------
+# PUBLIC LEADERBOARD PREVIEW
+# -----------------------------
+def load_roster():
+    try:
+        roster = json.loads(ROSTER_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        roster = {}
+    return {group: dict(roster.get(group) or {}) for group in ROSTER_GROUPS}
+
+
+def list_roster_pictures():
+    """Every picture a roster entry may name, as a path from the repository root."""
+    return sorted(path.relative_to(BASE_DIR).as_posix()
+                  for path in ROSTER_PICTURE_DIR.rglob("*")
+                  if path.is_file() and path.suffix.lower() in ROSTER_PICTURE_EXTENSIONS)
+
+
+def roster_entry_from_payload(group, payload):
+    """Validate one player's or deck's roster entry. Empty fields are left out."""
+    pictures = set(list_roster_pictures())
+
+    def picture(value):
+        value = str(value or "").strip()
+        if value and value not in pictures:
+            raise ValueError(f"No such picture: {value}")
+        return value
+
+    entry = {}
+    if group == "decks":
+        commander = re.sub(r"\s+", " ", str(payload.get("commander") or "")).strip()
+        if len(commander) > ROSTER_COMMANDER_MAX:
+            raise ValueError(f"Commander must be at most {ROSTER_COMMANDER_MAX} characters")
+        entry["commander"] = commander
+        entry["art"] = picture(payload.get("art"))
+        cards = payload.get("cards")
+        entry["cards"] = [card for card in map(picture, cards if isinstance(cards, list) else []) if card]
+    else:
+        entry["portrait"] = picture(payload.get("portrait"))
+        entry["background"] = picture(payload.get("background"))
+    return {key: value for key, value in entry.items() if value}
+
+
+def run_git(*arguments, timeout=60):
+    # Never wait on a credential prompt nobody can see: fail and say so instead.
+    result = subprocess.run(["git", *arguments], cwd=BASE_DIR, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=timeout,
+                            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    if result.returncode:
+        raise RuntimeError((result.stderr or result.stdout).strip() or f"git {arguments[0]} failed")
+    # Only the line ends: git status marks a file with its leading columns.
+    return result.stdout.strip("\n")
+
+
+def publish_state():
+    """What a publish would send: changed public files, and commits not yet pushed."""
+    listing = run_git("status", "--porcelain", "--", *PUBLISH_PATHS)
+    changed = [line[3:] for line in listing.splitlines()]
+    try:
+        unpushed = int(run_git("rev-list", "--count", "@{upstream}..HEAD"))
+    except (RuntimeError, ValueError):
+        unpushed = 0
+    return {"changed": changed, "unpushed": unpushed}
+
+
+@app.get("/public")
+def public_site_redirect():
+    # The page finds its files beside itself, which needs the trailing slash.
+    return redirect("/public/")
+
+
+@app.get("/public/")
+def public_site():
+    """site/index.html as published, plus the editor that only exists here."""
+    page = (SITE_DIR / "index.html").read_text(encoding="utf-8")
+    page = page.replace("</head>", '  <link rel="stylesheet" href="/static/public-editor.css">\n</head>')
+    return page.replace("</body>", '  <script src="/static/public-editor.js"></script>\n</body>')
+
+
+@app.get("/public/game_history.json")
+def public_site_history():
+    with history_lock:
+        return jsonify({"games": copy.deepcopy(game_history), "historical_wins": copy.deepcopy(historical_wins)})
+
+
+@app.get("/public/roster.json")
+def public_site_roster():
+    """The roster in the shape build_site.py publishes it, minus the resizing."""
+    def served(source):
+        url = "/" + quote(source)
+        return {"full": url, "thumb": url}
+
+    roster = load_roster()
+    for group in ROSTER_GROUPS:
+        for entry in roster[group].values():
+            for key in build_site.IMAGE_KEYS:
+                if entry.get(key):
+                    entry[key] = served(entry[key])
+            for key in build_site.IMAGE_LIST_KEYS:
+                if entry.get(key):
+                    entry[key] = [served(source) for source in entry[key]]
+    return jsonify(roster)
+
+
+@app.get("/public/<path:filename>")
+def public_site_asset(filename):
+    return send_from_directory(SITE_DIR, filename)
+
+
+@app.get("/api/public/roster")
+def get_public_roster():
+    return jsonify({"ok": True, "roster": load_roster(), "pictures": list_roster_pictures(),
+                    "publish": publish_state()})
+
+
+@app.post("/api/public/roster")
+def set_public_roster_entry():
+    """Replace one player's or deck's entry. An empty one removes it."""
+    payload = request.get_json(force=True, silent=True) or {}
+    group = payload.get("group")
+    if group not in ROSTER_GROUPS:
+        raise ValueError("Unknown roster group")
+    name = clean_game_text(payload.get("name"), "Name", GAME_DECK_MAX)
+    entry = roster_entry_from_payload(group, payload.get("entry") or {})
+    with roster_lock:
+        roster = load_roster()
+        # Names match the way the statistics do, whatever case they were typed in.
+        key = next((saved for saved in roster[group] if saved.casefold() == name.casefold()), name)
+        if entry:
+            roster[group][key] = entry
+        else:
+            roster[group].pop(key, None)
+        write_json_file(ROSTER_FILE, roster)
+    return ok(f"Saved {name}", roster=roster, publish=publish_state())
+
+
+@app.post("/api/public/publish")
+def publish_public_site():
+    """Commit the public site's files and push, which republishes the site."""
+    with publish_lock:
+        branch = run_git("rev-parse", "--abbrev-ref", "HEAD")
+        if branch != PUBLISH_BRANCH:
+            raise RuntimeError(f"The site is published from {PUBLISH_BRANCH}, but this checkout is on {branch}")
+        state = publish_state()
+        if not state["changed"] and not state["unpushed"]:
+            return ok("Nothing to publish: GitHub already has everything", publish=state)
+        if state["changed"]:
+            run_git("add", "--", *PUBLISH_PATHS)
+            run_git("commit", "-m", f"Update leaderboard ({datetime.now():%Y-%m-%d})", "--", *PUBLISH_PATHS)
+        run_git("push", timeout=180)
+        return ok("Pushed. The public site updates in a minute or two", publish=publish_state())
 
 
 # -----------------------------
