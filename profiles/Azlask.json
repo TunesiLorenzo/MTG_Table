@@ -1,0 +1,49 @@
+{
+  "name": "Borgo",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 179,
+      "saturation": 74,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 7.4
+    },
+    "center": {
+      "enabled": true,
+      "mode": "white",
+      "hue": 0,
+      "saturation": 0,
+      "brightness": 47,
+      "temperature": 6350,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 290,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 7.4
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 184,
+      "saturation": 96,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 8.3
+    }
+  },
+  "saved_at": "2026-08-26T23:01:05"
+}

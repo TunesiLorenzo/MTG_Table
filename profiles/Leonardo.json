@@ -1,0 +1,53 @@
+{
+  "name": "Curti",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "announcer_sound": "Curti_Leonardo.mp3",
+  "commander_sound": "Leonardo_The_Balance.wav",
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 116,
+      "saturation": 100,
+      "brightness": 47,
+      "temperature": 2700,
+      "effect": "flicker",
+      "effect_seconds": 2.6
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 233,
+      "saturation": 20,
+      "brightness": 100,
+      "temperature": 2650,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 112,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "flicker",
+      "effect_seconds": 2.6
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 110,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-23T21:33:25"
+}

@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "games": [
+    {
+      "id": "d7f84977dc4d4e76bb8c5f9b198bff9a",
+      "date": "2026-08-26",
+      "created_at": "2026-08-26T23:45:12+02:00",
+      "players": [
+        {
+          "name": "Ny",
+          "deck": "Niv-Mizzet",
+          "rank": 1
+        },
+        {
+          "name": "Tune",
+          "deck": "Oloro",
+          "rank": 2
+        },
+        {
+          "name": "Borgo",
+          "deck": "Azlask",
+          "rank": 3
+        },
+        {
+          "name": "Coach",
+          "deck": "Arcades",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "id": "cea5363e3a76499d886e4b02828e6bad",
+      "date": "2026-09-10",
+      "created_at": "2026-09-10T22:48:49+02:00",
+      "players": [
+        {
+          "name": "Coach",
+          "deck": "Zhulodok",
+          "rank": 1
+        },
+        {
+          "name": "Dani",
+          "deck": "Narset",
+          "rank": 4
+        },
+        {
+          "name": "Ny",
+          "deck": "Yuna",
+          "rank": 4
+        },
+        {
+          "name": "Borgo",
+          "deck": "Urza",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "id": "98680c5c7fe44fb780eb20c17c470468",
+      "date": "2026-09-11",
+      "created_at": "2026-09-11T00:17:33+02:00",
+      "players": [
+        {
+          "name": "Borgo",
+          "deck": "Urza",
+          "rank": 1
+        },
+        {
+          "name": "Ny",
+          "deck": "Yuna",
+          "rank": 3
+        },
+        {
+          "name": "Dani",
+          "deck": "Narset",
+          "rank": 3
+        },
+        {
+          "name": "Coach",
+          "deck": "Zhulodok",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "id": "407931b6d9f14114a0245d268d613ce4",
+      "date": "2026-08-12",
+      "created_at": "2026-09-11T00:20:01+02:00",
+      "players": [
+        {
+          "name": "Borgo",
+          "deck": "Commodoro",
+          "rank": 1
+        },
+        {
+          "name": "Dadda",
+          "deck": "Vaevictis",
+          "rank": 3
+        },
+        {
+          "name": "Ny",
+          "deck": "Yuna",
+          "rank": 3
+        },
+        {
+          "name": "Dani",
+          "deck": "Obeka",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "id": "31fd91a977f14d0691040f8128e797da",
+      "date": "2026-09-23",
+      "created_at": "2026-09-23T23:39:40+02:00",
+      "players": [
+        {
+          "name": "Milli",
+          "deck": "Cloud",
+          "rank": 1
+        },
+        {
+          "name": "Curti",
+          "deck": "Leonardo",
+          "rank": 3
+        },
+        {
+          "name": "Borgo",
+          "deck": "Commodoro",
+          "rank": 3
+        },
+        {
+          "name": "Coach",
+          "deck": "Dwight",
+          "rank": 4
+        }
+      ]
+    }
+  ],
+  "historical_wins": [
+    {
+      "id": "ac6134e55d964a879a3aa052e123c82c",
+      "name": "Dani",
+      "wins": 14
+    },
+    {
+      "id": "6e36bb50091b44f098dc858d34247e0b",
+      "name": "Ny",
+      "wins": 1
+    },
+    {
+      "id": "7677a297601f4edd923708592cf299ab",
+      "name": "Dave",
+      "wins": 1
+    },
+    {
+      "id": "45591e0d6ee6425d8dbbcb3114dc18e8",
+      "name": "Coach",
+      "wins": 17
+    },
+    {
+      "id": "3f68d87163f843b5940b00564805c48b",
+      "name": "Borgo",
+      "wins": 15
+    }
+  ]
+}

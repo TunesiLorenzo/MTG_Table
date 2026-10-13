@@ -1,0 +1,125 @@
+/* The public leaderboard. Same palette and card shapes as
+   static/leaderboard.css, which styles the table's own copy of these numbers;
+   kept separate because that file is built around the tilted table screen and
+   this one is read on phones. */
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  background: #0d0b16;
+  color: #f5f1ff;
+  --purple: #a77aff;
+  --gold: #e4b95f;
+  --line: #3b324a;
+  --card: rgba(29, 24, 43, .94);
+  --muted: #aaa2b8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -12%, #422869 0, #171229 34%, #0d0b16 74%) fixed; }
+a { color: inherit; text-decoration: none; }
+a:hover { color: #d4bcff; }
+main { width: min(1120px, 100%); margin: auto; padding: 24px 18px 90px; }
+main > section { margin-bottom: 26px; }
+.page-header { padding: 10px 4px 22px; }
+h1 { margin: 2px 0 0; font-size: clamp(2rem, 6vw, 3.2rem); letter-spacing: -.055em; }
+h2 { margin: 3px 0 0; font-size: 1.3rem; letter-spacing: -.02em; }
+.eyebrow { color: #b791ff; font-size: .69rem; font-weight: 800; letter-spacing: .18em; }
+.muted { color: var(--muted); font-size: .8rem; }
+.back-link { display: inline-block; margin: 6px 0 16px; padding: 9px 13px; border: 1px solid #4a3d63; border-radius: 11px; color: #d4c3f5; font-size: .82rem; font-weight: 700; }
+.back-link:hover { color: #fff; border-color: #9b76db; }
+.empty { display: grid; min-height: 150px; place-items: center; padding: 20px; border: 1px dashed #453b56; border-radius: 14px; color: #8f86a0; text-align: center; }
+
+/* ----------------------------------------------------------------- hero -- */
+/* The player and deck pages open on their picture. It sits on its own layer so
+   it can be dimmed without dimming the name on top of it. */
+.hero { position: relative; display: flex; align-items: flex-end; gap: 22px; min-height: 250px; padding: 30px 34px; overflow: hidden; border: 1px solid #5b4777; border-radius: 26px; background: linear-gradient(135deg, #33204f, #20172f 58%, #171222); box-shadow: 0 22px 60px #05030a77; isolation: isolate; }
+.hero.has-art { min-height: 340px; }
+.hero.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 25% / cover no-repeat; }
+.hero.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0d0b16f2 4%, #0d0b1699 42%, #0d0b1626); }
+.hero h1 { font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1; text-shadow: 0 2px 18px #000a; }
+.hero p { max-width: 660px; margin: 10px 0 0; color: #d6cde4; line-height: 1.5; }
+.hero p a { color: #e6d6ff; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+.avatar { flex: none; width: 38px; height: 38px; border: 1px solid #5b4777; border-radius: 50%; object-fit: cover; }
+.avatar-blank { display: grid; place-items: center; background: #2b2140; color: #d4c3f5; font-weight: 800; }
+.avatar-large { width: 112px; height: 112px; border: 3px solid var(--gold); font-size: 2.6rem; box-shadow: 0 8px 28px #000a; }
+
+/* ---------------------------------------------------------------- tiles -- */
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 26px; }
+.summary { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+.summary strong { display: block; margin-top: 6px; overflow: hidden; color: #fff; font-size: clamp(1.35rem, 3vw, 2rem); line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.summary small { display: block; margin-top: 5px; color: var(--muted); }
+.card { padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 16px 40px #05030a55; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+
+/* ------------------------------------------------------------ standings -- */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .87rem; }
+th, td { padding: 10px; border-bottom: 1px solid #342c42; text-align: right; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th { color: #8f86a0; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
+th:nth-child(2), td:nth-child(2) { text-align: left; }
+td:first-child { color: var(--gold); font-weight: 800; }
+.player-cell { display: flex; align-items: center; gap: 11px; }
+.player-cell strong, .player-cell small { display: block; }
+.player-cell small { color: var(--muted); }
+.legacy-note { color: var(--gold); font-size: .67rem; font-weight: 700; }
+
+/* ----------------------------------------------------------------- bars -- */
+.bar-chart { display: grid; gap: 13px; }
+.bar-item { display: grid; grid-template-columns: minmax(60px, 140px) 1fr minmax(70px, auto); align-items: center; gap: 10px; }
+.bar-label { min-width: 0; overflow: hidden; font-size: .85rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 12px; overflow: hidden; border-radius: 999px; background: #100d19; }
+.bar-fill { display: block; width: var(--width); height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7446d2, #b583ff); box-shadow: 0 0 15px #9c6cff77; }
+.deck-bars .bar-fill { background: linear-gradient(90deg, #a77d31, #e4b95f); box-shadow: 0 0 15px #e4b95f55; }
+.bar-value { color: var(--muted); font-size: .72rem; text-align: right; }
+
+/* ---------------------------------------------------------------- decks -- */
+.deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.deck-card { position: relative; display: flex; align-items: flex-end; min-height: 150px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(135deg, #2b2140, #191421); isolation: isolate; transition: border-color 150ms ease, translate 150ms ease; }
+.deck-card:hover { color: inherit; border-color: #9b76db; translate: 0 -2px; }
+.deck-card.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 22% / cover no-repeat; }
+.deck-card.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0d0b16f5 8%, #0d0b16a6 48%, #0d0b1614); }
+.deck-card-body { min-width: 0; padding: 13px 15px; }
+.deck-card-body strong, .deck-card-body small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-card-body strong { font-size: 1.05rem; }
+.deck-card-body small { margin-top: 2px; color: #cfc6dd; font-size: .76rem; }
+.deck-card-stats { display: block; margin-top: 7px; color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+.deck-gallery { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
+.deck-gallery img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 16px 40px #05030a55; }
+.deck-art { flex: 3 1 420px; }
+.deck-printing { flex: 1 1 190px; max-width: 280px; }
+
+/* -------------------------------------------------------------- archive -- */
+.history-list { display: grid; gap: 10px; }
+.game-card { overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: #191421dd; }
+.game-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 15px; border-bottom: 1px solid #342c42; }
+.game-date { font-weight: 800; }
+.game-winner { color: var(--gold); font-size: .78rem; }
+.game-results { display: grid; grid-template-columns: repeat(4, 1fr); }
+.game-player { min-width: 0; padding: 13px 15px; border-right: 1px solid #30283d; }
+.game-player:last-child { border-right: 0; }
+.game-player.is-winner { background: linear-gradient(135deg, #e4b95f13, transparent); }
+.place { color: #8f86a0; font-size: .68rem; font-weight: 800; letter-spacing: .08em; }
+.game-player.is-winner .place { color: var(--gold); }
+.game-player strong, .game-player small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-player strong { margin-top: 4px; font-size: .9rem; }
+.game-player small { margin-top: 3px; color: var(--muted); font-size: .75rem; }
+
+@media (max-width: 780px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .game-results { grid-template-columns: repeat(2, 1fr); }
+  .game-player:nth-child(2n) { border-right: 0; }
+  .game-player:nth-child(-n+2) { border-bottom: 1px solid #30283d; }
+}
+@media (max-width: 560px) {
+  main { padding: 14px 12px 80px; }
+  .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
+  .hero.has-art { min-height: 300px; }
+  .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
+  .card { padding: 17px; }
+  .section-heading { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .bar-item { grid-template-columns: 70px 1fr; }
+  .bar-value { grid-column: 2; text-align: left; }
+  .deck-grid { grid-template-columns: repeat(2, 1fr); }
+  .deck-printing { max-width: 48%; }
+}

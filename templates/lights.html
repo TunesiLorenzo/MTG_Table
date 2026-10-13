@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171229">
+  <title>Table Lights</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='lights.css') }}">
+</head>
+<body>
+  <main>
+    <header>
+      <div><span class="eyebrow">LIGHT CONTROL</span><h1>Table Lights</h1></div>
+      <div class="header-right">
+        <a class="tracker-link" href="/leaderboard">Leaderboard</a>
+        <a class="tracker-link" href="/">Life tracker &rarr;</a>
+        <span id="connection-dot" class="dot" title="LED strip status"></span>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Light control sections">
+      <button class="tab is-active" type="button" role="tab" data-tab="room" aria-selected="true">Lights</button>
+      <button class="tab" type="button" role="tab" data-tab="players" aria-selected="false">Players &amp; effects</button>
+      <button class="tab" type="button" role="tab" data-tab="moments" aria-selected="false">Moments</button>
+      <button class="tab" type="button" role="tab" data-tab="sound" aria-selected="false">Sound &amp; timing</button>
+      <button class="tab" type="button" role="tab" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+
+    <div class="tab-panel" data-tab-panel="room">
+      <section class="card room-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">YOUR ROOM</span><h2>Choose a light</h2></div>
+          <div class="global-power" aria-label="All bulb power controls">
+            <button data-power="on">All on</button>
+            <button class="secondary" data-power="off">All off</button>
+          </div>
+        </div>
+        <div class="room" aria-label="Room light selector">
+          <span class="room-wall wall-top"></span><span class="room-wall wall-right"></span>
+          <button class="fixture bulb-fixture" data-device="top_left" style="--x:18%;--y:20%" aria-label="Select top left bulb">
+            <span class="bulb-icon"><i></i></span><strong>Top left</strong><small>Bulb</small>
+          </button>
+          <button class="link-toggle" data-link-device="top_left" style="--x:18%;--y:20%" aria-label="Link top left bulb" aria-pressed="false" title="Add this bulb to the linked group">&#128279;</button>
+          <button class="fixture bulb-fixture selected" data-device="center" style="--x:50%;--y:18%" aria-label="Select center bulb">
+            <span class="bulb-icon"><i></i></span><strong>Center</strong><small>Bulb</small>
+          </button>
+          <button class="link-toggle" data-link-device="center" style="--x:50%;--y:18%" aria-label="Link center bulb" aria-pressed="false" title="Add this bulb to the linked group">&#128279;</button>
+          <button class="fixture bulb-fixture" data-device="bottom_right" style="--x:82%;--y:78%" aria-label="Select bottom right bulb">
+            <span class="bulb-icon"><i></i></span><strong>Bottom right</strong><small>Bulb</small>
+          </button>
+          <button class="link-toggle" data-link-device="bottom_right" style="--x:82%;--y:78%" aria-label="Link bottom right bulb" aria-pressed="false" title="Add this bulb to the linked group">&#128279;</button>
+          <button class="fixture table-fixture" data-device="strip" aria-label="Select center table LED">
+            <span class="table-top"><i></i></span><strong>Center table</strong><small>LED strip</small>
+          </button>
+        </div>
+        <p class="selection-copy">Controlling <strong id="selected-device-name">Center bulb</strong>. Tap a chain to add or remove a bulb from the linked group.</p>
+        <label class="check sync-check"><input id="sync-strip" type="checkbox"> Sync the LED strip to the bulb color</label>
+        <div class="selected-power">
+          <button data-selected-power="on">Selection on</button>
+          <button class="secondary" data-selected-power="off">Selection off</button>
+        </div>
+      </section>
+
+      <section class="card connection">
+        <details>
+          <summary>Device setup</summary>
+          <div class="device-settings">
+            <button class="wide discovery-button" data-action="discover-bulbs">Discover and assign all bulbs</button>
+            <div id="discovery-panel" class="discovery-panel hidden" aria-live="polite">
+              <span id="discovery-progress" class="eyebrow">BULB 1 OF 1</span>
+              <h3 id="discovery-name">Identifying bulb</h3>
+              <p id="discovery-description">Watch the room for the bulb that blinks, then choose its position.</p>
+              <button class="secondary wide" data-action="blink-candidate">Blink this bulb again</button>
+              <div class="assignment-buttons" aria-label="Assign blinking bulb to room position">
+                <button data-assign-bulb="top_left">Top left</button>
+                <button data-assign-bulb="center">Center</button>
+                <button data-assign-bulb="bottom_right">Bottom right</button>
+              </div>
+              <button class="secondary wide" data-action="skip-candidate">Skip this device</button>
+            </div>
+            {% for bulb_id, item in bulbs.items() %}
+            <div class="device-row" data-settings-for="{{ bulb_id }}">
+              <label for="ip-{{ bulb_id }}">{{ item.name }} bulb IP</label>
+              <div class="ip-actions">
+                <input id="ip-{{ bulb_id }}" value="{{ item.ip }}" inputmode="decimal" placeholder="Find or enter IP">
+                <button data-set-ip="{{ bulb_id }}">Set</button>
+                <button class="danger" data-disconnect-bulb="{{ bulb_id }}">Forget</button>
+              </div>
+            </div>
+            {% endfor %}
+            <button class="secondary wide" data-action="connect-strip">Connect LED strip</button>
+          </div>
+        </details>
+      </section>
+
+      <section class="card hero-card" data-panel="color">
+        <h2>Color &middot; <span class="panel-target">Center bulb</span></h2>
+        <div class="pad-wrap wheel-wrap"><canvas id="color-wheel" aria-label="Color wheel: drag to pick hue and saturation"></canvas></div>
+        <div class="readout"><span id="color-swatch" class="swatch"></span><span id="color-hsv-label">H:26 S:80</span></div>
+        <label>Brightness <output id="color-brightness-value">80%</output></label>
+        <input id="color-brightness" type="range" min="1" max="100" value="80">
+        <button class="wide" data-action="apply-color">Apply color</button>
+      </section>
+
+      <section class="card bulb-only" data-panel="white">
+        <h2>White &middot; <span class="panel-target-bulbs">Center bulb</span></h2>
+        <div class="pad-wrap white-pad-wrap"><canvas id="white-pad" aria-label="Warmth (horizontal) and brightness (vertical): drag to pick"></canvas></div>
+        <div class="axis-labels"><span>2500K</span><span>6500K</span></div>
+        <div class="readout"><span id="white-swatch" class="swatch"></span><span id="white-label">2700K &middot; 100%</span></div>
+        <button class="wide" data-action="apply-white">Apply white</button>
+      </section>
+    </div>
+
+    <div class="tab-panel hidden" data-tab-panel="players">
+      <section class="card players-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">TURN LIGHTING</span><h2>Player colors</h2></div>
+        </div>
+        <p class="selection-copy">Each player's turn sets every light they drive. Use the plans below for a different color or effect per light, or set one color for the whole player here &mdash; &ldquo;Use picked&rdquo; takes the color from the wheel on the Lights tab.</p>
+        <ul class="player-list" id="player-list"></ul>
+
+        <div class="turn-settings">
+          <label class="check"><input id="fade-enabled" type="checkbox"> Fade between player colors</label>
+          <div class="turn-slider" id="fade-slider-row">
+            <label>Fade time <output id="fade-seconds-value">1.5s</output></label>
+            <input id="fade-seconds" type="range" min="2" max="100" step="1" value="15">
+          </div>
+        </div>
+      </section>
+
+      <section class="card plans-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">PER LIGHT</span><h2>Light plans</h2></div>
+        </div>
+        <p class="selection-copy">One row per light, per player. Turn a light off to leave it alone on that player's turn; an effect runs for as long as that turn lasts.</p>
+        <div class="plan-grid" id="plan-grid"></div>
+      </section>
+    </div>
+
+    <div class="tab-panel hidden" data-tab-panel="moments">
+      <section class="card plans-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">GAME MOMENTS</span><h2>Moment lighting</h2></div>
+        </div>
+        <p class="selection-copy">What the lights do when life changes, a commander is revealed or burned, players walk out, and the first player is picked. Tap a moment's name to switch it on or off. Changes save as you let go, and <strong>Test</strong> plays it on the room now.</p>
+        <div class="plan-grid" id="moment-grid"></div>
+      </section>
+    </div>
+
+    <div class="tab-panel hidden" data-tab-panel="sound">
+      <section class="card plans-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">SEQUENCES</span><h2>Sound &amp; timing</h2></div>
+        </div>
+        <p class="selection-copy">Volumes and timings for the table's sequences. Changes save as you let go and reach the table screen within a few seconds. A volume above 100% boosts the clip past its recorded level.</p>
+        <div class="plan-grid" id="sound-grid"></div>
+      </section>
+    </div>
+
+    <div class="tab-panel hidden" data-tab-panel="settings">
+      <section class="card plans-card">
+        <div class="section-heading">
+          <div><span class="eyebrow">TABLE SCREEN</span><h2>Settings</h2></div>
+        </div>
+        <p class="selection-copy">How the table screen itself behaves. Changes save as you let go and reach the table screen within a few seconds.</p>
+        <div class="plan-grid" id="settings-grid"></div>
+      </section>
+    </div>
+
+    <div class="server-stop">
+      <button id="shutdown" class="danger" type="button">Turn off local server</button>
+      <span class="server-stop__hint">Stops the table server on the PC — for when the terminal was closed and it is still running. The table display and this page both go offline until it is started again.</span>
+    </div>
+
+    <div id="status" role="status" aria-live="polite">Ready</div>
+  </main>
+  <script src="{{ url_for('static', filename='lights.js') }}"></script>
+</body>
+</html>

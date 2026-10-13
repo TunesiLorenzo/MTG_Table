@@ -1,0 +1,50 @@
+{
+  "name": "Ny",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "announcer_sound": "Ny_Yuna.mp3",
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 209,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.8
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 287,
+      "saturation": 44,
+      "brightness": 100,
+      "temperature": 2850,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 116,
+      "saturation": 70,
+      "brightness": 99,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 4.9
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 273,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-10T23:20:41"
+}

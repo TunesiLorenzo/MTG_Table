@@ -1,0 +1,49 @@
+{
+  "name": "P4",
+  "hue": 135,
+  "saturation": 80,
+  "brightness": 90,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 70,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 118,
+      "saturation": 82,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 60,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 113,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 3.5
+    }
+  },
+  "saved_at": "2026-08-05T22:44:28"
+}

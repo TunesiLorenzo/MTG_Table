@@ -1,0 +1,53 @@
+{
+  "name": "Borgo",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "announcer_sound": "Borgo_Guff.mp3",
+  "commander_sound": "Guff.wav",
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 228,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.8
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 327,
+      "saturation": 14,
+      "brightness": 100,
+      "temperature": 2850,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 236,
+      "saturation": 100,
+      "brightness": 99,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 4.9
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 331,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-23T21:33:35"
+}

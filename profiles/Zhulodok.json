@@ -1,0 +1,50 @@
+{
+  "name": "Coach",
+  "hue": 135,
+  "saturation": 80,
+  "brightness": 90,
+  "announcer_sound": "Choach_Zhulodok.mp3",
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 179,
+      "saturation": 62,
+      "brightness": 100,
+      "temperature": 6350,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 181,
+      "saturation": 100,
+      "brightness": 80,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-10T22:26:31"
+}

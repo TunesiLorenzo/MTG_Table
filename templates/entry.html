@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171229">
+  <title>Record a result — MTG Leaderboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='leaderboard.css') }}">
+</head>
+<body>
+  <!-- No rotation frame and no data-rot on <html>: this page is always
+       upright, whichever way the leaderboard display is turned. -->
+  <div class="page-frame">
+  <main>
+    <header class="page-header">
+      <div><span class="eyebrow">LEADERBOARD</span><h1>Record a result</h1></div>
+      <nav class="page-links" aria-label="Table pages">
+        <a href="/leaderboard">&larr; Leaderboard</a>
+        <a href="/">Life tracker</a>
+        <a href="/lights">Lights</a>
+      </nav>
+    </header>
+
+    <section class="hero entry-hero">
+      <div>
+        <span class="eyebrow">COMMANDER NIGHT</span>
+        <h2>Add tonight's games.</h2>
+        <p>Everything saved here appears on the leaderboard straight away — the display picks it up on its own, so there is no need to go and reload it.</p>
+      </div>
+      <div class="hero-mark" aria-hidden="true">&#9998;</div>
+    </section>
+
+    <section class="entry-tools" aria-label="Record results">
+      <details class="card tool-card" open>
+        <summary class="tool-summary">
+          <span class="tool-title"><span class="eyebrow">NEW RESULT</span><span class="tool-heading">Add a completed game</span></span>
+          <span class="tool-hint">Rank all four players and their decks; ties are allowed</span>
+          <span class="tool-chevron" aria-hidden="true">&#9662;</span>
+        </summary>
+        <div class="tool-body">
+          <form id="game-form">
+            <label class="date-field">Game date<input id="game-date" type="date" required></label>
+            <div class="result-head" aria-hidden="true"><span>Rank</span><span>Player</span><span>Deck</span></div>
+            <div id="result-rows"></div>
+            <button class="submit-button" type="submit">Save game result</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="card tool-card">
+        <summary class="tool-summary">
+          <span class="tool-title"><span class="eyebrow">OLDER RESULTS</span><span class="tool-heading">Add historical wins</span></span>
+          <span class="tool-hint">No date, deck, or match details required</span>
+          <span class="tool-chevron" aria-hidden="true">&#9662;</span>
+        </summary>
+        <div class="tool-body">
+          <p class="historical-copy">Use this for totals from before detailed game tracking began. These wins count toward all-time wins, without inventing games played, win rate, top-two finishes, decks, or average finish.</p>
+          <form id="historical-form" class="historical-form">
+            <label>Player<input id="historical-player" list="player-suggestions" maxlength="40" placeholder="Player name" required></label>
+            <label>Wins<input id="historical-count" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="0" required></label>
+            <button type="submit">Save historical wins</button>
+          </form>
+          <div id="historical-list" class="historical-list"></div>
+        </div>
+      </details>
+
+      <details class="card tool-card">
+        <summary class="tool-summary">
+          <span class="tool-title"><span class="eyebrow">UNDO</span><span class="tool-heading">Recently recorded</span></span>
+          <span class="tool-hint" id="recent-count"></span>
+          <span class="tool-chevron" aria-hidden="true">&#9662;</span>
+        </summary>
+        <div class="tool-body">
+          <div id="recent-list" class="recent-list"></div>
+        </div>
+      </details>
+
+      <!-- Outside every panel: a datalist is referenced by id, and the
+           historical form borrows the player names from the game form. -->
+      <datalist id="player-suggestions"></datalist>
+      <datalist id="deck-suggestions"></datalist>
+    </section>
+  </main>
+  </div>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  <script src="{{ url_for('static', filename='leaderboard-core.js') }}"></script>
+  <script src="{{ url_for('static', filename='entry.js') }}"></script>
+</body>
+</html>

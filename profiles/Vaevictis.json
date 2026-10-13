@@ -1,0 +1,49 @@
+{
+  "name": "Dadda",
+  "hue": 357,
+  "saturation": 100,
+  "brightness": 80,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 6.2
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 35,
+      "saturation": 36,
+      "brightness": 61,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.8
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 116,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.8
+    }
+  },
+  "saved_at": "2026-08-12T02:27:43"
+}

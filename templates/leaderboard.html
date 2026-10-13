@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171229">
+  <title>MTG Leaderboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='leaderboard.css') }}">
+  <script>
+    /* Applied before first paint so the table screen never flashes the
+       unrotated layout. The landscape default is 90deg (portrait); a device
+       already held in portrait starts upright. leaderboard.js cycles it. */
+    (function () {
+      var stored = window.localStorage.getItem("mtg-leaderboard-rotation");
+      var rot = stored !== null && [0, 90, 180, 270].indexOf(Number(stored)) >= 0
+        ? Number(stored)
+        : (window.innerWidth > window.innerHeight ? 90 : 0);
+      document.documentElement.dataset.rot = rot;
+      document.documentElement.style.setProperty("--page-rot", rot + "deg");
+    })();
+  </script>
+</head>
+<body>
+ <div class="rotate-viewport">
+  <div class="page-frame rotate-stage" id="rotate-stage">
+  <main>
+    <header class="page-header">
+      <div><span class="eyebrow">GAME HISTORY</span><h1>Leaderboard</h1></div>
+      <nav class="page-links" aria-label="Table pages">
+        <a class="entry-link" href="/leaderboard/entry">Record a result</a>
+        <a href="/">Life tracker</a>
+        <a href="/lights">Lights</a>
+        <button type="button" id="rotate-page" class="rotate-button" title="Rotate the page" aria-label="Rotate the page">&#8635;</button>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div>
+        <span class="eyebrow">COMMANDER NIGHT</span>
+        <h2>Results and standings.</h2>
+        <p>Player standings, deck performance, and the match archive update automatically. Results are recorded on the <a href="/leaderboard/entry">entry page</a>, which stays upright however this display is turned.</p>
+      </div>
+      <div class="hero-mark" aria-hidden="true">&#9813;</div>
+    </section>
+
+    <section class="summary-grid" id="summary-grid" aria-label="Leaderboard summary"></section>
+
+    <section class="charts-grid">
+      <article class="card chart-card">
+        <div class="section-heading"><div><span class="eyebrow">ALL-TIME WINS</span><h2>Player win histogram</h2></div></div>
+        <div id="player-chart" class="bar-chart"></div>
+      </article>
+      <article class="card chart-card">
+        <div class="section-heading"><div><span class="eyebrow">DECK PERFORMANCE</span><h2>Strongest decks</h2></div></div>
+        <div id="deck-chart" class="bar-chart"></div>
+      </article>
+    </section>
+
+    <section class="card standings-card">
+      <div class="section-heading">
+        <div><span class="eyebrow">ALL-TIME TABLE</span><h2>Player standings</h2></div>
+        <span class="muted">Sorted by wins, then average finish</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th>Recorded games</th><th>Total wins</th><th>Recorded win rate</th><th>Top 2</th><th>Avg. finish</th></tr></thead>
+          <tbody id="standings-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="history-section">
+      <div class="section-heading history-heading">
+        <div><span class="eyebrow">ARCHIVE</span><h2>Game history</h2></div>
+        <span id="history-count" class="muted"></span>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </section>
+  </main>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  </div>
+ </div>
+  <script src="{{ url_for('static', filename='leaderboard-core.js') }}"></script>
+  <script src="{{ url_for('static', filename='leaderboard.js') }}"></script>
+</body>
+</html>

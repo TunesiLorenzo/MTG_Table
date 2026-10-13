@@ -1,0 +1,49 @@
+{
+  "name": "Ny",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 47,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 8.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 38,
+      "saturation": 30,
+      "brightness": 100,
+      "temperature": 5300,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 217,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 7.6
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 24,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 6.7
+    }
+  },
+  "saved_at": "2026-08-26T23:00:56"
+}

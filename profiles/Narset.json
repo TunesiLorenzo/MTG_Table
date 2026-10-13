@@ -1,0 +1,50 @@
+{
+  "name": "Dani",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "announcer_sound": "Dani_Narset.mp3",
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 47,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 9.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "white",
+      "hue": 38,
+      "saturation": 52,
+      "brightness": 22,
+      "temperature": 2650,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 217,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 9.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 24,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-10T22:28:25"
+}

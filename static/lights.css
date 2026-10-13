@@ -1,0 +1,205 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0d0b16; color: #f5f1ff; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -10%, #39245d 0, #171229 35%, #0d0b16 75%); }
+main { width: min(760px, 100%); margin: auto; padding: 24px 16px 90px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 10px 4px; }
+.header-right { display: flex; align-items: center; gap: 14px; }
+.tracker-link { color: #ad85ff; font-size: .82rem; font-weight: 700; text-decoration: none; padding: 8px 12px; border: 1px solid #4a3d63; border-radius: 11px; }
+.tracker-link:hover { color: #e8dcff; border-color: #8c6fc4; }
+h1 { margin: 2px 0 0; font-size: 2.1rem; letter-spacing: -.04em; }
+h2 { margin: 0 0 18px; font-size: 1.05rem; } h2 small { color: #8f89a1; font-weight: 500; }
+.eyebrow { color: #ad85ff; font-size: .7rem; font-weight: 800; letter-spacing: .18em; }
+.card { padding: 20px; border: 1px solid #393149; border-radius: 20px; background: rgba(29, 24, 43, .92); box-shadow: 0 16px 40px #05030a55; }
+.hero-card { background: linear-gradient(145deg, #2a2042, #1d182b); }
+.room-card, .connection { grid-column: 1 / -1; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.section-heading h2 { margin: 3px 0 0; font-size: 1.35rem; }
+.global-power { display: flex; gap: 8px; }
+.global-power button { min-height: 40px; padding-inline: 13px; font-size: .82rem; }
+.room { position: relative; min-height: 390px; overflow: hidden; border: 1px solid #4a405b; border-radius: 20px; background: linear-gradient(145deg, #332848 0 49.7%, #282038 50% 100%); box-shadow: inset 0 0 70px #0a071455; }
+.room::before { content: ""; position: absolute; inset: 9% 7%; border: 1px solid #594b6c; border-radius: 10px; transform: perspective(460px) rotateX(52deg) rotateZ(-2deg); background: repeating-linear-gradient(90deg, transparent 0 34px, #ffffff08 35px), repeating-linear-gradient(0deg, transparent 0 34px, #ffffff08 35px); box-shadow: inset 0 0 40px #0a071466; }
+.room-wall { position: absolute; pointer-events: none; opacity: .65; }
+.wall-top { top: 0; left: 0; width: 100%; height: 25%; background: linear-gradient(165deg, #56406f, transparent 60%); clip-path: polygon(0 0,100% 0,93% 100%,7% 100%); }
+.fixture { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; padding: 7px; border: 1px solid transparent; background: transparent; color: #d9d2e5; transform: translate(-50%, -50%); box-shadow: none; }
+.fixture strong { font-size: .78rem; line-height: 1.1; }
+.fixture small { color: #9289a2; font-size: .65rem; }
+.fixture:hover, .fixture.selected { background: #1a1525cc; border-color: #a378f4; box-shadow: 0 0 0 4px #9c6cff18, 0 8px 24px #0008; }
+.bulb-fixture { left: var(--x); top: var(--y); width: 94px; height: 104px; }
+.bulb-icon { position: relative; width: 38px; height: 38px; margin-bottom: 3px; border: 2px solid #756b84; border-radius: 50% 50% 44% 44%; background: radial-gradient(circle at 42% 35%, #fff8c9, #bba45c 50%, #524a38); box-shadow: 0 0 4px #ffeaa555; }
+.bulb-icon::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -8px; height: 10px; border-radius: 0 0 5px 5px; background: repeating-linear-gradient(0deg, #5e5866 0 2px, #292531 2px 4px); }
+.bulb-fixture.configured .bulb-icon { border-color: #fff2a4; box-shadow: 0 0 18px #ffd969aa; }
+.link-toggle { position: absolute; z-index: 4; left: var(--x); top: var(--y); width: 34px; min-height: 34px; padding: 0; border-radius: 50%; transform: translate(35px, -45px); background: #211a2eeb; border-color: #5c506b; color: #a79caf; font-size: 1rem; line-height: 1; box-shadow: 0 5px 14px #0008; }
+.link-toggle:hover { border-color: #aa86ef; color: #e8dcff; }
+.link-toggle.linked { background: #8050db; border-color: #d5bdff; color: #fff; box-shadow: 0 0 0 4px #9c6cff22, 0 0 16px #9c6cffaa; }
+.table-fixture { left: 50%; top: 58%; width: 132px; height: 110px; }
+.table-top { position: relative; width: 95px; height: 49px; border: 2px solid #75618b; border-radius: 50%; background: radial-gradient(ellipse, #553b6d, #21182d 70%); box-shadow: 0 0 14px #9c6cff55; }
+.table-top::after { content: ""; position: absolute; top: 38px; left: 43px; width: 9px; height: 42px; background: linear-gradient(90deg, #30273b, #695978, #30273b); }
+.table-top i { position: absolute; inset: 5px; border: 2px solid #9c6cff; border-radius: 50%; box-shadow: inset 0 0 9px #9c6cff, 0 0 10px #9c6cff; }
+.table-fixture.configured .table-top i { border-color: #52e19b; box-shadow: inset 0 0 9px #52e19b, 0 0 12px #52e19b; }
+.selection-copy { margin: 13px 2px 0; color: #aaa2b8; font-size: .86rem; }
+.selection-copy strong { color: #e8dcff; }
+.sync-check { margin-top: 12px; }
+.selected-power { display: flex; gap: 8px; margin-top: 12px; }
+.selected-power button { min-height: 40px; font-size: .82rem; }
+/* Tabs. Each panel keeps the two-column card grid of the page it replaced. */
+.tabs { grid-column: 1 / -1; display: flex; gap: 8px; padding: 0 2px; }
+.tab { flex: 1 1 0; min-height: 44px; background: #211a2eaa; border-color: #3d3450; color: #a79cba; font-size: .9rem; }
+.tab.is-active { background: #4b357a; border-color: #9a74da; color: #fff; box-shadow: 0 0 0 3px #9c6cff1f; }
+.tab-panel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-content: start; }
+
+.players-card, .plans-card { grid-column: 1 / -1; }
+
+/* One card per player, holding one row per light. */
+.plan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.plan { padding: 13px; border: 1px solid #3f364d; border-radius: 16px; background: #15111f80; }
+.plan.is-current { border-color: #a378f4; box-shadow: 0 0 0 3px #9c6cff1f; }
+.plan-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.plan-head button { min-height: 36px; padding-inline: 12px; font-size: .78rem; }
+.plan-swatch { width: 26px; height: 26px; border-radius: 8px; border: 1px solid #6a5f7d; }
+.plan-title { min-width: 0; font-size: .95rem; font-weight: 700; }
+.plan-title small { display: block; color: #8f89a1; font-size: .68rem; font-weight: 500; }
+/* Save this player's plan to a file, or put a saved one on them. */
+.plan-profile { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 10px; }
+.plan-profile button { min-height: 32px; padding-inline: 9px; font-size: .72rem; }
+.plan-profile select { min-width: 0; min-height: 32px; padding: 0 8px; font-size: .75rem; }
+.plan-announcer { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 9px; margin: 9px 0 0; color: #aaa2b8; font-size: .74rem; }
+.plan-announcer select { min-width: 0; min-height: 34px; padding: 0 8px; font-size: .75rem; }
+.plan-light { margin-top: 10px; padding: 10px 11px; border: 1px solid #342d44; border-radius: 12px; background: #100d1980; }
+.plan-light.is-off { opacity: .5; }
+.plan-light-head { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 7px; }
+.plan-enable { min-height: 34px; padding-inline: 10px; font-size: .76rem; font-weight: 700; color: #8f89a1; background: #171122; border-color: #3a3348; text-align: left; }
+.plan-enable.is-on { color: #fff; background: #4b357a; border-color: #8e6ad2; }
+/* On this player's list, but the light itself is not connected yet. */
+.plan-light.is-offline .plan-enable { background: #2c2438; border-color: #6b5a8c; color: #b6a8cf; }
+.plan-light.is-offline .plan-enable::after { content: " ·"; }
+.plan-color { width: 44px; min-height: 34px; padding: 0 3px; border-color: #4b425e; background: #100d19; }
+.plan-pick { min-height: 34px; padding-inline: 9px; font-size: .72rem; }
+.plan-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin-top: 8px; }
+.plan-row.is-off { opacity: .45; }
+.plan-white { min-height: 34px; padding-inline: 10px; font-size: .74rem; font-weight: 700; color: #8f89a1; background: #171122; border-color: #3a3348; }
+/* Warm to cool, so an active white button reads as the warmth it is set to. */
+.plan-white.is-on { color: #241a10; background: linear-gradient(90deg, #ffb765, #fff5e6 55%, #cfe4ff); border-color: #ffd9a8; }
+.plan-white-row input[type="range"] { accent-color: #ffcf99; }
+.plan-row label { margin: 0; font-size: .74rem; }
+.plan-row select { min-height: 34px; padding: 0 8px; font-size: .78rem; }
+.plan-row output { min-width: 42px; color: #8f89a1; font-size: .74rem; text-align: right; }
+@media (max-width: 720px) { .plan-grid { grid-template-columns: 1fr; } }
+/* Moments tab: one card per game moment, built from the same plan pieces. */
+.moment { margin-top: 0; }
+.plan-light-head h3 { margin: 0; padding: 8px 2px; font-size: .95rem; }
+.moment-hint { margin: 8px 2px 0; color: #8f89a1; font-size: .74rem; }
+.moment-tone-row { grid-template-columns: auto auto 1fr auto; }
+.moment-lights-row { grid-template-columns: auto 1fr; }
+.moment-lights { display: flex; flex-wrap: wrap; gap: 6px; }
+.moment-toggle-row { grid-template-columns: auto; }
+.player-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0 4px; padding: 0; list-style: none; }
+.player-row { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #3f364d; border-radius: 14px; background: #15111f80; }
+.player-row.is-current { border-color: #a378f4; box-shadow: 0 0 0 3px #9c6cff1f; }
+.player-swatch { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #6a5f7d; flex: none; }
+.player-name { min-width: 0; font-weight: 700; font-size: .92rem; }
+/* Only the name itself truncates; the detail line below it wraps instead. */
+.player-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-name small { display: block; color: #8f89a1; font-size: .68rem; font-weight: 500; letter-spacing: .04em; }
+.player-name .turn-tag { color: #c9afff; font-weight: 700; }
+.player-row button { min-height: 38px; padding-inline: 12px; font-size: .78rem; }
+.player-row .assign { background: #6742a4; border-color: #9a74da; }
+.player-display-controls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; padding-top: 3px; }
+.player-display-controls label { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin: 0; color: #aaa2b8; font-size: .72rem; }
+.player-display-controls input { min-width: 0; }
+.player-display-controls output { min-width: 38px; color: #8f89a1; text-align: right; }
+
+/* Which lights this player's turn drives. */
+.player-targets { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.player-targets button {
+  flex: 1 1 auto;
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: .7rem;
+  font-weight: 600;
+  color: #8f89a1;
+  background: #100d19;
+  border: 1px solid #3a3348;
+  border-radius: 8px;
+}
+.player-targets button.is-on { color: #fff; background: #4b357a; border-color: #8e6ad2; }
+/* A light that is on this player's list but not reachable yet. */
+.player-targets button.is-on.is-offline { background: #2c2438; border-color: #6b5a8c; color: #b6a8cf; }
+.player-targets button.is-on.is-offline::after { content: " ·"; }
+
+.turn-settings { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #332c42; }
+.turn-settings .check { margin: 0; }
+.turn-slider { display: grid; gap: 2px; margin: 0 0 6px 30px; }
+.turn-slider label { margin: 0; }
+.turn-slider.is-off { opacity: .4; }
+@media (max-width: 600px) {
+  .player-list { grid-template-columns: 1fr; }
+  .player-display-controls { grid-template-columns: 1fr; }
+}
+
+.connection details summary { cursor: pointer; color: #dcd3ea; font-weight: 700; }
+.device-settings { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 16px; }
+.device-row { padding: 14px; border: 1px solid #3f364d; border-radius: 14px; background: #15111f80; }
+.device-row label { margin-top: 0; }
+.ip-actions { display: grid; grid-template-columns: 1fr repeat(2, auto); gap: 7px; }
+.ip-actions button { padding-inline: 11px; }
+.device-settings > .wide { grid-column: 1; }
+.discovery-button { margin-top: 0; background: linear-gradient(135deg, #8c55f6, #6840c9); }
+.discovery-panel { padding: 16px; border: 1px solid #68538a; border-radius: 16px; background: linear-gradient(145deg, #2b2040, #181320); box-shadow: inset 0 0 24px #9c6cff12; }
+.discovery-panel h3 { margin: 5px 0 7px; font-size: 1.1rem; }
+.discovery-panel p { margin: 0 0 12px; color: #bcb5ca; font-size: .86rem; line-height: 1.45; }
+.assignment-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.hidden { display: none !important; }
+label { display: flex; justify-content: space-between; margin: 14px 0 7px; color: #bcb5ca; font-size: .86rem; }
+input, select, button { min-height: 46px; border-radius: 12px; border: 1px solid #494058; font: inherit; }
+input, select { width: 100%; padding: 0 13px; background: #100d19; color: #fff; }
+input[type="range"] { min-height: 30px; padding: 0; accent-color: #9c6cff; }
+.pad-wrap { touch-action: none; user-select: none; -webkit-user-select: none; border-radius: 16px; overflow: hidden; box-shadow: 0 0 0 1px #494058; }
+.pad-wrap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.wheel-wrap { width: min(240px, 100%); aspect-ratio: 1 / 1; margin: 0 auto; border-radius: 50%; }
+.wheel-wrap canvas { border-radius: 50%; }
+.white-pad-wrap { width: 100%; aspect-ratio: 2.4 / 1; }
+.axis-labels { display: flex; justify-content: space-between; margin-top: 6px; color: #8f89a1; font-size: .75rem; }
+.readout { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: .88rem; color: #d8d2e6; }
+.swatch { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #494058; flex: none; }
+button { padding: 0 15px; background: #8c55f6; border-color: #9e70f7; color: white; font-weight: 700; cursor: pointer; }
+button:active { transform: translateY(1px); }
+.fixture:active { transform: translate(-50%, calc(-50% + 1px)); }
+.link-toggle:active { transform: translate(35px, -44px); }
+button.secondary { background: #292337; border-color: #4b425e; }
+button.danger { background: #50243c; border-color: #81405e; }
+.row, .three { display: grid; gap: 9px; grid-template-columns: 1fr 1fr; }
+.three { grid-template-columns: repeat(3, 1fr); margin-top: 15px; }
+.wide { width: 100%; margin-top: 14px; }
+.check { justify-content: flex-start; align-items: center; gap: 10px; }
+.check input { width: 20px; min-height: 20px; accent-color: #9c6cff; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: #635c6d; box-shadow: 0 0 0 5px #635c6d22; }
+.dot.connected { background: #52e19b; box-shadow: 0 0 14px #52e19b; }
+/* Sits below the cards, clear of everything you touch during a game, with the
+   room to say what it does — it ends the session for every device at once. */
+.server-stop { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 78px; padding: 14px 16px; border: 1px solid #443b53; border-radius: 16px; background: #1b172588; }
+.server-stop__hint { flex: 1; min-width: 220px; font-size: .82rem; line-height: 1.45; color: #a99fbb; }
+.server-stop button { min-height: 44px; }
+.server-stop.is-stopped button { background: #292337; border-color: #4b425e; color: #8b8296; cursor: default; }
+
+#status { position: fixed; z-index: 5; bottom: 16px; left: 50%; translate: -50%; width: min(520px, calc(100% - 32px)); padding: 13px 16px; border: 1px solid #443b53; border-radius: 14px; background: #1b1725ee; text-align: center; box-shadow: 0 10px 30px #0008; }
+#status.success { border-color: #347656; } #status.error { border-color: #a3445f; color: #ffb5c5; } #status.busy { color: #c9afff; }
+#status.busy::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 9px; border: 2px solid #8e72bd; border-top-color: #eadfff; border-radius: 50%; vertical-align: -1px; animation: status-spin .8s linear infinite; }
+@keyframes status-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  main { grid-template-columns: 1fr; padding-top: 14px; }
+  header, .room-card, .connection, .tabs, .tab-panel { grid-column: 1; }
+  .tab-panel { grid-template-columns: 1fr; }
+  .card { padding: 18px; }
+  .section-heading { align-items: flex-start; }
+  .global-power { flex-direction: column; }
+  .global-power button { min-height: 36px; }
+  .room { min-height: 360px; }
+  .bulb-fixture { width: 86px; }
+  .device-settings { grid-template-columns: 1fr; }
+  .device-settings > .wide { grid-column: 1; }
+  .ip-actions { grid-template-columns: 1fr repeat(2, auto); }
+  .ip-actions input { grid-column: 1 / -1; }
+  .assignment-buttons { grid-template-columns: 1fr; }
+}
+
+.plan-announcer[hidden] { display: none; }

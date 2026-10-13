@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+tapo_credentials.json
+table_config.json
+table_config.json.*
+*.json.tmp
+_site/

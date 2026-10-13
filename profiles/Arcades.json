@@ -1,0 +1,49 @@
+{
+  "name": "Coach",
+  "hue": 357,
+  "saturation": 100,
+  "brightness": 80,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 64,
+      "saturation": 88,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 6.2
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 176,
+      "saturation": 36,
+      "brightness": 100,
+      "temperature": 6450,
+      "effect": "none",
+      "effect_seconds": 0.8
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 181,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2600,
+      "effect": "cycle",
+      "effect_seconds": 5.8
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 176,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 7.4
+    }
+  },
+  "saved_at": "2026-08-26T23:00:49"
+}

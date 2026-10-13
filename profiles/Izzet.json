@@ -1,0 +1,49 @@
+{
+  "name": "P2",
+  "hue": 210,
+  "saturation": 85,
+  "brightness": 90,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 236,
+      "saturation": 100,
+      "brightness": 80,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 165,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 21,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 3.5
+    }
+  },
+  "saved_at": "2026-08-05T22:42:45"
+}

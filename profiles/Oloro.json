@@ -1,0 +1,49 @@
+{
+  "name": "Tune",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 209,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 4.8
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 287,
+      "saturation": 44,
+      "brightness": 100,
+      "temperature": 2850,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 61,
+      "saturation": 100,
+      "brightness": 99,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 4.2
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 273,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 9.2
+    }
+  },
+  "saved_at": "2026-08-26T23:00:57"
+}

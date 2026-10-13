@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>MTG Commander Table</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="table" class="table">
+    <!-- Quadrants are injected by js/app.js -->
+  </main>
+
+  <!-- Center hub: rotation-neutral controls at the intersection of the quadrants -->
+  <div id="hub" class="hub">
+    <div class="hub__cluster">
+      <!-- The turn compass: one arc per seat, pointing at its quadrant, built by
+           js/app.js. A lit comet travels round it to whoever's turn it is. -->
+      <div class="hub__compass" id="turn-compass" aria-hidden="true"></div>
+      <button class="hub__satellite hub__satellite--left" id="quick-house-lights" type="button"
+              title="Toggle house lights" aria-label="Toggle house lights" aria-pressed="false">
+        <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9.2 18h5.6M10.2 21h3.6"/>
+          <path class="hub__icon-bulb" d="M12 3a6 6 0 0 0-3.7 10.7c.7.6 1.1 1.4 1.2 2.3h5c.1-.9.5-1.7 1.2-2.3A6 6 0 0 0 12 3z"/>
+        </svg>
+      </button>
+      <button class="hub__satellite hub__satellite--top hub__satellite--outer" id="day-night-toggle" type="button" hidden
+              title="Switch day and night" aria-label="Switch day and night">&#9789;</button>
+      <button class="hub__satellite hub__satellite--top" id="coin-flip" type="button"
+              title="Flip a coin" aria-label="Flip a coin">
+        <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5"/>
+          <circle cx="12" cy="12" r="5"/>
+        </svg>
+      </button>
+      <button class="hub__turn" id="turn-next" title="Next player" aria-label="Pass the turn to the next player">
+        <span class="hub__turn-glyph" id="turn-glyph">&#8635;</span>
+      </button>
+      <button class="hub__satellite hub__satellite--bottom" id="quick-resend-lights" type="button"
+              title="Resend the current lighting" aria-label="Resend the current lighting">&#10227;</button>
+      <button class="hub__btn" id="hub-toggle" title="Table controls" aria-label="Table controls">
+        <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h9M17 7h3M4 17h3M11 17h9"/>
+          <circle cx="15" cy="7" r="2.2"/>
+          <circle cx="9" cy="17" r="2.2"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="hub__panel" id="hub-panel" hidden>
+      <div class="hub__panel-head">
+        <span class="hub__panel-title">Table controls</span>
+        <button class="hub__close" data-action="close" type="button" title="Close" aria-label="Close table controls">&times;</button>
+      </div>
+      <div class="hub__panel-body">
+        <section class="hub__section" aria-labelledby="hub-section-game">
+          <h3 class="hub__section-title" id="hub-section-game">Game</h3>
+          <div class="hub__row">
+            <span class="hub__label">Start</span>
+            <div class="hub__steps" id="start-picker" role="radiogroup" aria-label="Starting life total"></div>
+          </div>
+          <div class="hub__row">
+            <span class="hub__label">Order</span>
+            <div class="hub__steps" id="direction-picker" role="radiogroup" aria-label="Turn direction"></div>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action" id="random-first" data-action="random-first" type="button"
+                    title="Spin through the players and randomly pick who goes first">Pick first player</button>          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--draw" id="declare-draw" data-action="declare-draw" type="button"
+                    title="End the game as a draw between all players still alive">Declare draw</button>
+            <button class="hub__action hub__action--reset" data-action="reset" type="button"
+                    title="Every life total back to the start, and seat colours and art cleared">Reset game</button>
+          </div>
+        </section>
+
+        <section class="hub__section" aria-labelledby="hub-section-table">
+          <h3 class="hub__section-title" id="hub-section-table">Table</h3>
+          <div class="hub__row">
+            <button class="hub__action hub__action--switch hub__action--entrance" id="entrance-mode" data-action="entrance-mode" type="button"
+                    title="Cover every player panel with a name plaque until that player taps it" aria-pressed="false">
+              <span class="hub__action-text">Player entrance</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--entrance-reset" id="entrance-reset" data-action="entrance-reset" type="button"
+                    title="Put the name covers back over every player panel">Cover players again</button>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--switch" id="turn-timer" data-action="turn-timer" type="button"
+                    title="Show how long the current turn has been going, beside Your turn" aria-pressed="true">
+              <span class="hub__action-text">Turn clock</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="hub__row">
+            <span class="hub__label">Scene</span>
+            <div class="hub__steps hub__steps--daytime" id="daytime-picker" role="radiogroup" aria-label="Day and night atmosphere">
+              <button class="hub__step" data-action="set-daytime" data-daytime="none" type="button" role="radio">Off</button>
+              <button class="hub__step hub__step--day" data-action="set-daytime" data-daytime="day" type="button" role="radio">&#9728; Day</button>
+              <button class="hub__step hub__step--night" data-action="set-daytime" data-daytime="night" type="button" role="radio">&#9789; Night</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="hub__section" aria-labelledby="hub-section-lights">
+          <h3 class="hub__section-title" id="hub-section-lights">Lights</h3>
+          <div class="hub__row">
+            <button class="hub__action hub__action--switch" id="lights-follow" data-action="lights-follow" type="button" aria-pressed="true">
+              <span class="hub__action-text">Lights follow turn</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--switch hub__action--house" id="house-lights" data-action="house-lights" type="button"
+                    title="Plain white light on every bulb and the LED strip off, until you press it again" aria-pressed="false">
+              <span class="hub__action-text">House lights</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action" id="resend-lights" data-action="resend-lights" type="button"
+                    title="Send the current lighting to every light again, for when one has drifted out of step">Resend lights</button>
+          </div>
+        </section>
+
+        <section class="hub__section" aria-labelledby="hub-section-system">
+          <h3 class="hub__section-title" id="hub-section-system">Display &amp; system</h3>
+          <div class="hub__row">
+            <button class="hub__action" data-action="fullscreen" type="button">Fullscreen</button>
+          </div>
+          <div class="hub__row">
+            <a class="hub__action hub__action--lights" href="/lights" target="_blank" rel="noopener">Light controls &rarr;</a>
+            <a class="hub__action hub__action--lights" href="/leaderboard" target="_blank" rel="noopener">Leaderboard &rarr;</a>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--stop" id="shutdown" data-action="shutdown" type="button"
+                    title="Stop the local website on the table PC until it is started again">Turn off local server</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <template id="seat-template">
+    <section class="seat" data-seat="">
+      <div class="seat__inner">
+        <div class="seat__bg"></div>
+        <!-- Shades the art where text sits, and carries the light sweep that
+             marks the start of this player's turn. -->
+        <div class="seat__fx" aria-hidden="true"></div>
+        <button class="commander-card" type="button" aria-label="Reveal commander"
+                title="Click to reveal; drop an image here to choose the commander">
+          <span class="commander-card__flipper">
+            <span class="commander-card__face commander-card__face--back"></span>
+            <span class="commander-card__face commander-card__face--front"></span>
+          </span>
+        </button>
+        <button class="seat__entrance" type="button" aria-label="Reveal player panel">
+          <span class="seat__entrance-name"></span>
+        </button>
+        <header class="seat__header">
+          <span class="seat__plate">
+            <span class="seat__dot" aria-hidden="true"></span>
+            <span class="seat__name" contenteditable="true" spellcheck="false"></span>
+          </span>
+          <span class="seat__status">
+            <span class="seat__status-text">Your turn</span>
+            <span class="seat__timer" title="Time on this turn"></span>
+          </span>
+        </header>
+
+        <div class="seat__life">
+          <button class="seat__step seat__step--batch" data-delta="-5" data-glyph="−5" aria-label="Decrease life by 5"></button>
+          <button class="seat__step" data-delta="-1" data-glyph="−1" aria-label="Decrease life by 1"></button>
+          <div class="seat__total">
+            <span class="seat__number">40</span>
+            <span class="seat__delta" aria-live="polite"></span>
+          </div>
+          <button class="seat__step" data-delta="1" data-glyph="+1" aria-label="Increase life by 1"></button>
+          <button class="seat__step seat__step--batch" data-delta="5" data-glyph="+5" aria-label="Increase life by 5"></button>
+        </div>
+
+        <!-- Their own row rather than in the footer: tokens are big enough
+             that they would crowd out the counters down there. -->
+        <div class="seat__marks" aria-label="Designations and emblems"></div>
+
+        <footer class="seat__footer">
+          <div class="seat__counters" role="group" aria-label="Commander damage and poison"></div>
+        </footer>
+
+        <!-- Stamped across a player who is out, saying how. -->
+        <div class="seat__stamp" role="status">
+          <strong class="seat__stamp-title"></strong>
+          <span class="seat__stamp-detail"></span>
+        </div>
+
+        <div class="seat__tray" hidden aria-label="Commander damage and poison counters"></div>
+      </div>
+      <button class="seat__rotate" title="Rotate this panel" aria-label="Rotate this panel">&#8635;</button>
+    </section>
+  </template>
+
+  <!-- A table-wide, non-interactive atmosphere for the shared day/night state. -->
+  <div id="daytime-atmosphere" class="daytime-atmosphere" aria-hidden="true"></div>
+
+  <div id="screen-tint" class="screen-tint" aria-hidden="true"></div>
+
+  <!-- Sits above every seat and the hub, below the flying commander card
+       itself, so the whole board dims behind it instead of just one seat. -->
+  <div id="commander-dim" class="commander-dim" aria-hidden="true"></div>
+
+  <dialog id="image-crop-dialog" class="crop-dialog" aria-labelledby="image-crop-title">
+    <form method="dialog" class="crop-dialog__form">
+      <div class="crop-dialog__copy">
+        <span class="crop-dialog__eyebrow">PLAYER BACKGROUND</span>
+        <h2 id="image-crop-title">Choose the visible area</h2>
+        <p>The frame matches this player panel at the current window size.</p>
+      </div>
+      <canvas id="image-crop-preview" class="crop-dialog__preview"></canvas>
+      <div class="crop-dialog__controls">
+        <label>Horizontal <input id="image-crop-x" type="range" min="0" max="100" value="50"></label>
+        <label>Vertical <input id="image-crop-y" type="range" min="0" max="100" value="50"></label>
+        <label>Zoom <input id="image-crop-zoom" type="range" min="100" max="300" value="100"></label>
+      </div>
+      <div class="crop-dialog__actions">
+        <button value="cancel" type="button" id="image-crop-cancel">Cancel</button>
+        <button value="apply" type="button" id="image-crop-apply" class="crop-dialog__apply">Use background</button>
+      </div>
+    </form>
+  </dialog>
+
+  <section id="board-reveal" class="board-reveal" hidden aria-hidden="true">
+    <div class="board-reveal__half board-reveal__half--top">
+      <div class="board-reveal__card">
+        <span class="board-reveal__art"></span>
+        <span class="board-reveal__name"></span>
+      </div>
+    </div>
+    <div class="board-reveal__half board-reveal__half--bottom">
+      <div class="board-reveal__card">
+        <span class="board-reveal__art"></span>
+        <span class="board-reveal__name"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Split top/bottom and rotated the same way as board-reveal, so the spin
+       reads correctly from both long sides of the table, not just one. -->
+  <section id="first-player-reveal" class="first-player-reveal" hidden aria-live="assertive" aria-label="Randomly choosing the first player">
+    <div class="first-player-reveal__half first-player-reveal__half--top">
+      <span class="first-player-reveal__label">First player</span>
+      <strong class="first-player-reveal__name"></strong>
+    </div>
+    <div class="first-player-reveal__half first-player-reveal__half--bottom">
+      <span class="first-player-reveal__label">First player</span>
+      <strong class="first-player-reveal__name"></strong>
+    </div>
+  </section>
+
+  <!-- The coin toss. One coin on the table, seen from above, so it reads the
+       same from every seat; the result, and the heads-or-tails question when
+       the coin is being called, are written towards both long sides. Heads
+       is the planeswalker side and tails the lettered one; the faces are the
+       relief maps in static/, coloured for the player by css/style.css. The
+       coin's edge and the landing effects are built by js/app.js. -->
+  <section id="coin-toss" class="coin-toss" hidden aria-live="assertive" aria-label="Coin toss">
+    <div class="coin-toss__half coin-toss__half--top">
+      <strong class="coin-toss__result"></strong>
+      <span class="coin-toss__note"></span>
+      <span class="coin-toss__hint">Tap the coin to flip again</span>
+      <div class="coin-toss__call" role="group" aria-label="Call the coin">
+        <span class="coin-toss__ask">Call it</span>
+        <button class="coin-toss__pick" type="button" data-call="heads">Heads</button>
+        <button class="coin-toss__pick" type="button" data-call="tails">Tails</button>
+      </div>
+    </div>
+    <div class="coin-toss__half coin-toss__half--bottom">
+      <strong class="coin-toss__result"></strong>
+      <span class="coin-toss__note"></span>
+      <span class="coin-toss__hint">Tap the coin to flip again</span>
+      <div class="coin-toss__call" role="group" aria-label="Call the coin">
+        <span class="coin-toss__ask">Call it</span>
+        <button class="coin-toss__pick" type="button" data-call="heads">Heads</button>
+        <button class="coin-toss__pick" type="button" data-call="tails">Tails</button>
+      </div>
+    </div>
+    <div class="coin-toss__stage" aria-hidden="true">
+      <div class="coin-toss__shadow"></div>
+      <div class="coin-toss__fx"></div>
+      <div class="coin">
+        <span class="coin__face coin__face--heads"></span>
+        <span class="coin__face coin__face--tails"></span>
+      </div>
+    </div>
+  </section>
+
+  <section id="winner-takeover"class="winner-takeover" hidden aria-live="assertive" aria-label="Game winner">
+    <div class="winner-takeover__background"></div>
+    <div class="winner-takeover__shade"></div>
+    <div id="winner-confetti" class="winner-confetti" aria-hidden="true"></div>
+    <div class="winner-takeover__content">
+      <span class="winner-takeover__label">WINNER</span>
+      <strong id="winner-takeover-name" class="winner-takeover__name">Player</strong>
+    </div>
+  </section>
+
+  <dialog id="game-result-dialog" class="result-dialog" aria-labelledby="game-result-title">
+    <form id="game-result-form" class="result-dialog__form">
+      <div class="result-dialog__winner" aria-hidden="true">&#9813;</div>
+      <span class="result-dialog__eyebrow">GAME OVER</span>
+      <h2 id="game-result-title">Winner wins!</h2>
+      <p>Confirm the final ranking and add each deck. Tied places are allowed.</p>
+      <label class="result-dialog__date">Game date<input id="result-game-date" type="date" required></label>
+      <div class="result-dialog__head" aria-hidden="true"><span>Rank</span><span>Player</span><span>Deck</span></div>
+      <div id="game-result-rows"></div>
+      <div id="game-result-status" class="result-dialog__status" role="status" aria-live="polite"></div>
+      <div class="result-dialog__actions">
+        <button type="button" class="result-dialog__later" id="game-result-later">Not now</button>
+        <button type="submit" class="result-dialog__save">Save result</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Emblem data first: app.js reads window.MTG_EMBLEMS as it builds a tray. -->
+  <script src="js/emblems.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+{
+  "name": "Borgo",
+  "hue": 310,
+  "saturation": 100,
+  "brightness": 80,
+  "announcer_sound": "Borgo_Urza.mp3",
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 238,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.3
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 185,
+      "saturation": 40,
+      "brightness": 100,
+      "temperature": 6500,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 241,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 6450,
+      "effect": "breathe",
+      "effect_seconds": 3.9
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 247,
+      "saturation": 100,
+      "brightness": 100,
+      "temperature": 2850,
+      "effect": "pulse",
+      "effect_seconds": 5.5
+    }
+  },
+  "saved_at": "2026-09-10T23:21:41"
+}
