@@ -49,59 +49,64 @@
     "Azlask": {
       "commander": "Azlask, the Swelling Scourge",
       "colors": "WUBRG",
+      "card_colors": "C",
+      "type_line": "Legendary Creature \u2014 Eldrazi",
       "art": "Backgrounds/Players/AzlaskBorgo.png",
       "cards": [
         "Backgrounds/Commander/Azlask.jpg"
       ],
       "sound": "Azlask.wav",
-      "card_colors": "C",
-      "type_line": "Legendary Creature \u2014 Eldrazi"
+      "volume": 66
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
+      "colors": "WRG",
+      "card_colors": "WRG",
+      "type_line": "Legendary Creature \u2014 Human Soldier Mercenary",
       "art": "Backgrounds/Players/Cloud.png",
       "cards": [
         "Backgrounds/Commander/Cloud.webp"
       ],
-      "colors": "WRG",
       "sound": "FF7.wav",
-      "card_colors": "WRG",
-      "type_line": "Legendary Creature \u2014 Human Soldier Mercenary"
+      "volume": 65
     },
     "Commodoro": {
       "commander": "Commodore Guff",
       "colors": "WUR",
+      "card_colors": "WUR",
+      "type_line": "Legendary Planeswalker \u2014 Guff",
       "art": "Backgrounds/Players/CommodorGuff.png",
       "art_focus": "61.1% 0%",
       "cards": [
         "Backgrounds/Commander/CommodorGuff.webp"
       ],
       "sound": "Guff.wav",
-      "card_colors": "WUR",
-      "type_line": "Legendary Planeswalker \u2014 Guff"
+      "volume": 53
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
       "colors": "WUBRG",
+      "card_colors": "WUBRG",
+      "type_line": "Legendary Artifact Creature \u2014 Scarecrow",
       "art": "Backgrounds/Players/Scarecrow.png",
       "art_focus": "52.8% 13.7%",
       "cards": [
         "Backgrounds/Commander/Dwight_O_lantern.webp"
       ],
       "sound": "Dwight_o_lantern.wav",
-      "card_colors": "WUBRG",
-      "type_line": "Legendary Artifact Creature \u2014 Scarecrow"
+      "volume": 88
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
+      "colors": "WUBRG",
+      "card_colors": "WBG",
+      "type_line": "Legendary Creature \u2014 Mutant Ninja Turtle // Legendary Creature \u2014 Dryad Druid",
       "art": "Backgrounds/Players/TMNT.png",
       "cards": [
         "Backgrounds/Commander/LeonardoTMNT.webp"
       ],
-      "colors": "WUBRG",
       "sound": "Leonardo_The_Balance.wav",
-      "card_colors": "WBG",
-      "type_line": "Legendary Creature \u2014 Mutant Ninja Turtle // Legendary Creature \u2014 Dryad Druid"
+      "volume": 47
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
@@ -138,36 +143,39 @@
     "Urza": {
       "commander": "Urza, Lord High Artificer",
       "colors": "U",
+      "card_colors": "U",
+      "type_line": "Legendary Creature \u2014 Human Artificer",
       "art": "Backgrounds/Players/Urza.png",
       "cards": [
         "Backgrounds/Commander/Urza.jpg"
       ],
       "sound": "Electricity.mp3",
-      "card_colors": "U",
-      "type_line": "Legendary Creature \u2014 Human Artificer"
+      "volume": 15
     },
     "Yuna": {
       "commander": "Yuna, Grand Summoner",
       "colors": "WUG",
+      "card_colors": "WUG",
+      "type_line": "Legendary Creature \u2014 Human Cleric",
       "art": "Backgrounds/Players/Yuna.png",
       "cards": [
         "Backgrounds/Commander/Yuna.jpg"
       ],
       "sound": "Chimes.mp3",
-      "card_colors": "WUG",
-      "type_line": "Legendary Creature \u2014 Human Cleric"
+      "volume": 32
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
       "colors": "C",
+      "card_colors": "C",
+      "type_line": "Legendary Creature \u2014 Eldrazi",
       "art": "Backgrounds/Players/Zulhodok.png",
       "art_focus": "52.6% 0.4%",
       "cards": [
         "Backgrounds/Commander/Zhulodok.jpg"
       ],
       "sound": "Lovecraft Growl.mp3",
-      "card_colors": "C",
-      "type_line": "Legendary Creature \u2014 Eldrazi"
+      "volume": 62
     },
     "Vaevictis": {
       "commander": "Vaevictis asmadi, the Dire",
@@ -213,14 +221,15 @@
     "Beamtown Bullies": {
       "commander": "Beamtown Bullies",
       "colors": "BRG",
+      "card_colors": "BRG",
+      "type_line": "Legendary Creature \u2014 Ogre Devil Warrior",
       "art": "Backgrounds/Players/BeamtownBullies.png",
       "art_focus": "52.4% 2.6%",
       "cards": [
         "Backgrounds/Commander/BeamtownBullies.jfif"
       ],
       "sound": "BeamTownBullies.wav",
-      "card_colors": "BRG",
-      "type_line": "Legendary Creature \u2014 Ogre Devil Warrior"
+      "volume": 39
     }
   }
 }
