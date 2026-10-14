@@ -1554,9 +1554,16 @@ async function loadJson(path) {
    empty, opaque .grimoire, so nothing flashes before this builds the book. */
 const INTRO_DEFAULTS = {
   chain: "", sound: "", thud: "", page: "", volume: 80, repeat: "always", rattle: 90, rattle_every: 0.7,
-  pages: 18, shuffle_seconds: 1.8, glow_seconds: 2.5, flight_seconds: 1.6,
+  pages: 18, shuffle_seconds: 1.8, glow_seconds: 2.5, flight_seconds: 1.6, rotation_speed: 2,
 };
 const introSettings = loadJson("intro.json").then((saved) => ({ ...INTRO_DEFAULTS, ...saved })).catch(() => ({ ...INTRO_DEFAULTS }));
+/* 1x is one turn in 240 seconds; the current 2x default is 120 seconds. */
+function applyIntroRotationSpeed(value) {
+  const number = Number(value);
+  const speed = Number.isFinite(number) ? Math.max(0.5, Math.min(8, number)) : INTRO_DEFAULTS.rotation_speed;
+  document.documentElement.style.setProperty("--sigil-spin-duration", `${240 / speed}s`);
+}
+introSettings.then((settings) => applyIntroRotationSpeed(settings.rotation_speed));
 const RUNES = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ";
 /* Resolved once start() has drawn the page, theme and all, which the
    wheel's flight to its corner needs. */
@@ -1834,25 +1841,68 @@ function gibberish(variant = Math.floor(Math.random() * 4)) {
     `<text class="ink-folio" x="194" y="320">${Math.floor(between(12, 180))}</text>`,
     manuscriptStudy(variant),
   ];
-  parts.push(`<path class="ink-bold ink-red" d="${scribble(30, 35, between(80, 147))}"/>`);
-  const notes = variant === 0 ? [[31, 72, 42], [164, 81, 44], [28, 238, 94], [119, 254, 81]]
-    : variant === 1 ? [[28, 94, 45], [157, 100, 49], [28, 203, 56], [149, 231, 54]]
-      : variant === 2 ? [[31, 83, 73], [142, 82, 58], [28, 238, 82], [139, 264, 65]]
-        : [[28, 87, 47], [155, 90, 53], [28, 254, 76], [129, 275, 76]];
-  for (const [x, y, width] of notes) {
-    const tilt = between(-7, 5).toFixed(1);
-    parts.push(`<g class="study-notes" transform="rotate(${tilt} ${x} ${y})">
-      <path d="${scribble(x, y, width * between(0.7, 1))}"/>
-      <path d="${scribble(x + between(0, 9), y + between(8, 11), width * between(0.45, 0.87))}"/>
-      ${Math.random() < 0.45 ? `<text x="${x}" y="${y + 19}">${runes(5 + Math.floor(Math.random() * 6))}</text>` : ""}</g>`);
+  const line = (x, y, width, pale = false) => {
+    const tilt = between(-4.8, 3.6).toFixed(1);
+    const weight = between(pale ? 0.3 : 0.55, pale ? 0.68 : 1.24).toFixed(2);
+    const opacity = between(pale ? 0.28 : 0.54, pale ? 0.6 : 0.94).toFixed(2);
+    const carbon = Math.random() < 0.16 ? "stroke:#1e1712;" : "";
+    parts.push(`<path d="${scribble(x, y, width)}" transform="rotate(${tilt} ${x} ${y})" style="stroke-width:${weight};opacity:${opacity};${carbon}"/>`);
+    // A worn pencil occasionally retraces a phrase, leaving a soft graphite ghost.
+    if (Math.random() < 0.1) parts.push(`<path d="${scribble(x + 1, y + 1.2, width * between(0.3, 0.65))}" style="stroke-width:1.7;opacity:.13"/>`);
+  };
+  parts.push(`<path class="ink-bold ink-red" d="${scribble(29, 36, between(112, 180))}"/>`);
+  // The central drawing stays readable, but the entire sheet carries irregular
+  // writing: broad headings, cramped marginalia, corrections and faded notes.
+  for (let y = 47; y < 83; y += between(7, 11)) line(between(27, 42), y, between(110, 181));
+  let leftY = between(87, 93);
+  let rightY = between(86, 93);
+  while (leftY < 247 || rightY < 247) {
+    if (leftY < 247) {
+      const x = between(27, 40);
+      line(x, leftY, between(33, variant === 1 ? 62 : 51), Math.random() < 0.28);
+      leftY += between(6.3, 11.8);
+    }
+    if (rightY < 247) {
+      const x = between(162, 177);
+      line(x, rightY, between(27, 209 - x), Math.random() < 0.3);
+      rightY += between(6.2, 12.5);
+    }
   }
-  parts.push(`<path class="study-construction" d="M${between(23, 40).toFixed(1)} 284 Q${between(80, 130).toFixed(1)} 277 211 288 M31 298 L${between(83, 160).toFixed(1)} 301"/>`);
+  for (let y = between(250, 254); y < 307; y += between(6.5, 10.5)) {
+    const x = between(27, 49);
+    line(x, y, between(79, 209 - x), Math.random() < 0.18);
+  }
+  // Ink spills into the drawing like an annotated sketchbook, at a softer hand.
+  for (let index = 0; index < 6; index += 1) {
+    const x = between(63, 143);
+    const y = between(96, 238);
+    line(x, y, between(30, 67), true);
+  }
+  for (let index = 0; index < 4; index += 1) {
+    const x = index % 2 ? between(164, 189) : between(28, 54);
+    const y = between(101, 239);
+    parts.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" style="font-size:${between(5.5, 9).toFixed(1)}px;opacity:${between(0.4, 0.83).toFixed(2)}" transform="rotate(${between(-14, 11).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})">${runes(2 + Math.floor(between(0, 4)))}</text>`);
+  }
+  // Compass ticks, alchemical seals and exploratory hatching vary by page.
+  const sealX = variant % 2 ? 195 : 42;
+  const sealY = variant === 2 ? 218 : 117;
+  parts.push(`<g class="study-construction" opacity=".7"><path d="${wobblyCircle(sealX, sealY, 13)} ${pentagram(sealX, sealY, 9)}"/>`);
+  for (let index = 0; index < 11; index += 1) {
+    const yy = 105 + index * between(6, 9);
+    const xx = variant === 1 ? 67 + index * 1.4 : variant === 2 ? 45 + index * 4.8 : 88 + index * 5;
+    parts.push(`<path d="M${xx.toFixed(1)} ${yy.toFixed(1)} l${between(8, 22).toFixed(1)} ${between(-5, -1).toFixed(1)}"/>`);
+  }
+  parts.push('</g>');
+  if (variant === 0 || variant === 3) {
+    parts.push(`<path class="study-red" stroke-width=".55" opacity=".7" d="${wobblyCircle(119, 147, variant === 0 ? 67 : 87)}"/>`);
+    parts.push(`<text x="75" y="244" style="font-size:8px;opacity:.78">${runes(11)}</text>`);
+  }
   return parts.join("");
 }
 
 const inkSheet = () => `<svg class="grimoire-ink" viewBox="0 0 240 330">${gibberish()}</svg>`;
 
-/* The last page: a heading and a few lines above and below the colour wheel,
+/* The last page: annotations above, below and beside the colour wheel,
    which is drawn in ink on the page's own sigil's plan (see .sigil in
    index.html: a 200-unit square, nodes on these points, each symbol at the
    same share of the width), so it can hand over to that one exactly. */
@@ -1861,7 +1911,15 @@ const SIGIL_POINTS = [[100, 40], [157.1, 81.5], [135.3, 148.5], [64.7, 148.5], [
 function lastPage() {
   const between = (low, high) => low + Math.random() * (high - low);
   const lines = [`<path class="ink-bold ink-red" d="${scribble(28, 36, between(70, 130))}"/>`];
-  for (const y of [54, 66, 274, 286, 298, 310]) lines.push(`<path d="${scribble(28, y, 184 * between(0.55, 1))}"/>`);
+  for (const y of [46, 55, 63, 72, 257, 266, 275, 284, 293, 302, 311]) {
+    const x = between(27, 42);
+    lines.push(`<path d="${scribble(x, y, between(110, 209 - x))}" style="stroke-width:${between(.38, 1.18).toFixed(2)};opacity:${between(.45, .92).toFixed(2)}"/>`);
+  }
+  for (let y = 96; y < 244; y += between(8, 13)) {
+    const x = between(27, 35);
+    lines.push(`<path d="${scribble(x, y, between(28, 42))}" style="stroke-width:${between(.3, .82).toFixed(2)};opacity:.62"/>`);
+    lines.push(`<path d="${scribble(between(178, 184), y + between(-3, 3), between(25, 31))}" style="stroke-width:${between(.3, .82).toFixed(2)};opacity:.62"/>`);
+  }
   const wheel = [wobblyCircle(100, 100, 94), wobblyCircle(100, 100, 84)].map((d) => `<path d="${d}"/>`);
   wheel.push(`<path class="ink-dashes" d="${wobblyCircle(100, 100, 89)}"/>`);
   SIGIL_POINTS.forEach((point, index) => {
@@ -1896,15 +1954,22 @@ function grimoireCover() {
 }
 
 function grimoireChains() {
-  const strand = (name, d) => `<g class="chain-strand" data-strand="${name}"><path class="chain-track" d="${d}"/>
-    ${Array.from({ length: 19 }, (_, index) => `<g class="chain-piece" data-link="${index}"><ellipse class="chain-link-shadow" rx="10" ry="6" cy="2"/><ellipse class="chain-link-metal" rx="10" ry="6"/><path class="chain-link-light" d="M-7 -3 Q0 -7 7 -3"/></g>`).join("")}</g>`;
-  return `<svg class="grimoire-chains" viewBox="0 0 240 330" aria-hidden="true">
-    <defs><linearGradient id="grimoire-iron" x1="0" y1="0" x2="0.35" y2="1"><stop stop-color="#d3c9ae"/><stop offset=".22" stop-color="#736e63"/><stop offset=".55" stop-color="#292b29"/><stop offset=".8" stop-color="#66645d"/><stop offset="1" stop-color="#161b19"/></linearGradient></defs>
-    ${strand("upper", "M-30 24 C42 79 80 124 120 164 C182 221 223 200 260 215 C341 227 385 345 485 590")}
-    ${strand("lower", "M-30 304 C39 269 80 207 120 164 C184 97 222 121 260 105 C344 82 393 308 490 580")}
+  const strand = (name, coverPath, escapePath) => `<g class="chain-strand" data-strand="${name}"><path class="chain-track" d="${coverPath} ${escapePath}"/><path class="chain-corner-track" d="${coverPath}"/>
+    ${Array.from({ length: 29 }, (_, index) => `<g class="chain-piece" data-link="${index}"><ellipse class="chain-link-shadow" rx="10" ry="6" cy="2"/><ellipse class="chain-link-metal" rx="10" ry="6"/><path class="chain-link-light" d="M-7 -3 Q0 -7 7 -3"/><path class="chain-link-wear" d="M-4 5 l3 -.8 M3 4.9 l2 -1"/></g>`).join("")}</g>`;
+  return `<svg class="grimoire-chains" viewBox="0 0 240 330" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="grimoire-chain-metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e0bd79"/><stop offset=".16" stop-color="#9b7743"/><stop offset=".42" stop-color="#473523"/><stop offset=".69" stop-color="#261d18"/><stop offset=".86" stop-color="#806039"/><stop offset="1" stop-color="#342519"/></linearGradient>
+      <linearGradient id="grimoire-lock-metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7ae69"/><stop offset=".2" stop-color="#745431"/><stop offset=".48" stop-color="#392719"/><stop offset=".74" stop-color="#8a6537"/><stop offset="1" stop-color="#251911"/></linearGradient>
+      <pattern id="grimoire-lock-patina" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r=".7" fill="#140d08" opacity=".65"/><circle cx="5.5" cy="5" r=".45" fill="#dfbf7b" opacity=".45"/><path d="M3 1 l1.6 .5" stroke="#1c120a" stroke-width=".5" opacity=".6"/></pattern>
+    </defs>
+    ${strand("upper", "M0 0 C36 54 82 120 120 165 C162 213 208 266 237.6 306.9", "C319 407 411 498 490 604")}
+    ${strand("lower", "M0 330 C38 276 82 210 120 165 C162 115 208 58 240 13.2", "C319 -88 414 -174 490 -268")}
     <g class="chain-lock"><path class="lock-shackle" d="M107 158 V145 C107 128 133 128 133 145 V158"/>
       <path class="lock-body" d="M101 153 Q120 149 138 151 L141 184 Q120 198 99 184 Z"/>
-      <path class="lock-scar" d="M104 158 Q121 155 135 158 M102 180 Q121 189 138 180"/>
+      <path class="lock-patina" d="M101 153 Q120 149 138 151 L141 184 Q120 198 99 184 Z"/>
+      <path class="lock-panel" d="M106 158 Q120 155 135 157 L137 181 Q120 190 103 181 Z"/>
+      <path class="lock-scar" d="M104 158 Q121 155 135 158 M102 180 Q121 189 138 180 M108 164 l8 -2 M128 177 l6 -1 M109 179 l4 1"/>
+      <circle class="lock-rivet" cx="106" cy="159" r="1.35"/><circle class="lock-rivet" cx="135" cy="158" r="1.35"/>
       <path class="lock-keyhole" d="M123 173 a4 4 0 1 0 -6 0 l-2 9 h10 Z"/>
     </g></svg>`;
 }
@@ -1912,23 +1977,26 @@ function grimoireChains() {
 function placeChainLinks(chains, advance = 0) {
   const geometry = chains._geometry ||= [...chains.querySelectorAll(".chain-strand")].map((strand) => {
     const track = strand.querySelector(".chain-track");
+    const cornerTrack = strand.querySelector(".chain-corner-track");
+    const cornerLength = cornerTrack.getTotalLength();
+    const cornerPoint = cornerTrack.getPointAtLength(cornerLength);
     const length = track.getTotalLength();
     const samples = Array.from({ length: Math.ceil(length / 4) + 1 }, (_, index) =>
       track.getPointAtLength(Math.min(length, index * 4)));
-    return { length, samples, links: [...strand.querySelectorAll(".chain-piece")] };
+    return { length, cornerLength, cornerPoint, samples, links: [...strand.querySelectorAll(".chain-piece")] };
   });
-  for (const { length, samples, links } of geometry) {
+  for (const { length, cornerLength, cornerPoint, samples, links } of geometry) {
     const pointAt = (distance) => {
+      if (Math.abs(distance - cornerLength) < .001) return cornerPoint;
       const position = Math.max(0, Math.min(samples.length - 1.001, distance / 4));
       const index = Math.floor(position);
       const mix = position - index;
       return { x: samples[index].x * (1 - mix) + samples[index + 1].x * mix,
         y: samples[index].y * (1 - mix) + samples[index + 1].y * mix };
     };
-    const start = 15;
-    const spacing = 15;
+    const spacing = cornerLength / (links.length - 1);
     for (const [index, link] of links.entries()) {
-      const distance = Math.min(length - 1, start + index * spacing + advance);
+      const distance = Math.min(length - 1, index * spacing + advance);
       const point = pointAt(distance);
       const next = pointAt(Math.min(length, distance + 2));
       const angle = Math.atan2(next.y - point.y, next.x - point.x) * 180 / Math.PI;
@@ -2037,8 +2105,8 @@ function rattle(parts, settings) {
    page's own placing (.grimoire's perspective makes the overlay what fixed
    things are placed in, and it covers the window), so where it lands is
    exactly where the real one is; measured with its spin stopped, it is moved
-   from the ink wheel by a transform about that spot. Its animations are set
-   to the real one's, so the two match when it lands. */
+   from the ink wheel by a transform about that spot. At landing, the real
+   sigil takes the moving copy's phase so its angle cannot jump. */
 function flyingSigil(overlay, sigil, from) {
   const element = document.createElement("div");
   element.className = "grimoire-flight";
@@ -2061,10 +2129,13 @@ function flyingSigil(overlay, sigil, from) {
   Object.assign(element.style, { transformOrigin: `${centreX.toFixed(1)}px ${centreY.toFixed(1)}px`, transform: start });
   return {
     element,
+    startGlow() {
+      element.classList.add("is-spinning");
+    },
     sync() {
-      const real = sigil.getAnimations({ subtree: true });
-      copy.getAnimations({ subtree: true }).forEach((animation, index) => {
-        if (real[index] && real[index].animationName === animation.animationName) animation.currentTime = real[index].currentTime;
+      const moving = copy.getAnimations({ subtree: true });
+      sigil.getAnimations({ subtree: true }).forEach((animation, index) => {
+        if (moving[index] && moving[index].animationName === animation.animationName) animation.currentTime = moving[index].currentTime;
       });
     },
     land(duration) {
@@ -2122,9 +2193,9 @@ const introInkArt = [];
 function wornInk(index = 0) {
   const variant = index % 4;
   if (introInkArt[variant]) return `<img class="grimoire-ink" alt="" src="${introInkArt[variant]}">`;
-  const spots = Array.from({ length: 12 }, () => `<ellipse cx="${25 + Math.random() * 200}" cy="${15 + Math.random() * 300}" rx="${1 + Math.random() * 6}" ry="${1 + Math.random() * 4}"/>`).join("");
+  const spots = Array.from({ length: 12 }, () => `<ellipse class="ink-stain" cx="${25 + Math.random() * 200}" cy="${15 + Math.random() * 300}" rx="${1 + Math.random() * 6}" ry="${1 + Math.random() * 4}"/>`).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 330">
-    <style>path,circle,ellipse{fill:none;stroke:#352213;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round}.ink-red,.study-red{stroke:#7c1d0e}.ink-bold{stroke-width:1.15}.ink-rule{stroke:#87452e;opacity:.3}.study-construction{stroke-width:.43;opacity:.55}.study-ink{stroke-width:.85}.study-notes{stroke-width:.58;opacity:.8}text{fill:#352213;font:italic 8px Georgia,serif}</style>
+    <style>path,circle,ellipse{fill:none;stroke:#352213;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round}.ink-stain{fill:#64401c;stroke:none}.ink-red,.study-red{stroke:#7c1d0e}.ink-bold{stroke-width:1.15}.ink-rule{stroke:#87452e;opacity:.3}.study-construction{stroke-width:.43;opacity:.55}.study-ink{stroke-width:.85}.study-notes{stroke-width:.58;opacity:.8}text{fill:#352213;font:italic 8px Georgia,serif}</style>
     <g fill="#64401c" opacity=".17">${spots}</g>
     <path d="M207 0 Q218 137 195 330 M0 249 Q119 232 240 251" style="stroke:#58371b;stroke-width:2;opacity:.12"/>
     <g opacity=".8">${gibberish(variant)}</g></svg>`;
@@ -2253,34 +2324,34 @@ async function openGrimoire(parts, settings, signal) {
   await wait(300);
   signal.throwIfAborted();
 
-  /* The ink wheel catches light and the rest dims; over it the page's own
-     wheel fades in, alive, and holds there for glow_seconds. */
+  /* Glow and rotate over the last page for the configured glow time. Keep
+     that same rotation running when the flight begins afterward. */
   const sigil = document.querySelector("body > .sigil");
+  const glow = settings.glow_seconds * 1000;
+  const travel = settings.flight_seconds * 1000;
   pentacle.classList.add("is-lit");
   introSound("sound", settings, 0, 1, signal);
-  dim.animate([{ opacity: 0 }, { opacity: 0.82 }], { duration: 900, delay: 250, easing: "ease", fill: "both" });
   const flight = sigil && flyingSigil(overlay, sigil, pentacle.getBoundingClientRect());
   if (flight) {
-    flight.sync();
     sigil.style.visibility = "hidden";
-    flight.element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 400, easing: "ease", fill: "both" });
-    pentacle.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, delay: 1000, fill: "forwards" });
+    flight.startGlow();
+    flight.element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.min(600, glow * 0.6), easing: "ease-out", fill: "both" });
+    pentacle.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.min(600, glow * 0.6), delay: 120, easing: "ease-in", fill: "forwards" });
   }
-  await wait(settings.glow_seconds * 1000);
+  dim.animate([{ opacity: 0 }, { opacity: 0.82 }], { duration: Math.min(900, glow * 0.7), easing: "ease-in-out", fill: "forwards" });
+  await wait(glow);
   signal.throwIfAborted();
 
-  /* The book fades during flight, but the page stays hidden until landing. */
-  const travel = settings.flight_seconds * 1000;
+  /* The sigil keeps rotating as it travels; the book fades underneath it. */
   const fade = { duration: travel, easing: "ease-in-out", fill: "forwards" };
   overlay.style.setProperty("--landing", `${travel}ms`);
   overlay.classList.add("is-landing");
   zoom.animate([{ opacity: 1 }, { opacity: 0 }], fade);
   dim.animate([{ opacity: 0.82 }, { opacity: 0 }], fade);
-  if (!flight) {
-    await wait(travel);
-  } else {
-    await flight.land(travel);
-    signal.throwIfAborted();
+  if (flight) await flight.land(travel);
+  else await wait(travel);
+  signal.throwIfAborted();
+  if (flight) {
     flight.sync();
     sigil.style.removeProperty("visibility");
     await flight.element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }).finished;
@@ -2315,6 +2386,7 @@ function playGrimoire(preview = null) {
   let settings = { ...INTRO_DEFAULTS, ...preview };
   const prepared = (preview ? Promise.resolve(settings) : introSettings).then((saved) => {
     settings = saved;
+    applyIntroRotationSpeed(saved.rotation_speed);
     if (!preview) {
       try {
         if (saved.repeat === "visit") sessionStorage.setItem("grimoire-opened", "1");

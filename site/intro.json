@@ -1,15 +1,15 @@
 {
   "chain": "ChainRattle.wav",
-  "chain": "ChainRattle.wav",
   "sound": "Magic Short.mp3",
   "thud": "Thud.mp3",
   "page": "",
   "repeat": "always",
   "volume": 82,
   "rattle": 90,
-  "rattle_every": 4.9,
-  "pages": 18,
+  "rattle_every": 2.1,
+  "pages": 35,
   "shuffle_seconds": 1.8,
-  "glow_seconds": 2.5,
-  "flight_seconds": 1.6
+  "glow_seconds": 3.2,
+  "flight_seconds": 2.1,
+  "rotation_speed": 4.6
 }

@@ -396,7 +396,7 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 
 /* Motion that never stops, all of it slow. */
 @media (prefers-reduced-motion: no-preference) {
-  .sigil { animation: spin 240s linear infinite; }
+  .sigil { animation: spin var(--sigil-spin-duration, 120s) linear infinite; }
   .sigil-ticks { transform-box: view-box; transform-origin: 50% 50%; animation: spin 90s linear infinite reverse; }
   .sigil-link--enemy { animation: star-flow 6s linear infinite; }
   /* All five: each colour's turn comes round, its ring, symbol and the
@@ -404,13 +404,13 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
   .sigil-link { animation: link-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
   .sigil-link--enemy { animation: star-flow 6s linear infinite, link-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
   .sigil-node { animation: ring-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
-  .sigil-symbol { animation: counter-spin 240s linear infinite, node-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
-  .sigil-symbol.is-flaring { animation: counter-spin 240s linear infinite, node-flare 1.6s ease-out; }
+  .sigil-symbol { animation: counter-spin var(--sigil-spin-duration, 120s) linear infinite, node-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
+  .sigil-symbol.is-flaring { animation: counter-spin var(--sigil-spin-duration, 120s) linear infinite, node-flare 1.6s ease-out; }
   .sigil-core { animation: core-breathe 10s ease-in-out infinite; }
   /* Colours in play: theirs beat as one, a heartbeat every 2.4 seconds. */
   .sigil.has-focus .sigil-node.is-lit { animation: ring-beat 2.4s ease-in-out infinite; }
-  .sigil.has-focus .sigil-symbol.is-lit { animation: counter-spin 240s linear infinite, symbol-beat 2.4s ease-in-out infinite; }
-  .sigil.has-focus .sigil-symbol.is-lit.is-flaring { animation: counter-spin 240s linear infinite, node-flare 1.6s ease-out; }
+  .sigil.has-focus .sigil-symbol.is-lit { animation: counter-spin var(--sigil-spin-duration, 120s) linear infinite, symbol-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .sigil-symbol.is-lit.is-flaring { animation: counter-spin var(--sigil-spin-duration, 120s) linear infinite, node-flare 1.6s ease-out; }
   .sigil.has-focus .sigil-link.is-lit { animation: link-beat 2.4s ease-in-out infinite; }
   .sigil.has-focus .sigil-link--enemy.is-lit { animation: star-flow 3s linear infinite, link-beat 2.4s ease-in-out infinite; }
   .sigil.has-focus .sigil-core { animation: core-beat 2.4s ease-in-out infinite; }
@@ -614,13 +614,13 @@ html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #00
    (flyingSigil() in site.js). The copy keeps the sigil's own placing; this
    layer covers the window and carries the move. */
 .grimoire-flight { position: absolute; inset: 0; opacity: 0; pointer-events: none; filter: brightness(1.8) drop-shadow(0 0 22px #ffcf7aaa); }
+.grimoire-flight:not(.is-spinning) .sigil, .grimoire-flight:not(.is-spinning) .sigil * { animation-play-state: paused !important; }
 /* Light escaping past the cover's edge as it rattles. */
 .grimoire-leak { position: absolute; top: 3%; right: -22px; bottom: 3%; width: 46px; border-radius: 50%; background: radial-gradient(ellipse at 25% 50%, #fff3c8, #ffbf4a99 32%, transparent 70%); opacity: 0; filter: blur(5px); pointer-events: none; }
 
 /* The cover: worn oxblood leather, tooled borders, bronze corners and a
    clasp, sized by its own width so it scales with the book. */
-/* 3px above the page: closer, and browsers can draw the page over the cover
-   near the spine as it lifts. */
+/* The closed cover sits above the complete stack of prebuilt leaves. */
 .grimoire-cover { position: absolute; inset: -7px -10px -7px 0; transform-origin: 0 50%; transform: translateZ(16px); transform-style: preserve-3d; }
 .grimoire-cover-front, .grimoire-cover-back {
   position: absolute; inset: 0; backface-visibility: hidden;
@@ -650,17 +650,21 @@ html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #00
 .grimoire-clasp { position: absolute; top: 50%; right: -5%; width: 11%; height: 7%; border-radius: 3px 9px 9px 3px; background: radial-gradient(circle at 68% 50%, #f0d49a 0 9%, #6a4a1e 12%, transparent 15%), linear-gradient(180deg, #c9a05a, #7a5524 60%, #4a3014); box-shadow: 0 2px 6px #000a, inset 0 0 0 1px #00000066; translate: 0 -50%; transition: opacity .3s ease, transform .4s cubic-bezier(.5, 0, .5, 1); }
 .grimoire.is-open .grimoire-clasp { opacity: 0; transform: translateX(40%) rotate(28deg); }
 
-/* Heavy iron chains sit above the cover until the first trusted tap. */
-.grimoire-chains { position: absolute; inset: -2%; width: 104%; height: 104%; overflow: visible; transform: translateZ(20px); pointer-events: none; }
-.chain-track { fill: none; stroke: none; }
-.chain-link-shadow { fill: none; stroke: #090b0b99; stroke-width: 6; }
-.chain-link-metal { fill: none; stroke: url(#grimoire-iron); stroke-width: 3.6; }
-.chain-link-light { fill: none; stroke: #ddd0afaa; stroke-width: 1; stroke-linecap: round; }
+/* Tarnished bronze chains cross the four actual corners of the closed cover. */
+.grimoire-chains { position: absolute; top: -7px; left: 0; width: calc(100% + 10px); height: calc(100% + 14px); overflow: visible; transform: translateZ(20px); pointer-events: none; }
+.chain-track, .chain-corner-track { fill: none; stroke: none; }
+.chain-link-shadow { fill: none; stroke: #0b0705bb; stroke-width: 6.5; }
+.chain-link-metal { fill: none; stroke: url(#grimoire-chain-metal); stroke-width: 4; }
+.chain-link-light { fill: none; stroke: #dec18a7a; stroke-width: .75; stroke-linecap: round; }
+.chain-link-wear { fill: none; stroke: #1d1712a0; stroke-width: .7; stroke-linecap: round; }
 .chain-lock { transform-origin: 120px 165px; }
-.lock-shackle { fill: none; stroke: #8a8271; stroke-width: 6; transform-origin: 107px 157px; }
-.lock-body { fill: #57462d; stroke: #a38a57; stroke-width: 1.8; }
-.lock-scar { fill: none; stroke: #c9af745e; stroke-width: 1.3; }
-.lock-keyhole { fill: #100d08; stroke: #a08b5a; stroke-width: .65; }
+.lock-shackle { fill: none; stroke: url(#grimoire-chain-metal); stroke-width: 6; transform-origin: 107px 157px; filter: drop-shadow(1px 1px 1px #090504bb); }
+.lock-body { fill: url(#grimoire-lock-metal); stroke: #22170e; stroke-width: 2; filter: drop-shadow(2px 3px 2px #090504bb); }
+.lock-patina { fill: url(#grimoire-lock-patina); stroke: none; }
+.lock-panel { fill: #38271976; stroke: #b08a5073; stroke-width: .8; }
+.lock-scar { fill: none; stroke: #d0ac6d7d; stroke-width: .7; }
+.lock-rivet { fill: #ad8850; stroke: #281b10; stroke-width: .45; }
+.lock-keyhole { fill: #100d08; stroke: #b5965d; stroke-width: .65; }
 
 .grimoire-hint { position: absolute; bottom: max(26px, env(safe-area-inset-bottom)); left: 50%; margin: 0; color: #d8c39a; font: italic 1.1rem var(--serif); letter-spacing: .03em; white-space: nowrap; text-shadow: 0 1px 4px #000; pointer-events: none; translate: -50% 0; animation: hint-in .8s 1.3s ease both, hint-breathe 2.4s 2.1s ease-in-out infinite alternate; }
 .grimoire-skip { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px; padding: 7px 14px; border: 1px solid #5a4630; border-radius: 999px; background: #0f0d0acc; color: #bfae90; font: 700 .75rem var(--display); letter-spacing: .06em; cursor: pointer; }
