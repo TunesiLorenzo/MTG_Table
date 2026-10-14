@@ -102,6 +102,7 @@
       "card_colors": "WBG",
       "type_line": "Legendary Creature \u2014 Mutant Ninja Turtle // Legendary Creature \u2014 Dryad Druid",
       "art": "Backgrounds/Players/TMNT.png",
+      "art_focus": "49.4% 41%",
       "cards": [
         "Backgrounds/Commander/LeonardoTMNT.webp"
       ],
