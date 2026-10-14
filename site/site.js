@@ -376,7 +376,7 @@ function playerView(name) {
     ${backLink}
     <section class="hero${slides.length ? " has-art" : ""}"${styleAttr(manaVar(playerColors(player)))}>
       ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
-      ${slides.length > 1 ? `<span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
+      ${slides.length > 1 ? `<span class="hero-wipe" aria-hidden="true"></span><span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
       <span class="hero-portrait">${avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
       <div><span class="eyebrow">PLAYER · #${position} IN THE STANDINGS</span><h1>${escapeHtml(player.name)}</h1>
       <p>${plural(player.games, "recorded game")} with ${plural(playedDecks(player), "deck")}${player.historicalWins ? `, plus ${plural(player.historicalWins, "win")} from before games were recorded` : ""}.</p></div>
@@ -439,27 +439,217 @@ function missingView(message) {
 
 /* ------------------------------------------------------------ slideshow -- */
 
-/* The player banner moves between their decks: each picture fades in and
-   slowly settles from a slight zoom. Every redraw starts it afresh. With
-   reduced motion the pictures still change, without the zoom. */
-const SLIDE_SECONDS = 7;
+/* The player banner moves between their decks. Each new picture is swiped in
+   along a slanted edge with a band of light riding it, while the one before
+   slides back and dims beneath; the picture on show settles from a slight
+   zoom until the next swipe. Every redraw starts it afresh. With reduced
+   motion the pictures cross-fade instead (see site.css). */
+const SLIDE_SECONDS = 4.5;
 let slideTimer = 0;
+
+/* Restarts a CSS animation that is already applied by toggling its class. */
+function replay(element, className) {
+  if (!element) return;
+  element.classList.remove(className);
+  void element.offsetWidth;
+  element.classList.add(className);
+}
 
 function startSlides() {
   clearInterval(slideTimer);
   const slides = [...app.querySelectorAll(".hero-slide")];
-  const label = app.querySelector(".hero-showing");
   if (!slides.length) return;
+  const hero = slides[0].closest(".hero");
+  const label = hero.querySelector(".hero-showing");
+  const wipe = hero.querySelector(".hero-wipe");
+  hero.style.setProperty("--slide-time", `${SLIDE_SECONDS}s`);
+  /* The light band leans with the swipe's edge, which crosses 30% of the
+     banner's width on the way down, so its angle depends on the banner. */
+  const rect = hero.getBoundingClientRect();
+  hero.style.setProperty("--wipe-skew", `${-Math.atan(0.3 * rect.width / Math.max(rect.height, 1))}rad`);
   let current = 0;
-  /* Two frames, so the first picture's zoom runs as a transition too. */
+  /* Two frames, so the first picture fades in rather than appearing. */
   requestAnimationFrame(() => requestAnimationFrame(() => slides[0].classList.add("is-active")));
   if (slides.length < 2) return;
   slideTimer = setInterval(() => {
-    slides[current].classList.remove("is-active");
+    const previous = slides[current];
     current = (current + 1) % slides.length;
-    slides[current].classList.add("is-active");
-    if (label) label.textContent = slides[current].dataset.label;
+    const next = slides[current];
+    for (const slide of slides) slide.classList.remove("is-leaving");
+    previous.classList.remove("is-active", "is-entering");
+    previous.classList.add("is-leaving");
+    next.classList.add("is-active");
+    replay(next, "is-entering");
+    replay(wipe, "is-sweeping");
+    if (label) {
+      label.textContent = next.dataset.label;
+      replay(label, "is-changing");
+    }
   }, SLIDE_SECONDS * 1000);
+}
+
+/* -------------------------------------------------------------- effects -- */
+
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+/* The CSS for entrances only applies under .motion, so with reduced motion,
+   or before this runs, everything is simply there. */
+if (!reducedMotion.matches) document.documentElement.classList.add("motion");
+
+/* Panels, tiles and games rise into place as they scroll into view, a beat
+   apart within a row; bars grow to length and headline numbers count up. */
+let revealObserver = null;
+
+function countUp(element) {
+  const match = /^(\d+(?:\.\d+)?)(%?)$/.exec(element.textContent.trim());
+  if (!match) return;
+  const target = Number(match[1]);
+  const decimals = (match[1].split(".")[1] || "").length;
+  const begun = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - begun) / 900, 1);
+    element.textContent = `${(target * (1 - (1 - progress) ** 3)).toFixed(decimals)}${match[2]}`;
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function show(element) {
+  if (element.classList.contains("bar-chart")) {
+    element.classList.add("is-grown");
+    return;
+  }
+  element.classList.add("is-shown");
+  if (element.matches(".summary")) countUp(element.querySelector("strong"));
+  /* Once in place it hands its transform back to hover effects. */
+  element.addEventListener("transitionend", () => element.classList.remove("reveal", "is-shown"), { once: true });
+}
+
+function revealOnScroll() {
+  revealObserver?.disconnect();
+  if (reducedMotion.matches || !("IntersectionObserver" in window)) return;
+  revealObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      revealObserver.unobserve(entry.target);
+      show(entry.target);
+    }
+  }, { rootMargin: "0px 0px -6% 0px" });
+  const singles = app.querySelectorAll(".page-header, .hero, .card, .section-heading");
+  const rows = app.querySelectorAll(".summary, .deck-card, .game-card, .deck-gallery > a");
+  for (const element of singles) element.classList.add("reveal");
+  for (const element of rows) {
+    element.classList.add("reveal");
+    const place = [...element.parentElement.children].indexOf(element);
+    element.style.setProperty("--delay", `${(place % 8) * 70}ms`);
+  }
+  for (const chart of app.querySelectorAll(".bar-chart")) {
+    chart.querySelectorAll(".bar-fill").forEach((bar, index) => { bar.style.transitionDelay = `${150 + index * 60}ms`; });
+    revealObserver.observe(chart);
+  }
+  for (const element of [...singles, ...rows]) revealObserver.observe(element);
+}
+
+/* Deck tiles lean towards the pointer, with a light that follows it. */
+if (finePointer.matches && !reducedMotion.matches) {
+  app.addEventListener("pointermove", (event) => {
+    const card = event.target.closest(".deck-card");
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    card.style.setProperty("--tilt-x", `${((0.5 - y) * 9).toFixed(2)}deg`);
+    card.style.setProperty("--tilt-y", `${((x - 0.5) * 11).toFixed(2)}deg`);
+    card.style.setProperty("--shine-x", `${(x * 100).toFixed(1)}%`);
+    card.style.setProperty("--shine-y", `${(y * 100).toFixed(1)}%`);
+  });
+  app.addEventListener("pointerout", (event) => {
+    const card = event.target.closest(".deck-card");
+    if (!card || card.contains(event.relatedTarget)) return;
+    for (const name of ["--tilt-x", "--tilt-y", "--shine-x", "--shine-y"]) card.style.removeProperty(name);
+  });
+}
+
+/* Embers: motes of light in the five colours and bronze, drifting up behind
+   the page and shying away from the pointer. One canvas, redrawn each frame;
+   browsers stop the frames while the tab is hidden. Left out entirely for
+   reduced motion. */
+function startEmbers() {
+  const canvas = document.querySelector("#embers");
+  if (!canvas || reducedMotion.matches) return;
+  const context = canvas.getContext("2d");
+  const root = getComputedStyle(document.documentElement);
+  const colors = ["--mana-w", "--mana-u", "--mana-b", "--mana-r", "--mana-g", "--bronze-light", "--bronze-light"]
+    .map((name) => root.getPropertyValue(name).trim() || "#e3bb7a");
+  const pointer = { x: -1e4, y: -1e4 };
+  let width = 0;
+  let height = 0;
+  let motes = [];
+  const spawn = (anywhere) => ({
+    x: Math.random() * width,
+    y: anywhere ? Math.random() * height : height + 12,
+    radius: 0.6 + Math.random() ** 2 * 2.2,
+    rise: 10 + Math.random() * 28,
+    sway: 6 + Math.random() * 18,
+    phase: Math.random() * Math.PI * 2,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    glow: 0.35 + Math.random() * 0.5,
+    pushX: 0,
+    pushY: 0,
+  });
+  const resize = () => {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    motes = Array.from({ length: Math.round(Math.min(70, width * height / 20000)) }, () => spawn(true));
+  };
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 150); });
+  window.addEventListener("pointermove", (event) => { pointer.x = event.clientX; pointer.y = event.clientY; });
+  document.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
+  resize();
+  let last = performance.now();
+  const frame = (now) => {
+    const seconds = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    context.clearRect(0, 0, width, height);
+    context.globalCompositeOperation = "lighter";
+    for (const mote of motes) {
+      mote.phase += seconds;
+      const dx = mote.x - pointer.x;
+      const dy = mote.y - pointer.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 0 && distance < 140) {
+        const force = (1 - distance / 140) * 90 * seconds;
+        mote.pushX += dx / distance * force;
+        mote.pushY += dy / distance * force;
+      }
+      const damping = Math.pow(0.05, seconds);
+      mote.pushX *= damping;
+      mote.pushY *= damping;
+      mote.x += mote.pushX;
+      mote.y += mote.pushY - mote.rise * seconds;
+      if (mote.y < -20 || mote.x < -40 || mote.x > width + 40) Object.assign(mote, spawn(false));
+      const x = mote.x + Math.sin(mote.phase * 0.6) * mote.sway;
+      /* Brightest low on the screen, dissolving towards the top. */
+      const fade = Math.max(0, Math.min(1, mote.y / (height * 0.3)));
+      const alpha = mote.glow * (0.65 + 0.35 * Math.sin(mote.phase * 2.3)) * fade;
+      context.fillStyle = mote.color;
+      context.globalAlpha = alpha * 0.16;
+      context.beginPath();
+      context.arc(x, mote.y, mote.radius * 4.5, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = alpha;
+      context.beginPath();
+      context.arc(x, mote.y, mote.radius, 0, Math.PI * 2);
+      context.fill();
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
 }
 
 /* --------------------------------------------------------------- router -- */
@@ -472,6 +662,7 @@ function route() {
   else if (kind === "deck" && name) app.innerHTML = deckView(name);
   else app.innerHTML = homeView();
   startSlides();
+  revealOnScroll();
   afterRender();
 }
 
@@ -499,4 +690,5 @@ async function start() {
   }
 }
 
+startEmbers();
 start();
