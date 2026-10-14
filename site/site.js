@@ -10,7 +10,7 @@
  *
  *   #/                 standings, decks, archive
  *   #/player/<name>    one player's numbers and decks
- *   #/deck/<name>      one deck's numbers and pictures
+ *   #/deck/<name>      one deck's numbers and pictures, and its commander's sound
  */
 
 const app = document.querySelector("#app");
@@ -316,7 +316,19 @@ function gameCards(list, emptyText) {
 }
 
 const heading = (eyebrow, title, note = "") => `<div class="section-heading"><div><span class="eyebrow">${escapeHtml(eyebrow)}</span><h2>${escapeHtml(title)}</h2></div>${note ? `<span class="muted">${escapeHtml(note)}</span>` : ""}</div>`;
-const backLink = '<a class="back-link" href="#/">&larr; Leaderboard</a>';
+/* Back goes up one level: a deck opened from a player's page returns to that
+   player, and everything else to the leaderboard. Where a page was opened
+   from is kept in its history entry; see the router. */
+const routeOf = (hash) => String(hash || "").replace(/^#\/?/, "");
+function backLink(kind) {
+  const [from, ...rest] = routeOf(history.state?.from).split("/");
+  let name = rest.join("/");
+  try { name = decodeURIComponent(name); } catch (error) { /* as written */ }
+  const player = kind === "deck" && from === "player" && stats.playerIndex.get(keyOf(name));
+  return player
+    ? `<a class="back-link" href="${playerHref(player.name)}">&larr; ${escapeHtml(player.name)}</a>`
+    : '<a class="back-link" href="#/">&larr; Leaderboard</a>';
+}
 
 /* ---------------------------------------------------------------- views -- */
 
@@ -373,7 +385,7 @@ function playerView(name) {
   const decks = byPlay(player.decks);
   document.title = `${player.name} · MTG Leaderboard`;
   return `
-    ${backLink}
+    ${backLink("player")}
     <section class="hero${slides.length ? " has-art" : ""}"${styleAttr(manaVar(playerColors(player)))}>
       ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
       ${slides.length > 1 ? `<span class="hero-wipe" aria-hidden="true"></span><span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
@@ -412,8 +424,9 @@ function deckView(name) {
   ];
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
-    ${backLink}
+    ${backLink("deck")}
     <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
+      ${info.sound ? soundButton(info.sound) : ""}
       <div><span class="eyebrow">DECK · ${deck.games ? `#${position} BY WINS` : "NOT PLAYED YET"}</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
       <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}${deck.games ? `Played by ${deckPeople(deck).map(playerLink).join(", ")}` : deck.owners.size ? `Owned by ${deckPeople(deck).map(playerLink).join(", ")}, not played yet` : "Not played yet"}.</p></div>
     </section>
@@ -434,7 +447,7 @@ function deckView(name) {
 
 function missingView(message) {
   document.title = "MTG Leaderboard";
-  return `${backLink}<div class="empty">${escapeHtml(message)}</div>`;
+  return `${backLink()}<div class="empty">${escapeHtml(message)}</div>`;
 }
 
 /* ------------------------------------------------------------ slideshow -- */
@@ -507,7 +520,8 @@ function countUp(element) {
   const decimals = (match[1].split(".")[1] || "").length;
   const begun = performance.now();
   const step = (now) => {
-    const progress = Math.min((now - begun) / 900, 1);
+    /* A frame's timestamp can fall just before begun, hence the floor. */
+    const progress = Math.min(Math.max((now - begun) / 900, 0), 1);
     element.textContent = `${(target * (1 - (1 - progress) ** 3)).toFixed(decimals)}${match[2]}`;
     if (progress < 1) requestAnimationFrame(step);
   };
@@ -571,9 +585,11 @@ if (finePointer.matches && !reducedMotion.matches) {
 }
 
 /* Embers: motes of light in the five colours and bronze, drifting up behind
-   the page and shying away from the pointer. One canvas, redrawn each frame;
-   browsers stop the frames while the tab is hidden. Left out entirely for
-   reduced motion. */
+   the page and shying away from the pointer. Now and then a mana burst: one
+   colour's symbol flares at a random spot with a shockwave and a spray of
+   sparks, and its node on the sigil flares with it. Clicking the empty
+   background sets one off there. One canvas, redrawn each frame; browsers
+   stop the frames while the tab is hidden. Left out for reduced motion. */
 function startEmbers() {
   const canvas = document.querySelector("#embers");
   if (!canvas || reducedMotion.matches) return;
@@ -581,7 +597,10 @@ function startEmbers() {
   const root = getComputedStyle(document.documentElement);
   const colors = ["--mana-w", "--mana-u", "--mana-b", "--mana-r", "--mana-g", "--bronze-light", "--bronze-light"]
     .map((name) => root.getPropertyValue(name).trim() || "#e3bb7a");
+  const manaColor = Object.fromEntries(MANA_ORDER.map((color) => [color, root.getPropertyValue(`--mana-${color.toLowerCase()}`).trim()]));
   const pointer = { x: -1e4, y: -1e4 };
+  const sparks = [];
+  const rings = [];
   let width = 0;
   let height = 0;
   let motes = [];
@@ -611,6 +630,37 @@ function startEmbers() {
   window.addEventListener("pointermove", (event) => { pointer.x = event.clientX; pointer.y = event.clientY; });
   document.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   resize();
+
+  const burst = (x, y, color = MANA_ORDER[Math.floor(Math.random() * MANA_ORDER.length)]) => {
+    const tint = manaColor[color];
+    for (let index = 0; index < 42; index += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 70 + Math.random() * 260;
+      sparks.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, age: 0, life: 0.7 + Math.random() * 0.9, radius: 0.8 + Math.random() * 1.8, color: tint });
+    }
+    rings.push({ x, y, age: 0, life: 1.1, size: 90 + Math.random() * 70, color: tint });
+    const symbol = document.createElement("i");
+    symbol.className = `ms ms-${color.toLowerCase()} mana-burst`;
+    symbol.setAttribute("aria-hidden", "true");
+    symbol.style.cssText = `left:${x}px;top:${y}px;--mana:${tint}`;
+    symbol.addEventListener("animationend", () => symbol.remove());
+    document.body.append(symbol);
+    /* The node flares, then rejoins the slow pulse around the wheel. */
+    const node = document.querySelector(`.sigil-symbol[data-color="${color.toLowerCase()}"]`);
+    replay(node, "is-flaring");
+    clearTimeout(node?.flareTimer);
+    if (node) node.flareTimer = setTimeout(() => node.classList.remove("is-flaring"), 1700);
+  };
+  /* A burst every few seconds, somewhere on screen, while the tab is shown. */
+  const scheduleBurst = () => setTimeout(() => {
+    if (!document.hidden) burst(width * (0.06 + Math.random() * 0.88), height * (0.1 + Math.random() * 0.8));
+    scheduleBurst();
+  }, 2600 + Math.random() * 4200);
+  scheduleBurst();
+  document.addEventListener("click", (event) => {
+    if (event.target === document.body || event.target === document.documentElement || event.target === app) burst(event.clientX, event.clientY);
+  });
+
   let last = performance.now();
   const frame = (now) => {
     const seconds = Math.min((now - last) / 1000, 0.1);
@@ -647,10 +697,108 @@ function startEmbers() {
       context.arc(x, mote.y, mote.radius, 0, Math.PI * 2);
       context.fill();
     }
+    /* Burst sparks slow as they fly and lift a little as they fade. */
+    for (let index = sparks.length - 1; index >= 0; index -= 1) {
+      const spark = sparks[index];
+      spark.age += seconds;
+      if (spark.age >= spark.life) {
+        sparks.splice(index, 1);
+        continue;
+      }
+      const drag = Math.pow(0.12, seconds);
+      spark.vx *= drag;
+      spark.vy = spark.vy * drag - 18 * seconds;
+      spark.x += spark.vx * seconds;
+      spark.y += spark.vy * seconds;
+      const alpha = 1 - spark.age / spark.life;
+      context.fillStyle = spark.color;
+      context.globalAlpha = alpha * 0.25;
+      context.beginPath();
+      context.arc(spark.x, spark.y, spark.radius * 4, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = alpha;
+      context.beginPath();
+      context.arc(spark.x, spark.y, spark.radius, 0, Math.PI * 2);
+      context.fill();
+    }
+    for (let index = rings.length - 1; index >= 0; index -= 1) {
+      const ring = rings[index];
+      ring.age += seconds;
+      if (ring.age >= ring.life) {
+        rings.splice(index, 1);
+        continue;
+      }
+      const progress = ring.age / ring.life;
+      context.strokeStyle = ring.color;
+      context.globalAlpha = (1 - progress) * 0.7;
+      context.lineWidth = 0.6 + (1 - progress) * 2.4;
+      context.beginPath();
+      context.arc(ring.x, ring.y, ring.size * (1 - (1 - progress) ** 3), 0, Math.PI * 2);
+      context.stroke();
+    }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 }
+
+/* ----------------------------------------------------------- deck sound -- */
+
+/* A deck's page plays its commander's sound as it opens, the one the table
+   plays when that commander is revealed. Browsers keep a page silent until
+   the visitor has clicked something, so a deck opened straight from a link
+   waits for its button. Turning the sound off is remembered. */
+const DECK_SOUND_VOLUME = 0.8;
+const deckSound = new Audio();
+deckSound.volume = DECK_SOUND_VOLUME;
+let soundMuted = false;
+try { soundMuted = localStorage.getItem("deck-sound-muted") === "1"; } catch (error) { /* never remembered */ }
+
+const SOUND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="sound-cone" d="M4 9h4l5-4v14l-5-4H4z"/><path class="sound-waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/><path class="sound-slash" d="M16 9l6 6M22 9l-6 6"/></svg>';
+
+function soundButton(url) {
+  return `<button type="button" class="hero-sound" data-sound="${escapeHtml(url)}">${SOUND_ICON}<span></span></button>`;
+}
+
+/* The button reads off, playing, or ready to play again. */
+function paintSoundButton() {
+  const button = app.querySelector(".hero-sound");
+  if (!button) return;
+  const state = soundMuted ? "off" : deckSound.paused ? "ready" : "playing";
+  const labels = { off: "Sound off", ready: "Play sound", playing: "Stop sound" };
+  button.dataset.state = state;
+  button.querySelector("span").textContent = labels[state];
+  button.title = state === "off" ? "Turn deck sounds back on" : state === "playing" ? "Stop, and keep deck pages quiet" : "Play the commander's sound";
+}
+
+function playDeckSound() {
+  deckSound.currentTime = 0;
+  deckSound.play().catch(() => { /* not allowed before a click: the button waits */ }).finally(paintSoundButton);
+}
+
+/* Called on every redraw: a deck page starts its sound, anything else stops it. */
+function startDeckSound() {
+  const button = app.querySelector(".hero-sound");
+  if (!button) {
+    deckSound.pause();
+    return;
+  }
+  if (deckSound.getAttribute("src") !== button.dataset.sound) deckSound.src = button.dataset.sound;
+  if (soundMuted) deckSound.pause();
+  else playDeckSound();
+  paintSoundButton();
+}
+
+for (const event of ["play", "pause", "ended"]) deckSound.addEventListener(event, paintSoundButton);
+
+app.addEventListener("click", (event) => {
+  if (!event.target.closest(".hero-sound")) return;
+  const playing = !soundMuted && !deckSound.paused;
+  soundMuted = playing;
+  try { localStorage.setItem("deck-sound-muted", soundMuted ? "1" : "0"); } catch (error) { /* this visit only */ }
+  if (playing) deckSound.pause();
+  else playDeckSound();
+  paintSoundButton();
+});
 
 /* --------------------------------------------------------------- router -- */
 
@@ -662,11 +810,31 @@ function route() {
   else if (kind === "deck" && name) app.innerHTML = deckView(name);
   else app.innerHTML = homeView();
   startSlides();
+  startDeckSound();
   revealOnScroll();
   afterRender();
 }
 
-window.addEventListener("hashchange", () => { route(); window.scrollTo(0, 0); });
+/* A page newly opened records the one it was opened from in its history
+   entry. Back and forward return to entries that already have theirs. */
+let currentHash = window.location.hash;
+window.addEventListener("hashchange", () => {
+  if (!history.state || !("from" in history.state)) history.replaceState({ ...history.state, from: currentHash }, "");
+  currentHash = window.location.hash;
+  route();
+  window.scrollTo(0, 0);
+});
+
+/* Going back to the page this one was opened from steps back through the
+   history rather than adding to it, so the browser's back button agrees. */
+app.addEventListener("click", (event) => {
+  const link = event.target.closest(".back-link");
+  if (!link || event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  if (history.state && routeOf(link.getAttribute("href")) === routeOf(history.state.from)) {
+    event.preventDefault();
+    history.back();
+  }
+});
 
 async function loadJson(path) {
   const response = await fetch(path, { cache: "no-cache" });
@@ -674,9 +842,42 @@ async function loadJson(path) {
   return response.json();
 }
 
+/* ------------------------------------------------------------- grimoire -- */
+
+/* The opening: a grimoire rises, its cover swings open, three pages turn,
+   light and the five mana symbols pour out, and it zooms away into the
+   leaderboard. Its markup is in index.html and its timing in site.css;
+   this ends it after GRIMOIRE_SECONDS, or at once on a click or a key.
+   The promise resolves as it starts to fade, so the page rises in behind. */
+const GRIMOIRE_SECONDS = 2.9;
+
+function playGrimoire() {
+  const book = document.querySelector(".grimoire");
+  if (!book || document.documentElement.classList.contains("no-grimoire")) {
+    book?.remove();
+    return Promise.resolve();
+  }
+  try { sessionStorage.setItem("grimoire-opened", "1"); } catch (error) { /* plays again next time */ }
+  return new Promise((resolve) => {
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      book.classList.add("is-closing");
+      setTimeout(() => book.remove(), 800);
+      resolve();
+    };
+    setTimeout(close, GRIMOIRE_SECONDS * 1000);
+    book.addEventListener("click", close);
+    window.addEventListener("keydown", close, { once: true });
+  });
+}
+
+const opening = playGrimoire();
+
 async function start() {
   try {
-    const [history, pictures] = await Promise.all([loadJson("game_history.json"), loadJson("roster.json")]);
+    const [history, pictures] = await Promise.all([loadJson("game_history.json"), loadJson("roster.json"), opening]);
     games = Array.isArray(history.games) ? history.games : [];
     historicalWins = Array.isArray(history.historical_wins) ? history.historical_wins : [];
     for (const group of ["players", "decks"]) {

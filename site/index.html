@@ -10,9 +10,47 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mana-font@1.18.0/css/mana.min.css">
   <link rel="stylesheet" href="site.css">
+  <script>
+    /* The grimoire opens once per visit, and never for reduced motion; see
+       playGrimoire() in site.js. Decided here so it never flashes. */
+    try {
+      if (sessionStorage.getItem("grimoire-opened") || matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("no-grimoire");
+    } catch (error) { /* storage blocked: it simply plays */ }
+  </script>
 </head>
 <body>
+  <div class="grimoire" aria-hidden="true">
+    <div class="grimoire-float">
+      <div class="grimoire-stage">
+        <div class="grimoire-pages"><span class="grimoire-glow"></span></div>
+        <div class="grimoire-leaf" style="--order:0"></div>
+        <div class="grimoire-leaf" style="--order:1"></div>
+        <div class="grimoire-leaf" style="--order:2"></div>
+        <div class="grimoire-cover">
+          <div class="grimoire-cover-front"><svg class="grimoire-emblem" viewBox="0 0 200 200"><circle cx="100" cy="100" r="94"/><circle cx="100" cy="100" r="86"/><path d="M100 40 157.1 81.5 135.3 148.5 64.7 148.5 42.9 81.5Z"/><path d="M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z"/><circle cx="100" cy="40" r="20"/><circle cx="157.1" cy="81.5" r="20"/><circle cx="135.3" cy="148.5" r="20"/><circle cx="64.7" cy="148.5" r="20"/><circle cx="42.9" cy="81.5" r="20"/></svg><span class="grimoire-title">Commander Night</span></div>
+          <div class="grimoire-cover-back"></div>
+        </div>
+      </div>
+    </div>
+    <span class="grimoire-bloom"></span>
+    <div class="grimoire-rising"><i class="ms ms-w ms-cost ms-shadow" style="--order:0"></i><i class="ms ms-u ms-cost ms-shadow" style="--order:1"></i><i class="ms ms-b ms-cost ms-shadow" style="--order:2"></i><i class="ms ms-r ms-cost ms-shadow" style="--order:3"></i><i class="ms ms-g ms-cost ms-shadow" style="--order:4"></i></div>
+    <span class="grimoire-skip">Click to skip</span>
+  </div>
   <div class="ambient" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="sigil" aria-hidden="true">
+    <svg viewBox="0 0 200 200">
+      <g class="sigil-ticks"><circle cx="100" cy="100" r="94"/><circle class="sigil-dashes" cx="100" cy="100" r="89"/></g>
+      <circle cx="100" cy="100" r="84"/>
+      <path class="sigil-pentagon" d="M100 40 157.1 81.5 135.3 148.5 64.7 148.5 42.9 81.5Z"/>
+      <path class="sigil-star" d="M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z"/>
+      <circle class="sigil-node" cx="100" cy="40" r="20"/><circle class="sigil-node" cx="157.1" cy="81.5" r="20"/><circle class="sigil-node" cx="135.3" cy="148.5" r="20"/><circle class="sigil-node" cx="64.7" cy="148.5" r="20"/><circle class="sigil-node" cx="42.9" cy="81.5" r="20"/>
+    </svg>
+    <i class="ms ms-w sigil-symbol" data-color="w" style="left:50%;top:20%;--mana:var(--mana-w);--order:0"></i>
+    <i class="ms ms-u sigil-symbol" data-color="u" style="left:78.55%;top:40.75%;--mana:var(--mana-u);--order:1"></i>
+    <i class="ms ms-b sigil-symbol" data-color="b" style="left:67.65%;top:74.25%;--mana:var(--mana-b);--order:2"></i>
+    <i class="ms ms-r sigil-symbol" data-color="r" style="left:32.35%;top:74.25%;--mana:var(--mana-r);--order:3"></i>
+    <i class="ms ms-g sigil-symbol" data-color="g" style="left:21.45%;top:40.75%;--mana:var(--mana-g);--order:4"></i>
+  </div>
   <canvas id="embers" aria-hidden="true"></canvas>
   <main id="app"><div class="empty">Loading the leaderboard…</div></main>
   <script src="site.js"></script>

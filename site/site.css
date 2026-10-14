@@ -35,10 +35,14 @@ body {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .8 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
     radial-gradient(ellipse at 50% -10%, #4a3520 0, #1d1712 38%, #0f0d0a 75%) fixed;
 }
-body::before {
-  content: ""; position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none; opacity: .11;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%23e3bb7a' stroke-width='1.2'%3E%3Ccircle cx='100' cy='100' r='94'/%3E%3Ccircle cx='100' cy='100' r='86'/%3E%3Cpath d='M100 40 157.1 81.5 135.3 148.5 64.7 148.5 42.9 81.5Z'/%3E%3Cpath d='M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z'/%3E%3Ccircle cx='100' cy='40' r='20'/%3E%3Ccircle cx='157.1' cy='81.5' r='20'/%3E%3Ccircle cx='135.3' cy='148.5' r='20'/%3E%3Ccircle cx='64.7' cy='148.5' r='20'/%3E%3Ccircle cx='42.9' cy='81.5' r='20'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
-}
+/* The colour wheel in the corner: rings, a pentagon and a star in gold, and
+   each colour's symbol on its node, kept upright while the wheel turns. */
+.sigil { position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none; }
+.sigil svg { display: block; width: 100%; height: 100%; overflow: visible; fill: none; stroke: #e3bb7a; stroke-width: 1.1; opacity: .3; filter: drop-shadow(0 0 3px #e3bb7aaa); }
+.sigil-dashes { stroke-width: 2.4; stroke-dasharray: 1 5; }
+.sigil-star { stroke-dasharray: 14 10; }
+.sigil-node { fill: #0f0d0a66; }
+.sigil-symbol { position: absolute; color: var(--mana); font-size: 36px; opacity: .3; translate: -50% -50%; text-shadow: 0 0 10px var(--mana); }
 /* Behind the page: slow drifting glows, and the embers canvas (startEmbers). */
 .ambient { position: fixed; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; }
 .ambient span { position: absolute; width: 70vmax; aspect-ratio: 1; border-radius: 50%; opacity: .55; }
@@ -113,6 +117,17 @@ h2 { margin: 3px 0 0; font: 700 1.22rem/1.2 var(--display); letter-spacing: .01e
 }
 @keyframes label-in { from { opacity: 0; transform: translateY(-8px); } }
 .hero-showing { position: absolute; top: 18px; right: 20px; max-width: 45%; overflow: hidden; padding: 6px 12px; border: 1px solid #5a4630; border-radius: 999px; background: #0f0d0acc; color: var(--bronze-light); font: 700 .8rem var(--display); text-overflow: ellipsis; white-space: nowrap; }
+/* A deck's sound: plays as its page opens; see startDeckSound(). */
+.hero-sound { position: absolute; top: 18px; right: 20px; display: inline-flex; align-items: center; gap: 7px; padding: 6px 13px 6px 10px; border: 1px solid #5a4630; border-radius: 999px; background: #0f0d0acc; color: var(--bronze-light); font: 700 .8rem var(--display); cursor: pointer; }
+.hero-sound:hover { border-color: var(--bronze); color: #fff; }
+.hero-sound:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 2px; }
+.hero-sound svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hero-sound .sound-cone { fill: currentColor; }
+.hero-sound .sound-slash, .hero-sound[data-state="off"] .sound-waves { display: none; }
+.hero-sound[data-state="off"] .sound-slash { display: inline; }
+.hero-sound[data-state="playing"] .sound-waves { animation: sound-pulse 1.1s ease-in-out infinite; }
+@keyframes sound-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .hero-sound[data-state="playing"] .sound-waves { animation: none; } }
 .hero h1 { font-size: clamp(2rem, 7vw, 3.6rem); line-height: 1; text-shadow: 0 2px 18px #000a; }
 .hero .pips { margin: 10px 0 0; font-size: 1.35rem; }
 .hero p { max-width: 660px; margin: 10px 0 0; color: #e0d6c6; font: 1.12rem/1.45 var(--serif); }
@@ -236,7 +251,8 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 }
 @media (max-width: 560px) {
   main { padding: 14px 12px 80px; }
-  body::before { width: 420px; right: -170px; }
+  .sigil { width: 420px; right: -170px; }
+  .sigil-symbol { font-size: 24px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
   .hero.has-art { min-height: 300px; }
   .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
@@ -262,7 +278,13 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 
 /* Motion that never stops, all of it slow. */
 @media (prefers-reduced-motion: no-preference) {
-  body::before { animation: spin 320s linear infinite; }
+  .sigil { animation: spin 240s linear infinite; }
+  .sigil-ticks { transform-box: view-box; transform-origin: 50% 50%; animation: spin 90s linear infinite reverse; }
+  .sigil-star { animation: star-flow 6s linear infinite; }
+  .sigil-symbol { animation: counter-spin 240s linear infinite, node-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
+  .sigil-symbol.is-flaring { animation: counter-spin 240s linear infinite, node-flare 1.6s ease-out; }
+  .page-header h1 { background: linear-gradient(100deg, #f3ece1 42%, #fff4cf 50%, #f3ece1 58%) 120% 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: title-shine 7s ease-in-out 1.5s infinite; }
+  .game-player.is-winner .log-icon { animation: crown-glow 2.8s ease-in-out infinite; }
   .ambient span { animation: glow-drift 40s ease-in-out infinite alternate; }
   .ambient span:nth-child(2) { animation-duration: 48s; animation-delay: -14s; }
   .ambient span:nth-child(3) { animation-duration: 56s; animation-delay: -27s; }
@@ -272,6 +294,65 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
   .rank-gem.rarity-rare { animation-delay: 1.5s; }
 }
 @keyframes spin { to { transform: rotate(1turn); } }
+@keyframes counter-spin { to { transform: rotate(-1turn); } }
+@keyframes star-flow { to { stroke-dashoffset: -96; } }
+@keyframes node-pulse { 0%, 30%, 100% { opacity: .3; scale: 1; } 12% { opacity: .95; scale: 1.18; text-shadow: 0 0 18px var(--mana), 0 0 36px var(--mana); } }
+@keyframes node-flare { 0% { opacity: .3; scale: 1; } 18% { opacity: 1; scale: 1.5; text-shadow: 0 0 22px var(--mana), 0 0 50px var(--mana); } 100% { opacity: .3; scale: 1; } }
+@keyframes title-shine { 0%, 55% { background-position: 120% 0; } 100% { background-position: -20% 0; } }
+@keyframes crown-glow { 50% { filter: drop-shadow(0 0 5px #e2b862); } }
+
+/* ----------------------------------------------------------- mana burst -- */
+/* One colour's symbol flaring behind the page; the sparks and the ring are
+   drawn on the embers canvas. Removed when its animation ends. */
+.mana-burst { position: fixed; z-index: -1; color: var(--mana); font-size: 42px; pointer-events: none; translate: -50% -50%; text-shadow: 0 0 14px var(--mana), 0 0 40px var(--mana); animation: mana-burst 1.5s cubic-bezier(.2, .8, .2, 1) forwards; }
+@keyframes mana-burst {
+  0% { opacity: 0; scale: .3; rotate: -40deg; }
+  20% { opacity: 1; scale: 1.25; rotate: 0deg; }
+  100% { opacity: 0; scale: 1.7; rotate: 12deg; }
+}
+
+/* ------------------------------------------------------------- grimoire -- */
+/* The opening, timed here and ended by playGrimoire(). The stage is the right
+   half of the book with the spine on its left edge: closed it sits centred,
+   and as the cover swings open it slides right so the spread is centred. */
+.grimoire { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 55%, #2c1e10, #0b0907 72%); perspective: 1600px; cursor: pointer; }
+.no-grimoire .grimoire { display: none; }
+.grimoire.is-closing { pointer-events: none; animation: grimoire-out .75s ease forwards; }
+.grimoire-float { animation: book-arrive .8s cubic-bezier(.2, .8, .2, 1) both; transform-style: preserve-3d; }
+.grimoire.is-closing .grimoire-float { animation: book-away .75s cubic-bezier(.5, 0, .75, 0) forwards; }
+.grimoire-stage { position: relative; width: min(240px, 38vw); aspect-ratio: 8 / 11; transform-style: preserve-3d; animation: book-centre 1.1s .65s cubic-bezier(.6, 0, .25, 1) both; }
+.grimoire-pages, .grimoire-leaf, .grimoire-cover-back { position: absolute; inset: 0; border-radius: 3px 8px 8px 3px; background: repeating-linear-gradient(180deg, transparent 0 13px, #7a5f3a1f 13px 14px) 18px 34px / calc(100% - 36px) calc(100% - 70px) no-repeat, radial-gradient(circle at 50% 45%, #f6ead0, #e2cfa4 75%, #c9b083); }
+.grimoire-pages { box-shadow: 2px 0 0 #d8c59a, 4px 1px 0 #c8b286, 6px 2px 0 #b59d70, 0 30px 60px #000c; overflow: hidden; }
+.grimoire-glow { position: absolute; inset: 0; background: radial-gradient(circle at 0% 50%, #fff3c6, #ffcf6a88 30%, transparent 65%); opacity: 0; mix-blend-mode: screen; animation: page-glow 1.2s 1.55s ease-out both; }
+.grimoire-leaf { transform-origin: 0 50%; transform: translateZ(calc(1px + var(--order) * 1px)); animation: leaf-turn .8s calc(1.05s + var(--order) * .17s) cubic-bezier(.45, 0, .3, 1) both; box-shadow: inset 8px 0 14px -10px #5a40208c; }
+.grimoire-cover { position: absolute; inset: -6px -8px -6px 0; transform-origin: 0 50%; transform: translateZ(5px); transform-style: preserve-3d; animation: cover-open 1.15s .65s cubic-bezier(.6, 0, .25, 1) both; }
+.grimoire-cover-front, .grimoire-cover-back { backface-visibility: hidden; }
+.grimoire-cover-front { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 14px; border-radius: 4px 12px 12px 4px; background: linear-gradient(90deg, #00000066, transparent 9%), radial-gradient(circle at 38% 30%, #7a4322, #46220f 62%, #2a1308); box-shadow: inset 0 0 0 7px #3a1c0c, inset 0 0 0 9px #c8964f, inset 0 0 0 11px #3a1c0c, inset 0 0 0 12px #8a6430, 0 24px 50px #000d; }
+.grimoire-cover-back { transform: rotateY(180deg); border-radius: 8px 3px 3px 8px; }
+.grimoire-emblem { width: 62%; fill: none; stroke: #e3bb7a; stroke-width: 3; filter: drop-shadow(0 0 4px #e3bb7a); animation: emblem-glow 1.4s ease-in-out both; }
+.grimoire-title { color: #e3bb7a; font: 700 clamp(.7rem, 2.4vw, .95rem) var(--display); letter-spacing: .14em; text-shadow: 0 1px 0 #000, 0 0 10px #e3bb7a88; text-transform: uppercase; }
+/* Light and the five symbols pour from the open spread. They sit flat over
+   the book rather than inside its 3D stage, so no page can hide them. */
+.grimoire-bloom { position: absolute; top: 50%; left: 50%; width: min(560px, 120vw); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff3c6cc, #ffcf6a55 28%, transparent 62%); opacity: 0; pointer-events: none; mix-blend-mode: screen; translate: -50% -50%; animation: bloom 1.4s 1.5s ease-out both; }
+.grimoire-rising { position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
+.grimoire-rising .ms { position: absolute; font-size: clamp(22px, 6vw, 34px); opacity: 0; translate: -50% -50%; filter: drop-shadow(0 0 10px #ffd98a); animation: mana-rise 1.25s calc(1.65s + var(--order) * .07s) cubic-bezier(.2, .8, .2, 1) both; --angle: calc(-90deg + (var(--order) - 2) * 34deg); }
+.grimoire-skip { position: absolute; bottom: 28px; left: 50%; color: #8f8474; font: italic .95rem var(--serif); translate: -50% 0; animation: skip-in .6s 1s ease both; }
+@keyframes book-arrive { from { opacity: 0; transform: translateY(40px) scale(.86) rotateX(18deg); } }
+@keyframes book-centre { to { transform: translateX(50%); } }
+@keyframes cover-open { to { transform: translateZ(5px) rotateY(-178deg); } }
+@keyframes leaf-turn { to { transform: translateZ(calc(1px + var(--order) * 1px)) rotateY(calc(-172deg + var(--order) * 3deg)); } }
+@keyframes emblem-glow { 0% { opacity: .5; filter: none; } 60% { opacity: 1; filter: drop-shadow(0 0 10px #ffd98a); } 100% { opacity: 1; filter: drop-shadow(0 0 4px #e3bb7a); } }
+@keyframes page-glow { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: .65; } }
+@keyframes mana-rise {
+  0% { opacity: 0; transform: rotate(var(--angle)) translateX(0) rotate(calc(-1 * var(--angle))) scale(.4); }
+  25% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--angle)) translateX(min(230px, 36vw)) rotate(calc(-1 * var(--angle))) scale(1.35); }
+}
+@keyframes skip-in { from { opacity: 0; } }
+@keyframes bloom { 0% { opacity: 0; scale: .2; } 40% { opacity: 1; } 100% { opacity: .35; scale: 1; } }
+@keyframes grimoire-out { to { opacity: 0; visibility: hidden; } }
+@keyframes book-away { to { transform: scale(2.4) translateZ(200px); opacity: 0; } }
 @keyframes glow-drift { 50% { transform: translate(7vmax, 4vmax) scale(1.15); } 100% { transform: translate(-5vmax, 8vmax) scale(.92); } }
 @keyframes banner-drift { from { transform: scale(1); } to { transform: scale(1.07) translateX(-1.5%); } }
 @keyframes card-float { 50% { transform: translateY(-6px); } }
