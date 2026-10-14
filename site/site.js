@@ -118,7 +118,64 @@ function avatar(name, extraClass = "") {
     : `<span class="avatar avatar-blank ${extraClass}" aria-hidden="true">${escapeHtml(name.trim().charAt(0).toLocaleUpperCase())}</span>`;
 }
 
-const artStyle = (picture, size = "full") => picture ? ` style="--art:url('${escapeHtml(picture[size])}')"` : "";
+/* Style declarations are built separately so one element can take several. */
+const styleAttr = (...declarations) => {
+  const text = declarations.filter(Boolean).join("");
+  return text ? ` style="${text}"` : "";
+};
+const artVar = (picture, size = "full") => picture ? `--art:url('${escapeHtml(picture[size])}');` : "";
+const artStyle = (picture, size = "full") => styleAttr(artVar(picture, size));
+
+/* ----------------------------------------------------------------- mana -- */
+
+const MANA_ORDER = ["W", "U", "B", "R", "G"];
+const MANA_NAMES = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colourless" };
+
+/* A deck's colour identity as letters: none when it has not been set, ["C"]
+   when the deck is colourless. */
+function deckColors(name) {
+  const value = deckInfo(name).colors;
+  return typeof value === "string" ? [...value.toUpperCase()].filter((color) => color in MANA_NAMES) : [];
+}
+
+/* A player wears the colours of the most played deck that has them. */
+function playerColors(player) {
+  for (const deck of byPlay(player.decks)) {
+    const colors = deckColors(deck.name);
+    if (colors.length) return colors;
+  }
+  return [];
+}
+
+/* Mana symbols from the Mana font, named for screen readers. */
+function pips(colors) {
+  if (!colors.length) return "";
+  const label = colors.map((color) => MANA_NAMES[color]).join(", ");
+  return `<span class="pips" title="${label}" role="img" aria-label="${label}">${colors.map((color) => `<i class="ms ms-${color.toLowerCase()} ms-cost ms-shadow"></i>`).join("")}</span>`;
+}
+
+/* The deck's colours as gradient stops in --mana, for borders and bars. */
+function manaVar(colors) {
+  if (!colors.length) return "";
+  const stops = colors.map((color) => `var(--mana-${color.toLowerCase()})`);
+  return `--mana:${(stops.length === 1 ? [stops[0], stops[0]] : stops).join(",")};`;
+}
+
+/* A place in the standings, read the way a set symbol reads its rarity. */
+const RARITY_NAMES = { mythic: "Mythic rare", rare: "Rare", uncommon: "Uncommon", common: "Common" };
+function rarity(position) {
+  if (position === 1) return "mythic";
+  if (position <= 3) return "rare";
+  if (position <= 6) return "uncommon";
+  return "common";
+}
+const rankGem = (position) => `<span class="rank-gem rarity-${rarity(position)}" title="${RARITY_NAMES[rarity(position)]} · #${position}">${position}</span>`;
+
+/* A count in a planeswalker's loyalty shield. */
+const loyalty = (value, title, extraClass = "") => `<span class="loyalty ${extraClass}" title="${escapeHtml(title)}">${escapeHtml(value)}</span>`;
+
+const CROWN = '<svg class="log-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18l-1.4-9.5-4.8 4.2L12 4.5l-2.8 7.2-4.8-4.2z" fill="currentColor"/><rect x="3" y="18.5" width="18" height="2.2" rx="1.1" fill="currentColor"/></svg>';
+const BROKEN_SIGIL = '<svg class="log-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.4 2.6a9.6 9.6 0 0 0 0 18.8M13.6 2.6a9.6 9.6 0 0 1 0 18.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12.6 1.5 10.8 7l2.6 3.4-2.4 4.2 2.2 3.3-1.2 4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
 /* --------------------------------------------------------------- pieces -- */
 
@@ -126,26 +183,84 @@ function tiles(cards) {
   return `<section class="summary-grid">${cards.map(([label, value, detail]) => `<article class="summary"><span class="eyebrow">${escapeHtml(label)}</span><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join("")}</section>`;
 }
 
-/* rows: [label html, title text, value, detail text] */
+/* rows: [label html, title text, value, detail text, colours]. A row with
+   colours fills in them; one without keeps the default bronze. */
 function bars(rows, kind = "") {
   const maximum = Math.max(...rows.map((row) => row[2]), 1);
-  return `<div class="bar-chart ${kind}">${rows.map(([label, title, value, detail]) => {
+  return `<div class="bar-chart ${kind}">${rows.map(([label, title, value, detail, colors = []]) => {
     const width = value ? Math.max(8, value / maximum * 100) : 3;
-    return `<div class="bar-item"><span class="bar-label" title="${escapeHtml(title)}">${label}</span><span class="bar-track"><span class="bar-fill" style="--width:${width}%"></span></span><span class="bar-value">${escapeHtml(detail)}</span></div>`;
+    return `<div class="bar-item" title="${escapeHtml(`${title}: ${detail}`)}"><span class="bar-label">${label}</span><span class="bar-track"><span class="bar-fill${colors.length ? " has-mana" : ""}" style="--width:${width}%;${manaVar(colors)}"></span></span><span class="bar-value">${escapeHtml(detail)}</span></div>`;
   }).join("")}</div>`;
 }
 
-/* Gold for decks, purple for players, as on the table's own leaderboard. */
-function finishBars(entry) {
-  return bars(["1st", "2nd", "3rd", "4th"].map((label, index) => [label, label, entry.finishes[index], plural(entry.finishes[index], "game")]), entry.pilots ? "deck-bars" : "");
+function finishBars(entry, colors) {
+  return bars(["1st", "2nd", "3rd", "4th"].map((label, index) => [label, label, entry.finishes[index], plural(entry.finishes[index], "game"), colors]));
 }
 
+/* Hovering a deck that has commander cards swaps its art for them. */
 function deckCard(deck, caption) {
   const info = deckInfo(deck.name);
-  return `<a class="deck-card${info.art ? " has-art" : ""}" href="${deckHref(deck.name)}"${artStyle(info.art, "thumb")}>
-    <span class="deck-card-body"><strong>${escapeHtml(deck.name)}</strong><small>${escapeHtml(caption)}</small>
+  const colors = deckColors(deck.name);
+  const cards = (info.cards || []).slice(0, 2);
+  return `<a class="deck-card${info.art ? " has-art" : ""}${colors.length ? " has-mana" : ""}" href="${deckHref(deck.name)}"${styleAttr(artVar(info.art, "thumb"), manaVar(colors))}>
+    <span class="deck-card-body"><span class="deck-card-name"><strong>${escapeHtml(deck.name)}</strong>${pips(colors)}</span><small>${escapeHtml(caption)}</small>
     <span class="deck-card-stats">${deck.wins}W · ${plural(deck.games, "game")} · ${percent(deck.wins, deck.games)}</span></span>
+    ${cards.length ? `<span class="deck-card-reveal" aria-hidden="true">${cards.map((card) => `<img src="${escapeHtml(card.thumb)}" alt="" loading="lazy">`).join("")}</span>` : ""}
   </a>`;
+}
+
+/* Every recorded appearance, counted once for each colour its deck plays. */
+function colorStats() {
+  const rows = new Map([...MANA_ORDER, "C"].map((color) => [color, { color, games: 0, wins: 0 }]));
+  let unknown = 0;
+  for (const game of games) {
+    for (const result of game.players) {
+      const colors = deckColors(result.deck);
+      if (!colors.length) unknown += 1;
+      for (const color of colors) {
+        rows.get(color).games += 1;
+        if (game.outcome !== "draw" && result.rank === 1) rows.get(color).wins += 1;
+      }
+    }
+  }
+  return { rows: [...rows.values()].filter((row) => row.color !== "C" || row.games), unknown };
+}
+
+/* Win rate per colour on one 0–100% scale, with an even share marked: in a
+   four-player game a colour that wins one game in four is pulling its weight. */
+function colorPie() {
+  const { rows, unknown } = colorStats();
+  if (!rows.some((row) => row.games)) return "";
+  const note = unknown ? `${plural(unknown, "appearance")} by decks with no colours set are left out` : "A deck counts for every colour it plays";
+  return `<section class="card">
+    ${heading("COLOUR PIE", "Which colours win", note)}
+    <div class="bar-chart color-pie">${rows.map((row) => {
+      const detail = row.games ? `${percent(row.wins, row.games)} · ${plural(row.wins, "win")} in ${plural(row.games, "game")}` : "Not played yet";
+      const width = row.games ? Math.max(2, row.wins / row.games * 100) : 0;
+      return `<div class="bar-item" title="${MANA_NAMES[row.color]}: ${escapeHtml(detail)}"><span class="bar-label">${pips([row.color])}${MANA_NAMES[row.color]}</span><span class="bar-track"><span class="bar-fill has-mana" style="--width:${width}%;${manaVar([row.color])}"></span></span><span class="bar-value">${escapeHtml(detail)}</span></div>`;
+    }).join("")}</div>
+    <p class="chart-note"><span class="even-share-key" aria-hidden="true"></span>Even share: one win in four games</p>
+  </section>`;
+}
+
+/* The most played deck, laid out in its zone with the commander card. */
+function commanderZone(player) {
+  const deck = byPlay(player.decks)[0];
+  if (!deck) return "";
+  const info = deckInfo(deck.name);
+  const colors = deckColors(deck.name);
+  const card = (info.cards || [])[0];
+  const picture = card
+    ? `<img src="${escapeHtml(card.thumb)}" alt="${escapeHtml(info.commander || deck.name)}">`
+    : info.art ? `<span class="zone-art"${artStyle(info.art, "thumb")}></span>` : "";
+  return `<section class="card commander-zone"${styleAttr(manaVar(colors))}>
+    ${picture ? `<a class="zone-slot" href="${deckHref(deck.name)}">${picture}</a>` : ""}
+    <div class="zone-body"><span class="eyebrow">COMMANDER ZONE · MOST PLAYED</span>
+      <h2>${escapeHtml(info.commander || deck.name)}</h2>${pips(colors)}
+      <p>${deckLink(deck.name)}, cast in ${deck.games} of ${plural(player.games, "recorded game")}.</p>
+      <div class="zone-stats">${loyalty(deck.wins, "Wins with it")}<span>${plural(deck.wins, "win")} · ${percent(deck.wins, deck.games)} win rate · avg. finish ${average(deck)}</span></div>
+    </div>
+  </section>`;
 }
 
 function gameCards(list, emptyText) {
@@ -155,11 +270,16 @@ function gameCards(list, emptyText) {
     const results = [...game.players].sort((a, b) => a.rank - b.rank);
     const isDraw = game.outcome === "draw";
     const headline = isDraw
-      ? `Draw: ${results.filter((result) => result.rank === 1).map((result) => result.name).join(" & ")}`
-      : `${results[0].name} won with ${results[0].deck}`;
-    return `<article class="game-card">
+      ? `${results.filter((result) => result.rank === 1).map((result) => result.name).join(" & ")} shared the table`
+      : `${results[0].name} claimed the table with ${results[0].deck}`;
+    /* The edge down the left wears the winning deck's colours. */
+    return `<article class="game-card${isDraw ? " is-draw" : ""}"${styleAttr(isDraw ? "" : manaVar(deckColors(results[0].deck)))}>
       <div class="game-head"><span class="game-date">${escapeHtml(formatDate(game.date))}</span><span class="game-winner">${escapeHtml(headline)}</span></div>
-      <div class="game-results">${results.map((result) => `<div class="game-player${result.rank === 1 ? " is-winner" : ""}"><span class="place">#${result.rank}${result.rank === 1 ? (isDraw ? " · DRAW" : " · WINNER") : ""}</span><strong>${playerLink(result.name)}</strong><small>${deckLink(result.deck)}</small></div>`).join("")}</div>
+      <div class="game-results">${results.map((result) => {
+        const top = result.rank === 1;
+        const place = top ? (isDraw ? `${BROKEN_SIGIL}DRAW` : `${CROWN}VICTORY`) : `#${result.rank}`;
+        return `<div class="game-player${top ? (isDraw ? " is-tied" : " is-winner") : ""}"><span class="place">${place}</span><strong>${playerLink(result.name)}</strong><small>${deckLink(result.deck)}${pips(deckColors(result.deck))}</small></div>`;
+      }).join("")}</div>
     </article>`;
   }).join("")}</div>`;
 }
@@ -175,10 +295,10 @@ function homeView() {
   const mostPlayed = [...stats.decks].sort((a, b) => b.games - a.games || b.wins - a.wins)[0];
   const pilots = (deck) => byPlay(deck.pilots).map((pilot) => pilot.name).join(", ");
   const standings = stats.players.length
-    ? stats.players.map((player, index) => `<tr>
-        <td>${index + 1}</td>
-        <td><a class="player-cell" href="${playerHref(player.name)}">${avatar(player.name)}<span><strong>${escapeHtml(player.name)}</strong><small>${plural(player.decks.size, "recorded deck")}${player.historicalWins ? ` · <span class="legacy-note">${plural(player.historicalWins, "historical win")}</span>` : ""}</small></span></a></td>
-        <td>${player.games || "—"}</td><td>${player.wins}</td><td>${percent(player.detailedWins, player.games)}</td>
+    ? stats.players.map((player, index) => `<tr class="rarity-${rarity(index + 1)}">
+        <td>${rankGem(index + 1)}</td>
+        <td><a class="player-cell" href="${playerHref(player.name)}">${avatar(player.name)}<span><strong>${escapeHtml(player.name)}${pips(playerColors(player))}</strong><small>${plural(player.decks.size, "recorded deck")}${player.historicalWins ? ` · <span class="legacy-note">${plural(player.historicalWins, "historical win")}</span>` : ""}</small></span></a></td>
+        <td>${player.games || "—"}</td><td>${loyalty(player.wins, player.historicalWins ? `${player.detailedWins} recorded · ${player.historicalWins} historical` : "Total wins")}</td><td>${percent(player.detailedWins, player.games)}</td>
         <td>${player.games ? player.topTwos : "—"}</td><td>${average(player)}</td>
       </tr>`).join("")
     : '<tr><td colspan="7"><div class="empty">Standings appear after the first recorded game.</div></td></tr>';
@@ -200,8 +320,10 @@ function homeView() {
     </section>
     <section class="card">
       ${heading("ALL-TIME WINS", "Player win histogram")}
-      ${stats.players.length ? bars(stats.players.map((player) => [escapeHtml(player.name), player.name, player.wins, `${plural(player.wins, "win")}${player.historicalWins ? ` · ${player.historicalWins} historical` : ""}`])) : '<div class="empty">No results yet.</div>'}
+      ${stats.players.length ? bars(stats.players.map((player) => [escapeHtml(player.name), player.name, player.wins, `${plural(player.wins, "win")}${player.historicalWins ? ` · ${player.historicalWins} historical` : ""}`, playerColors(player)])) : '<div class="empty">No results yet.</div>'}
+      <p class="chart-note">Each bar wears the colours of that player's most played deck.</p>
     </section>
+    ${colorPie()}
     <section>
       ${heading("DECK PERFORMANCE", "Decks", "Sorted by wins, then win rate")}
       ${stats.decks.length ? `<div class="deck-grid">${stats.decks.map((deck) => deckCard(deck, pilots(deck))).join("")}</div>` : '<div class="empty">Decks appear after the first recorded game.</div>'}
@@ -221,8 +343,8 @@ function playerView(name) {
   document.title = `${player.name} · MTG Leaderboard`;
   return `
     ${backLink}
-    <section class="hero${backdrop ? " has-art" : ""}"${artStyle(backdrop)}>
-      ${avatar(player.name, "avatar-large")}
+    <section class="hero${backdrop ? " has-art" : ""}"${styleAttr(artVar(backdrop), manaVar(playerColors(player)))}>
+      <span class="hero-portrait">${avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
       <div><span class="eyebrow">PLAYER · #${position} IN THE STANDINGS</span><h1>${escapeHtml(player.name)}</h1>
       <p>${plural(player.games, "recorded game")} with ${plural(decks.length, "deck")}${player.historicalWins ? `, plus ${plural(player.historicalWins, "win")} from before games were recorded` : ""}.</p></div>
     </section>
@@ -232,11 +354,12 @@ function playerView(name) {
       ["TOP 2", player.games ? player.topTwos : "—", player.games ? `${percent(player.topTwos, player.games)} of recorded games` : "No recorded games"],
       ["AVG. FINISH", average(player), "1 is a win, 4 is last"],
     ])}
+    ${commanderZone(player)}
     <section>
       ${heading("DECKS", `${player.name}'s decks`, "Most played first")}
       ${decks.length ? `<div class="deck-grid">${decks.map((deck) => deckCard(deck, deckInfo(deck.name).commander || `Avg. finish ${average(deck)}`)).join("")}</div>` : '<div class="empty">No deck has been recorded for this player yet.</div>'}
     </section>
-    ${player.games ? `<section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(player)}</section>` : ""}
+    ${player.games ? `<section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(player, playerColors(player))}</section>` : ""}
     <section>
       ${heading("ARCHIVE", `${player.name}'s games`, plural(player.games, "game"))}
       ${gameCards(player.results.map((entry) => entry.game), "No recorded games yet.")}
@@ -249,6 +372,7 @@ function deckView(name) {
   const info = deckInfo(deck.name);
   const pilots = byPlay(deck.pilots);
   const position = stats.decks.indexOf(deck) + 1;
+  const colors = deckColors(deck.name);
   const pictures = [
     ...(info.art ? [`<a class="deck-art" href="${escapeHtml(info.art.full)}"><img src="${escapeHtml(info.art.full)}" alt="${escapeHtml(deck.name)} art"></a>`] : []),
     ...(info.cards || []).map((card) => `<a class="deck-printing" href="${escapeHtml(card.full)}"><img src="${escapeHtml(card.full)}" alt="${escapeHtml(info.commander || deck.name)} card" loading="lazy"></a>`),
@@ -256,8 +380,8 @@ function deckView(name) {
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
     ${backLink}
-    <section class="hero${info.art ? " has-art" : ""}"${artStyle(info.art)}>
-      <div><span class="eyebrow">DECK · #${position} BY WINS</span><h1>${escapeHtml(deck.name)}</h1>
+    <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), manaVar(colors))}>
+      <div><span class="eyebrow">DECK · #${position} BY WINS</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
       <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}Piloted by ${pilots.map((pilot) => playerLink(pilot.name)).join(", ")}.</p></div>
     </section>
     ${tiles([
@@ -267,8 +391,8 @@ function deckView(name) {
       ["BEST PILOT", pilots.length ? [...pilots].sort((a, b) => b.wins - a.wins || b.games - a.games)[0].name : "—", plural(pilots.length, "pilot")],
     ])}
     ${pictures.length ? `<section class="deck-gallery">${pictures.join("")}</section>` : ""}
-    <section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(deck)}</section>
-    ${pilots.length > 1 ? `<section class="card">${heading("PILOTS", "Who has played it")}${bars(pilots.map((pilot) => [playerLink(pilot.name), pilot.name, pilot.games, `${pilot.wins}W · ${plural(pilot.games, "game")}`]), "deck-bars")}</section>` : ""}
+    <section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(deck, colors)}</section>
+    ${pilots.length > 1 ? `<section class="card">${heading("PILOTS", "Who has played it")}${bars(pilots.map((pilot) => [playerLink(pilot.name), pilot.name, pilot.games, `${pilot.wins}W · ${plural(pilot.games, "game")}`, colors]))}</section>` : ""}
     <section>
       ${heading("ARCHIVE", `Games with ${deck.name}`, plural(deck.games, "game"))}
       ${gameCards(deck.results.map((entry) => entry.game), "No recorded games yet.")}

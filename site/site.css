@@ -1,125 +1,225 @@
-/* The public leaderboard. Same palette and card shapes as
-   static/leaderboard.css, which styles the table's own copy of these numbers;
-   kept separate because that file is built around the tilted table screen and
-   this one is read on phones. */
+/* The public leaderboard. Shares its card shapes with static/leaderboard.css,
+   which styles the table's own copy of these numbers; kept separate because
+   that file is built around the tilted table screen and this one is read on
+   phones. Dressed as Magic: Cinzel for names, a serif for prose, stone and
+   bronze around everything, and each deck in its own mana colours. */
 :root {
   color-scheme: dark;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
-  background: #0d0b16;
-  color: #f5f1ff;
-  --purple: #a77aff;
-  --gold: #e4b95f;
-  --line: #3b324a;
-  --card: rgba(29, 24, 43, .94);
-  --muted: #aaa2b8;
+  background: #0f0d0a;
+  color: #f3ece1;
+  --display: Cinzel, "Trajan Pro", Georgia, serif;
+  --serif: "EB Garamond", Garamond, Georgia, serif;
+  --bronze: #c8964f;
+  --bronze-light: #e3bb7a;
+  --gold: #e2b862;
+  --line: #3a3027;
+  --card: rgba(27, 23, 19, .93);
+  --muted: #ab9f8e;
+  /* The five colours and colourless, as bars and borders draw them. Black is
+     a dusk violet because true black vanishes on this page; every use sits
+     beside its mana symbol, so the colour never has to be read on its own. */
+  --mana-w: #e6c459;
+  --mana-u: #3a8ee0;
+  --mana-b: #8f6a8c;
+  --mana-r: #e4553c;
+  --mana-g: #3aa865;
+  --mana-c: #a9a39b;
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -12%, #422869 0, #171229 34%, #0d0b16 74%) fixed; }
+/* Stone: fine grain over a warm glow, with the colour wheel cut faintly into it. */
+/* Isolated so the watermark below paints over this background, under the page. */
+body {
+  margin: 0; min-height: 100vh; isolation: isolate;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .8 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% -10%, #4a3520 0, #1d1712 38%, #0f0d0a 75%) fixed;
+}
+body::before {
+  content: ""; position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none; opacity: .11;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%23e3bb7a' stroke-width='1.2'%3E%3Ccircle cx='100' cy='100' r='94'/%3E%3Ccircle cx='100' cy='100' r='86'/%3E%3Cpath d='M100 40 157.1 81.5 135.3 148.5 64.7 148.5 42.9 81.5Z'/%3E%3Cpath d='M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z'/%3E%3Ccircle cx='100' cy='40' r='20'/%3E%3Ccircle cx='157.1' cy='81.5' r='20'/%3E%3Ccircle cx='135.3' cy='148.5' r='20'/%3E%3Ccircle cx='64.7' cy='148.5' r='20'/%3E%3Ccircle cx='42.9' cy='81.5' r='20'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+}
 a { color: inherit; text-decoration: none; }
-a:hover { color: #d4bcff; }
+a:hover { color: var(--bronze-light); }
 main { width: min(1120px, 100%); margin: auto; padding: 24px 18px 90px; }
 main > section { margin-bottom: 26px; }
 .page-header { padding: 10px 4px 22px; }
-h1 { margin: 2px 0 0; font-size: clamp(2rem, 6vw, 3.2rem); letter-spacing: -.055em; }
-h2 { margin: 3px 0 0; font-size: 1.3rem; letter-spacing: -.02em; }
-.eyebrow { color: #b791ff; font-size: .69rem; font-weight: 800; letter-spacing: .18em; }
-.muted { color: var(--muted); font-size: .8rem; }
-.back-link { display: inline-block; margin: 6px 0 16px; padding: 9px 13px; border: 1px solid #4a3d63; border-radius: 11px; color: #d4c3f5; font-size: .82rem; font-weight: 700; }
-.back-link:hover { color: #fff; border-color: #9b76db; }
-.empty { display: grid; min-height: 150px; place-items: center; padding: 20px; border: 1px dashed #453b56; border-radius: 14px; color: #8f86a0; text-align: center; }
+h1 { margin: 4px 0 0; font: 800 clamp(1.9rem, 5.5vw, 3rem)/1.05 var(--display); letter-spacing: .01em; }
+h2 { margin: 3px 0 0; font: 700 1.22rem/1.2 var(--display); letter-spacing: .01em; }
+.eyebrow { color: var(--bronze); font-size: .69rem; font-weight: 800; letter-spacing: .18em; }
+.muted { color: var(--muted); font: italic .95rem var(--serif); }
+.back-link { display: inline-block; margin: 6px 0 16px; padding: 9px 13px; border: 1px solid #5a4630; border-radius: 11px; color: #e6cfa6; font-size: .82rem; font-weight: 700; }
+.back-link:hover { color: #fff; border-color: var(--bronze); }
+.empty { display: grid; min-height: 150px; place-items: center; padding: 20px; border: 1px dashed #4a3d2f; border-radius: 14px; color: #9b8f7e; font: italic 1rem var(--serif); text-align: center; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ----------------------------------------------------------------- mana -- */
+.pips { display: inline-flex; flex: none; gap: 2px; margin-left: 7px; vertical-align: .08em; }
+.pips .ms { font-size: .78em; }
+
+/* A place in the standings as a rarity gem: mythic, rare, uncommon, common. */
+.rank-gem { display: inline-grid; place-items: center; width: 34px; height: 29px; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); font: 800 .85rem/1 var(--display); }
+.rank-gem.rarity-mythic { background: linear-gradient(160deg, #ffd08a, #f0702a 50%, #a3260c); color: #2a0d02; }
+.rank-gem.rarity-rare { background: linear-gradient(160deg, #fff0b8, #d9ac44 50%, #8a6418); color: #2b1e05; }
+.rank-gem.rarity-uncommon { background: linear-gradient(160deg, #f1f7fb, #a7b9c5 50%, #5e707b); color: #17212a; }
+.rank-gem.rarity-common { background: linear-gradient(160deg, #5f574e, #24201b); color: #e8e0d2; }
+
+/* A count in a planeswalker's loyalty shield: a bronze rim around a dark face. */
+.loyalty { position: relative; display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px 6px; clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%); background: linear-gradient(160deg, var(--bronze-light), #7a5523); color: #fff; font: 800 .85rem/1 var(--display); isolation: isolate; }
+.loyalty::before { content: ""; position: absolute; z-index: -1; inset: 2px 2px 3px; clip-path: inherit; background: linear-gradient(180deg, #3a2f24, #15110d); }
 
 /* ----------------------------------------------------------------- hero -- */
-/* The player and deck pages open on their picture. It sits on its own layer so
-   it can be dimmed without dimming the name on top of it. */
-.hero { position: relative; display: flex; align-items: flex-end; gap: 22px; min-height: 250px; padding: 30px 34px; overflow: hidden; border: 1px solid #5b4777; border-radius: 26px; background: linear-gradient(135deg, #33204f, #20172f 58%, #171222); box-shadow: 0 22px 60px #05030a77; isolation: isolate; }
+/* The player and deck pages open on their picture, edged in its colours. It
+   sits on its own layer so it can be dimmed without dimming the name. */
+.hero {
+  position: relative; display: flex; align-items: flex-end; gap: 24px; min-height: 250px; padding: 30px 34px; overflow: hidden;
+  border: 2px solid transparent; border-radius: 26px; isolation: isolate; box-shadow: 0 22px 60px #05030a88;
+  background: linear-gradient(135deg, #33271b, #1d1712 58%, #14110d) padding-box, linear-gradient(135deg, var(--mana, #5a4630, #5a4630)) border-box;
+}
 .hero.has-art { min-height: 340px; }
 .hero.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 25% / cover no-repeat; }
-.hero.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0d0b16f2 4%, #0d0b1699 42%, #0d0b1626); }
-.hero h1 { font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1; text-shadow: 0 2px 18px #000a; }
-.hero p { max-width: 660px; margin: 10px 0 0; color: #d6cde4; line-height: 1.5; }
-.hero p a { color: #e6d6ff; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.hero.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0f0d0af2 4%, #0f0d0a99 42%, #0f0d0a26); }
+.hero h1 { font-size: clamp(2rem, 7vw, 3.6rem); line-height: 1; text-shadow: 0 2px 18px #000a; }
+.hero .pips { margin: 10px 0 0; font-size: 1.35rem; }
+.hero p { max-width: 660px; margin: 10px 0 0; color: #e0d6c6; font: 1.12rem/1.45 var(--serif); }
+.hero p a { color: var(--bronze-light); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.hero-portrait { position: relative; flex: none; }
+.loyalty-large { position: absolute; right: -10px; bottom: -8px; min-width: 50px; height: 46px; padding-bottom: 9px; font-size: 1.2rem; filter: drop-shadow(0 4px 10px #000c); }
 
-.avatar { flex: none; width: 38px; height: 38px; border: 1px solid #5b4777; border-radius: 50%; object-fit: cover; }
-.avatar-blank { display: grid; place-items: center; background: #2b2140; color: #d4c3f5; font-weight: 800; }
+.avatar { flex: none; width: 38px; height: 38px; border: 1px solid #6b5536; border-radius: 50%; object-fit: cover; }
+.avatar-blank { display: grid; place-items: center; background: #2d241a; color: #ead7b5; font: 700 1rem var(--display); }
 .avatar-large { width: 112px; height: 112px; border: 3px solid var(--gold); font-size: 2.6rem; box-shadow: 0 8px 28px #000a; }
 
 /* ---------------------------------------------------------------- tiles -- */
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 26px; }
-.summary { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
-.summary strong { display: block; margin-top: 6px; overflow: hidden; color: #fff; font-size: clamp(1.35rem, 3vw, 2rem); line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.summary { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: inset 0 1px 0 #ffffff0a; }
+.summary strong { display: block; margin-top: 6px; overflow: hidden; color: #fff; font: 700 clamp(1.25rem, 2.8vw, 1.8rem)/1.15 var(--display); text-overflow: ellipsis; white-space: nowrap; }
 .summary small { display: block; margin-top: 5px; color: var(--muted); }
-.card { padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 16px 40px #05030a55; }
+.card { padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: inset 0 1px 0 #ffffff0a, 0 16px 40px #05030a55; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 
 /* ------------------------------------------------------------ standings -- */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .87rem; }
-th, td { padding: 10px; border-bottom: 1px solid #342c42; text-align: right; white-space: nowrap; }
+th, td { padding: 10px; border-bottom: 1px solid #33291f; text-align: right; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
-th { color: #8f86a0; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
+th { color: #8f8474; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
+th:first-child, td:first-child { width: 54px; text-align: center; }
 th:nth-child(2), td:nth-child(2) { text-align: left; }
-td:first-child { color: var(--gold); font-weight: 800; }
+tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%); }
 .player-cell { display: flex; align-items: center; gap: 11px; }
 .player-cell strong, .player-cell small { display: block; }
+.player-cell strong { font: 700 .98rem var(--display); }
 .player-cell small { color: var(--muted); }
 .legacy-note { color: var(--gold); font-size: .67rem; font-weight: 700; }
 
 /* ----------------------------------------------------------------- bars -- */
 .bar-chart { display: grid; gap: 13px; }
-.bar-item { display: grid; grid-template-columns: minmax(60px, 140px) 1fr minmax(70px, auto); align-items: center; gap: 10px; }
+/* Fixed outer columns, so every track in a chart starts and ends together. */
+.bar-item { display: grid; grid-template-columns: 140px 1fr 160px; align-items: center; gap: 10px; }
 .bar-label { min-width: 0; overflow: hidden; font-size: .85rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.bar-track { height: 12px; overflow: hidden; border-radius: 999px; background: #100d19; }
-.bar-fill { display: block; width: var(--width); height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7446d2, #b583ff); box-shadow: 0 0 15px #9c6cff77; }
-.deck-bars .bar-fill { background: linear-gradient(90deg, #a77d31, #e4b95f); box-shadow: 0 0 15px #e4b95f55; }
+.bar-track { position: relative; height: 12px; overflow: hidden; border-radius: 999px; background: #0d0b08; box-shadow: inset 0 1px 2px #000; }
+.bar-fill { display: block; width: var(--width); height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8a5f28, var(--bronze-light)); }
+.bar-fill.has-mana { background: linear-gradient(90deg, var(--mana)); }
 .bar-value { color: var(--muted); font-size: .72rem; text-align: right; }
+.chart-note { display: flex; align-items: center; margin: 16px 0 0; color: var(--muted); font: italic .92rem var(--serif); }
+
+/* The colour pie: one row per colour, win rate on a shared 0–100% scale. */
+.color-pie .bar-label { display: flex; align-items: center; gap: 9px; }
+.color-pie .pips { margin: 0; font-size: 1.05rem; }
+.color-pie .bar-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: 25%; border-left: 2px dashed #f3ece199; }
+.even-share-key { display: inline-block; height: 13px; margin-right: 9px; border-left: 2px dashed #f3ece199; }
 
 /* ---------------------------------------------------------------- decks -- */
+/* Edged in the deck's colours; hovering one with commander cards shows them. */
 .deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
-.deck-card { position: relative; display: flex; align-items: flex-end; min-height: 150px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(135deg, #2b2140, #191421); isolation: isolate; transition: border-color 150ms ease, translate 150ms ease; }
-.deck-card:hover { color: inherit; border-color: #9b76db; translate: 0 -2px; }
+.deck-card {
+  position: relative; display: flex; align-items: flex-end; min-height: 160px; overflow: hidden;
+  border: 2px solid transparent; border-radius: 17px; isolation: isolate; transition: transform 160ms ease, box-shadow 160ms ease;
+  background: linear-gradient(135deg, #2c2318, #17130f) padding-box, linear-gradient(135deg, var(--mana, var(--line), var(--line))) border-box;
+}
+.deck-card:hover, .deck-card:focus-visible { color: inherit; transform: translateY(-3px); box-shadow: 0 14px 30px #000a; }
+.deck-card:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 3px; }
 .deck-card.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 22% / cover no-repeat; }
-.deck-card.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0d0b16f5 8%, #0d0b16a6 48%, #0d0b1614); }
+.deck-card.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0f0d0af5 8%, #0f0d0aa6 48%, #0f0d0a14); }
 .deck-card-body { min-width: 0; padding: 13px 15px; }
-.deck-card-body strong, .deck-card-body small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.deck-card-body strong { font-size: 1.05rem; }
-.deck-card-body small { margin-top: 2px; color: #cfc6dd; font-size: .76rem; }
+.deck-card-name { display: flex; align-items: center; min-width: 0; }
+.deck-card-name strong { min-width: 0; overflow: hidden; font: 700 1.08rem var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.deck-card-body small { display: block; margin-top: 2px; overflow: hidden; color: #ddd2c0; font: italic .92rem var(--serif); text-overflow: ellipsis; white-space: nowrap; }
 .deck-card-stats { display: block; margin-top: 7px; color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+.deck-card-reveal { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; background: radial-gradient(circle, #1d1712e6, #0b0907f7); opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+.deck-card-reveal img { height: 100%; max-width: 48%; object-fit: contain; border-radius: 4.7% / 3.4%; box-shadow: 0 8px 20px #000c; transform: translateY(8px) scale(.95); transition: transform 240ms ease; }
+.deck-card:hover .deck-card-reveal, .deck-card:focus-visible .deck-card-reveal { opacity: 1; }
+.deck-card:hover .deck-card-reveal img, .deck-card:focus-visible .deck-card-reveal img { transform: none; }
 .deck-gallery { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
 .deck-gallery img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 16px 40px #05030a55; }
 .deck-art { flex: 3 1 420px; }
 .deck-printing { flex: 1 1 190px; max-width: 280px; }
 
+/* -------------------------------------------------------- commander zone -- */
+.commander-zone { position: relative; display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 26px; overflow: hidden; border-style: dashed; border-color: #6b5536; }
+.commander-zone::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(180deg, var(--mana, var(--bronze), var(--bronze))); }
+.zone-slot { display: block; transform: rotate(-2deg); transition: transform 200ms ease; }
+.zone-slot:hover { transform: rotate(0) scale(1.03); }
+.zone-slot img, .zone-art { display: block; width: 100%; border-radius: 4.7% / 3.4%; box-shadow: 0 14px 30px #000c; }
+.zone-art { aspect-ratio: 63 / 88; background: var(--art) center / cover no-repeat; }
+.zone-body { min-width: 0; }
+.zone-body h2 { font-size: clamp(1.25rem, 3vw, 1.7rem); }
+.zone-body .pips { margin: 8px 0 0; font-size: 1.1rem; }
+.zone-body p { margin: 10px 0 14px; color: #ddd2c0; font: 1.08rem var(--serif); }
+.zone-body p a { color: var(--bronze-light); font-weight: 600; }
+.zone-stats { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .82rem; }
+
 /* -------------------------------------------------------------- archive -- */
+/* The game log: each game edged in the winner's colours, the winner crowned
+   and a shared win marked by a broken sigil. */
 .history-list { display: grid; gap: 10px; }
-.game-card { overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: #191421dd; }
-.game-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 15px; border-bottom: 1px solid #342c42; }
-.game-date { font-weight: 800; }
-.game-winner { color: var(--gold); font-size: .78rem; }
+.game-card { position: relative; overflow: hidden; padding-left: 4px; border: 1px solid var(--line); border-radius: 17px; background: #18140fe6; }
+.game-card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(180deg, var(--mana, var(--bronze), var(--bronze))); }
+.game-card.is-draw::before { background: repeating-linear-gradient(180deg, #8f8474 0 6px, transparent 6px 10px); }
+.game-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 15px; border-bottom: 1px solid #33291f; background: linear-gradient(90deg, #e3bb7a12, transparent 70%); }
+.game-date { font: 700 .95rem var(--display); }
+.game-winner { color: var(--bronze-light); font: italic 1.02rem var(--serif); }
 .game-results { display: grid; grid-template-columns: repeat(4, 1fr); }
-.game-player { min-width: 0; padding: 13px 15px; border-right: 1px solid #30283d; }
+.game-player { min-width: 0; padding: 13px 15px; border-right: 1px solid #30271d; }
 .game-player:last-child { border-right: 0; }
-.game-player.is-winner { background: linear-gradient(135deg, #e4b95f13, transparent); }
-.place { color: #8f86a0; font-size: .68rem; font-weight: 800; letter-spacing: .08em; }
+.game-player.is-winner { background: linear-gradient(135deg, #e2b86218, transparent); }
+.place { display: flex; align-items: center; gap: 5px; color: #8f8474; font-size: .68rem; font-weight: 800; letter-spacing: .08em; }
 .game-player.is-winner .place { color: var(--gold); }
+.game-player.is-tied .place { color: #cfc5b6; }
+.log-icon { flex: none; width: 15px; height: 15px; }
 .game-player strong, .game-player small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.game-player strong { margin-top: 4px; font-size: .9rem; }
+.game-player strong { margin-top: 5px; font: 700 .95rem var(--display); }
 .game-player small { margin-top: 3px; color: var(--muted); font-size: .75rem; }
+.game-player small .pips { margin-left: 5px; }
 
 @media (max-width: 780px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .game-results { grid-template-columns: repeat(2, 1fr); }
   .game-player:nth-child(2n) { border-right: 0; }
-  .game-player:nth-child(-n+2) { border-bottom: 1px solid #30283d; }
+  .game-player:nth-child(-n+2) { border-bottom: 1px solid #30271d; }
 }
 @media (max-width: 560px) {
   main { padding: 14px 12px 80px; }
+  body::before { width: 420px; right: -170px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
   .hero.has-art { min-height: 300px; }
   .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
+  .loyalty-large { min-width: 42px; height: 38px; font-size: 1rem; }
   .card { padding: 17px; }
   .section-heading { flex-direction: column; align-items: flex-start; gap: 4px; }
   .bar-item { grid-template-columns: 70px 1fr; }
   .bar-value { grid-column: 2; text-align: left; }
+  .color-pie .bar-item { grid-template-columns: 112px 1fr; }
   .deck-grid { grid-template-columns: repeat(2, 1fr); }
+  .deck-card-name { flex-wrap: wrap; gap: 4px 7px; }
+  .deck-card-name .pips { margin-left: 0; }
   .deck-printing { max-width: 48%; }
+  .commander-zone { grid-template-columns: 104px 1fr; gap: 16px; }
+  .zone-stats { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-card, .deck-card-reveal, .deck-card-reveal img, .zone-slot { transition: none; }
+  .deck-card:hover, .deck-card:focus-visible { transform: none; }
 }

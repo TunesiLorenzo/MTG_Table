@@ -3,85 +3,95 @@
     "Borgo": {
       "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif"
     },
-    "Coach": {
-      "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg"
-    },
     "Curti": {
       "portrait": "Backgrounds/Players/VoltiBase/curti.jpg"
+    },
+    "Coach": {
+      "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg"
     }
   },
   "decks": {
     "Arcades": {
       "commander": "Arcades, the Strategist",
-      "art": "Backgrounds/Players/Arcades.jpg"
+      "art": "Backgrounds/Players/Arcades.jpg",
+      "colors": "WUG"
     },
     "Azlask": {
       "commander": "Azlask, the Swelling Scourge",
-      "art": "Backgrounds/Players/AzlaskBorgo.png"
+      "art": "Backgrounds/Players/AzlaskBorgo.png",
+      "colors": "WUBRG"
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
       "art": "Backgrounds/Players/Cloud.png",
       "cards": [
         "Backgrounds/Commander/Cloud.webp"
-      ]
+      ],
+      "colors": "WRG"
     },
     "Commodoro": {
       "commander": "Commodore Guff",
       "art": "Backgrounds/Players/CommodorGuff.png",
       "cards": [
         "Backgrounds/Commander/CommodorGuff.webp"
-      ]
+      ],
+      "colors": "WUR"
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
       "art": "Backgrounds/Players/Scarecrow.png",
       "cards": [
         "Backgrounds/Commander/Dwight_O_lantern.webp"
-      ]
+      ],
+      "colors": "WUBRG"
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
       "art": "Backgrounds/Players/TMNT.png",
       "cards": [
-        "Backgrounds/Commander/LeonardoTMNT.webp",
-        "Backgrounds/Commander/DinaEssenceBrewer.webp"
-      ]
+        "Backgrounds/Commander/LeonardoTMNT.webp"
+      ],
+      "colors": "WUBRG"
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
       "art": "Backgrounds/Players/Narset.png",
       "cards": [
         "Backgrounds/Commander/Narset.jpg"
-      ]
+      ],
+      "colors": "WUR"
     },
     "Niv-Mizzet": {
       "art": "Backgrounds/Players/NivMizzet.jpg"
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
-      "art": "Backgrounds/Players/Oloro.jpg"
+      "art": "Backgrounds/Players/Oloro.jpg",
+      "colors": "WUB"
     },
     "Urza": {
       "commander": "Urza, Lord High Artificer",
       "art": "Backgrounds/Players/Urza.png",
       "cards": [
         "Backgrounds/Commander/Urza.jpg"
-      ]
+      ],
+      "colors": "U"
     },
     "Yuna": {
       "commander": "Yuna, Grand Summoner",
       "art": "Backgrounds/Players/Yuna.png",
       "cards": [
         "Backgrounds/Commander/Yuna.jpg"
-      ]
+      ],
+      "colors": "WUG"
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
       "art": "Backgrounds/Players/Zulhodok.png",
       "cards": [
         "Backgrounds/Commander/Zhulodok.jpg"
-      ]
+      ],
+      "colors": "C"
     }
   }
 }
