@@ -84,19 +84,27 @@
 
   /* The deck's sound, from the same folder as the table's commander sounds. */
   const soundOptions = (value) => sounds.map((sound) => `<option value="${escapeHtml(sound.file)}"${sound.file === value ? " selected" : ""}>${escapeHtml(sound.label)}</option>`).join("");
-  function soundField(value) {
+  function soundField(value, volume) {
     return `<div class="editor-field" data-sound-field><span>Sound</span>
       <div class="editor-sound"><select data-sound><option value="">No sound</option>${soundOptions(value)}</select>
       <button type="button" class="editor-add" data-preview-sound>Play</button>
       <label class="editor-upload" title="Upload a sound from this computer into sound/Commander">Upload<input type="file" data-sound-upload accept=".mp3,.wav,.ogg,.m4a,audio/*" hidden></label></div></div>
+      <label class="editor-field" data-volume-field><span>Volume</span>
+      <div class="editor-volume"><input type="range" data-volume min="1" max="100" step="1" value="${Number(volume) || DECK_SOUND_VOLUME}"><output data-volume-label></output></div></label>
       <p class="editor-hint">Plays as the deck's page opens. New files in sound/Commander are listed here and at the table.</p>`;
   }
 
+  /* The slider applies to the preview as it moves, so the level can be set by ear. */
+  const chosenVolume = () => Number(app.querySelector("[data-volume]").value);
   function paintPreview() {
     const button = app.querySelector("[data-preview-sound]");
     if (!button) return;
+    const sound = app.querySelector("[data-sound]").value;
     button.textContent = soundPreview.paused ? "Play" : "Stop";
-    button.disabled = !app.querySelector("[data-sound]").value;
+    button.disabled = !sound;
+    app.querySelector("[data-volume-field]").hidden = !sound;
+    app.querySelector("[data-volume-label]").textContent = `${chosenVolume()}%`;
+    soundPreview.volume = chosenVolume() / 100;
   }
   for (const event of ["play", "pause", "ended"]) soundPreview.addEventListener(event, paintPreview);
 
@@ -130,7 +138,7 @@
     const automatic = THEMES[autoTheme(deckName)];
     const options = Object.entries(THEMES).map(([key, label]) => `<option value="${key}"${key === value ? " selected" : ""}>${escapeHtml(label)}</option>`).join("");
     return `<label class="editor-field"><span>Theme</span><select data-theme><option value="">Auto${automatic ? ` (${escapeHtml(automatic)})` : ""}</option>${options}</select></label>
-      <p class="editor-hint">Auto follows the commander card's colours, or its colour identity until those are looked up.</p>`;
+      <p class="editor-hint">Auto follows the commander card's colours, or its colour identity until those are looked up. An Eldrazi commander brings the void.</p>`;
   }
 
   /* A player's decks added by hand. Decks they have played list themselves. */
@@ -164,7 +172,7 @@
            ${focusField("art", entry.art_focus)}
            <div class="editor-cards">${(entry.cards || []).map((card) => pictureField("cards", "Card", card, "No card")).join("")}</div>
            <button type="button" class="editor-add" data-add-card>+ Add a commander card</button>
-           ${soundField(entry.sound || "")}`
+           ${soundField(entry.sound || "", entry.volume)}`
         : `${pictureField("portrait", "Profile photo", entry.portrait || "", "Initial only")}
            ${pictureField("background", "Banner", entry.background || "", "Cycle through their decks")}
            ${focusField("background", entry.background_focus)}
@@ -174,8 +182,10 @@
 
     const status = form.querySelector(".editor-status");
     form.dataset.cardColors = entry.card_colors || "";
+    form.dataset.typeLine = entry.type_line || "";
     form.dataset.cardColorsFor = entry.commander || "";
     form.querySelector("[data-theme]")?.addEventListener("change", (event) => applyTheme(deckTheme(subject.name, event.target.value), deckColors(subject.name)));
+    form.querySelector("[data-volume]")?.addEventListener("input", paintPreview);
 
     /* Shows the crop control only while its picture is chosen, and draws the
        picture, the chosen point and the banner preview from data-focus. */
@@ -351,6 +361,7 @@
           .then((result) => {
             for (const box of colorBoxes()) box.checked = result.colors.includes(box.value);
             form.dataset.cardColors = result.card_colors;
+            form.dataset.typeLine = result.type_line;
             form.dataset.cardColorsFor = form.elements.commander.value;
             status.textContent = `${result.message}. Save to keep it.`;
             status.className = "editor-status";
@@ -368,7 +379,8 @@
       const edited = group === "decks"
         ? { commander: form.elements.commander.value, colors: colorBoxes().filter((box) => box.checked).map((box) => box.value).join(""),
             /* Kept only while they still belong to the commander typed in; else the server looks them up again. */
-            card_colors: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.cardColors : "", theme: form.querySelector("[data-theme]").value, art: picked("art")[0] || "", art_focus: form.querySelector('[data-focus-for="art"]').dataset.focus, cards: picked("cards"), sound: form.querySelector("[data-sound]").value }
+            card_colors: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.cardColors : "",
+            type_line: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.typeLine : "", theme: form.querySelector("[data-theme]").value, art: picked("art")[0] || "", art_focus: form.querySelector('[data-focus-for="art"]').dataset.focus, cards: picked("cards"), sound: form.querySelector("[data-sound]").value, volume: chosenVolume() }
         : { portrait: picked("portrait")[0] || "", background: picked("background")[0] || "", background_focus: form.querySelector('[data-focus-for="background"]').dataset.focus, decks: [...form.querySelectorAll(".editor-deck-list [data-deck]")].map((item) => item.dataset.deck) };
       soundPreview.pause();
       try {

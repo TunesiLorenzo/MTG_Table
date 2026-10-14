@@ -93,13 +93,16 @@ ROSTER_UPLOAD_MAX = 20 * 1024 * 1024
 # A deck's sound is one of the commander recordings the table plays, so a
 # sound uploaded from the editor lands in sound/Commander beside them.
 ROSTER_SOUND_UPLOAD_MAX = 10 * 1024 * 1024
+# How loud a deck's page plays its sound, in percent. The default is left out
+# of the roster; mirrors DECK_SOUND_VOLUME in site/site.js.
+ROSTER_SOUND_VOLUME_DEFAULT = 80
 # A deck's colour identity is stored as some of WUBRG in that order, or C for
 # colourless. Scryfall supplies it from the commander's name.
 MANA_COLORS = "WUBRG"
 # A deck page's theme, chosen by hand in place of the one its commander's
 # colours give it. Mirrors THEMES in site/site.js.
 DECK_THEMES = {"w", "u", "b", "r", "g", "c", "gold", "wu", "ub", "br", "rg", "gw", "wb", "ur", "bg", "rw", "gu",
-               "wgu", "uwb", "bur", "rbg", "grw", "wbg", "urw", "bgu", "rwb", "gur"}
+               "wgu", "uwb", "bur", "rbg", "grw", "wbg", "urw", "bgu", "rwb", "gur", "eldrazi"}
 SCRYFALL_NAMED_URL = "https://api.scryfall.com/cards/named"
 # Everything the public site is built from, and so everything a publish
 # commits. Code and the rest of the working tree are left for a normal commit.
@@ -989,6 +992,9 @@ def roster_entry_from_payload(group, payload):
         entry["commander"] = commander
         entry["colors"] = clean_colors(payload.get("colors"))
         entry["card_colors"] = clean_colors(payload.get("card_colors"))
+        # The commander's type line, as Scryfall prints it; an Eldrazi's
+        # brings the Eldrazi theme.
+        entry["type_line"] = re.sub(r"\s+", " ", str(payload.get("type_line") or "")).strip()[:200]
         theme = str(payload.get("theme") or "").strip().lower()
         if theme and theme not in DECK_THEMES:
             raise ValueError("Unknown theme")
@@ -998,6 +1004,8 @@ def roster_entry_from_payload(group, payload):
         cards = payload.get("cards")
         entry["cards"] = [card for card in map(picture, cards if isinstance(cards, list) else []) if card]
         entry["sound"] = validate_commander_sound(payload.get("sound"))
+        if entry["sound"]:
+            entry["volume"] = clean_sound_volume(payload.get("volume"))
     else:
         entry["portrait"] = picture(payload.get("portrait"))
         entry["background"] = picture(payload.get("background"))
@@ -1011,6 +1019,19 @@ def roster_entry_from_payload(group, payload):
         if len(entry["decks"]) > ROSTER_DECKS_MAX:
             raise ValueError(f"A player can have at most {ROSTER_DECKS_MAX} decks added by hand")
     return {key: value for key, value in entry.items() if value}
+
+
+def clean_sound_volume(value):
+    """A deck sound's volume as a whole percent from 1 to 100, or 0 for the default."""
+    if value in (None, ""):
+        return 0
+    try:
+        volume = round(float(value))
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Volume must be a number") from None
+    if not 1 <= volume <= 100:
+        raise ValueError("Volume must be between 1% and 100%")
+    return 0 if volume == ROSTER_SOUND_VOLUME_DEFAULT else volume
 
 
 def clean_focus(value):
@@ -1074,6 +1095,7 @@ def lookup_color_identity(commander):
                             for card in cards))
     return {"colors": "".join(color for color in MANA_COLORS if color in letters) or "C",
             "card_colors": "".join(color for color in MANA_COLORS if color in printed) or "C",
+            "type_line": " // ".join(card.get("type_line") or (card.get("card_faces") or [{}])[0].get("type_line", "") for card in cards),
             "cards": [card.get("name", "") for card in cards]}
 
 
@@ -1239,11 +1261,13 @@ def set_public_roster_entry():
         saved = next((value for key, value in load_roster()["decks"].items() if key.casefold() == name.casefold()), {})
         if saved.get("commander") != entry["commander"]:
             entry.pop("card_colors", None)
-        if not entry.get("colors") or not entry.get("card_colors"):
+            entry.pop("type_line", None)
+        if not entry.get("colors") or not entry.get("card_colors") or not entry.get("type_line"):
             try:
                 found = lookup_color_identity(entry["commander"])
-                entry.setdefault("colors", found["colors"])
-                entry.setdefault("card_colors", found["card_colors"])
+                for key in ("colors", "card_colors", "type_line"):
+                    if found[key]:
+                        entry.setdefault(key, found[key])
             except (RuntimeError, ValueError):
                 pass
     with roster_lock:

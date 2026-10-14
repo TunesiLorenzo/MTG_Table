@@ -43,7 +43,8 @@
       "cards": [
         "Backgrounds/Commander/arcades_strategist.webp"
       ],
-      "card_colors": "WUG"
+      "card_colors": "WUG",
+      "type_line": "Legendary Creature \u2014 Elder Dragon"
     },
     "Azlask": {
       "commander": "Azlask, the Swelling Scourge",
@@ -53,7 +54,8 @@
         "Backgrounds/Commander/Azlask.jpg"
       ],
       "sound": "Azlask.wav",
-      "card_colors": "C"
+      "card_colors": "C",
+      "type_line": "Legendary Creature \u2014 Eldrazi"
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
@@ -63,7 +65,8 @@
       ],
       "colors": "WRG",
       "sound": "FF7.wav",
-      "card_colors": "WRG"
+      "card_colors": "WRG",
+      "type_line": "Legendary Creature \u2014 Human Soldier Mercenary"
     },
     "Commodoro": {
       "commander": "Commodore Guff",
@@ -74,7 +77,8 @@
         "Backgrounds/Commander/CommodorGuff.webp"
       ],
       "sound": "Guff.wav",
-      "card_colors": "WUR"
+      "card_colors": "WUR",
+      "type_line": "Legendary Planeswalker \u2014 Guff"
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
@@ -85,7 +89,8 @@
         "Backgrounds/Commander/Dwight_O_lantern.webp"
       ],
       "sound": "Dwight_o_lantern.wav",
-      "card_colors": "WUBRG"
+      "card_colors": "WUBRG",
+      "type_line": "Legendary Artifact Creature \u2014 Scarecrow"
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
@@ -95,7 +100,8 @@
       ],
       "colors": "WUBRG",
       "sound": "Leonardo_The_Balance.wav",
-      "card_colors": "WBG"
+      "card_colors": "WBG",
+      "type_line": "Legendary Creature \u2014 Mutant Ninja Turtle // Legendary Creature \u2014 Dryad Druid"
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
@@ -105,7 +111,8 @@
         "Backgrounds/Commander/Narset.jpg"
       ],
       "sound": "Fight Whoosh.mp3",
-      "card_colors": "WUR"
+      "card_colors": "WUR",
+      "type_line": "Legendary Creature \u2014 Human Monk"
     },
     "Niv-Mizzet": {
       "commander": "niv-mizzet parun",
@@ -115,7 +122,8 @@
       "cards": [
         "Backgrounds/Commander/Niv-Mizzet.jpg"
       ],
-      "card_colors": "UR"
+      "card_colors": "UR",
+      "type_line": "Legendary Creature \u2014 Dragon Wizard"
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
@@ -124,7 +132,8 @@
       "cards": [
         "Backgrounds/Commander/Oloro.png"
       ],
-      "card_colors": "WUB"
+      "card_colors": "WUB",
+      "type_line": "Legendary Creature \u2014 Giant Soldier"
     },
     "Urza": {
       "commander": "Urza, Lord High Artificer",
@@ -134,7 +143,8 @@
         "Backgrounds/Commander/Urza.jpg"
       ],
       "sound": "Electricity.mp3",
-      "card_colors": "U"
+      "card_colors": "U",
+      "type_line": "Legendary Creature \u2014 Human Artificer"
     },
     "Yuna": {
       "commander": "Yuna, Grand Summoner",
@@ -144,7 +154,8 @@
         "Backgrounds/Commander/Yuna.jpg"
       ],
       "sound": "Chimes.mp3",
-      "card_colors": "WUG"
+      "card_colors": "WUG",
+      "type_line": "Legendary Creature \u2014 Human Cleric"
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
@@ -155,7 +166,8 @@
         "Backgrounds/Commander/Zhulodok.jpg"
       ],
       "sound": "Lovecraft Growl.mp3",
-      "card_colors": "C"
+      "card_colors": "C",
+      "type_line": "Legendary Creature \u2014 Eldrazi"
     },
     "Vaevictis": {
       "commander": "Vaevictis asmadi, the Dire",
@@ -163,7 +175,8 @@
       "cards": [
         "Backgrounds/Commander/Vaevictis.jpg"
       ],
-      "card_colors": "BRG"
+      "card_colors": "BRG",
+      "type_line": "Legendary Creature \u2014 Elder Dragon"
     },
     "Lumra": {
       "commander": "Lumra, Bellows of the beast",
@@ -183,7 +196,8 @@
         "Backgrounds/Commander/DinaEssenceBrewer.webp"
       ],
       "sound": "Dina.wav",
-      "card_colors": "BG"
+      "card_colors": "BG",
+      "type_line": "Legendary Creature \u2014 Dryad Druid"
     },
     "Obeka": {
       "commander": "Obeka, Splitter of Seconds",
@@ -193,7 +207,8 @@
       "cards": [
         "Backgrounds/Commander/Obeka.jpg"
       ],
-      "card_colors": "UBR"
+      "card_colors": "UBR",
+      "type_line": "Legendary Creature \u2014 Ogre Warlock"
     },
     "Beamtown Bullies": {
       "commander": "Beamtown Bullies",
@@ -204,7 +219,8 @@
         "Backgrounds/Commander/BeamtownBullies.jfif"
       ],
       "sound": "BeamTownBullies.wav",
-      "card_colors": "BRG"
+      "card_colors": "BRG",
+      "type_line": "Legendary Creature \u2014 Ogre Devil Warrior"
     }
   }
 }

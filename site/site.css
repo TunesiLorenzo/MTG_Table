@@ -55,7 +55,7 @@ body {
 /* The colour wheel in the corner: rings, a pentagon and a star in gold, and
    each colour's symbol on its node, kept upright while the wheel turns. */
 .sigil { position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none; }
-.sigil { color: var(--bronze-light); }
+.sigil { color: var(--bronze-light); transition: opacity 1s ease; }
 .sigil svg { display: block; width: 100%; height: 100%; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.1; opacity: .3; filter: drop-shadow(0 0 3px currentColor); }
 /* On a deck's page the colours outside its identity fade back. */
 .sigil-symbol.is-dim { opacity: .07 !important; }
@@ -411,6 +411,34 @@ html[data-theme-c="b"] { --glow-2-at: -5% 90%; --glow-3: #3b244888; --amb-3: #5a
 html[data-theme-c="r"] { --glow-2-at: -5% 90%; --glow-3: #8a2a1288; --amb-3: #c8401a44; --accent-3: #ffb066; }
 html[data-theme-c="g"] { --glow-2-at: -5% 90%; --glow-3: #1f5a2e88; --amb-3: #2f8a4a44; --accent-3: #a8e0a0; }
 html[data-theme-c] .section-heading .muted { color: var(--accent-3); }
+/* --------------------------------------------------------------- eldrazi -- */
+/* The void, ancient and alien: deep violet dark with bone-white, an
+   otherworldly magenta and cyan, panels cut like hedron stone, headings in
+   Megrim, and a wall of alien glyphs carved faintly into the background with
+   a line of them glowing under the deck's name. The glyphs are drawn at
+   random by inscribeGlyphs() in site.js, into --glyph-wall and --glyph-band. */
+html[data-theme-a="eldrazi"] {
+  --base: #07050c; --mid: #130d1e; --glow: #3d1f5c; --panel-solid: #0f0a17; --card: rgba(16, 11, 25, .93); --edge: #2a2038; --line: #3a2c4e;
+  --bronze: #c98ae0; --bronze-light: #efe4cc; --gold: #8fe8e0; --muted: #9a8fa8; --display: Megrim, "Major Mono Display", sans-serif; --radius: 0px;
+  --hero-tint: #22143a; --amb-1: #6a2a9a44; --amb-3: #1f8a8a2e; --mana-c: #d78ae8;
+  --texture: var(--glyph-wall, none), radial-gradient(ellipse at 50% 40%, transparent 30%, #000000b8 100%);
+}
+html[data-theme-b="eldrazi"] { --glow-2: #6a1a5a88; --amb-2: #b03a9a33; --accent-2: #8fe8e0; }
+html[data-theme-a="eldrazi"] .sigil { opacity: 0; }
+/* Hedron-cut corners in place of rounded ones. */
+html[data-theme-a="eldrazi"] :is(.card, .summary, .hero, .game-card, .deck-gallery img, .back-link) {
+  --cut: 12px;
+  clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+}
+html[data-theme-a="eldrazi"] .hero { --cut: 22px; background: linear-gradient(135deg, var(--hero-tint), var(--mid) 58%, var(--base)) padding-box, linear-gradient(135deg, #efe4cc88, #c98ae0, #8fe8e0aa, #efe4cc66) border-box; }
+html[data-theme-a="eldrazi"] :is(h1, h2, .summary strong, .player-cell strong, .game-date) { font-weight: 400; letter-spacing: .05em; text-shadow: 0 0 1px currentColor, 0 0 16px #c98ae055; }
+html[data-theme-a="eldrazi"] .hero h1 { font-size: clamp(2.2rem, 7vw, 4rem); text-shadow: 0 0 1px currentColor, 0 2px 18px #000c, 0 0 28px #c98ae088; }
+html[data-theme-a="eldrazi"] .hero h1::after { content: ""; display: block; width: min(380px, 80%); height: 16px; margin-top: 12px; background: var(--glyph-band, none) left center / auto 100% repeat-x; opacity: .9; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme-a="eldrazi"] .hero h1::after { animation: glyphs-glow 4s ease-in-out infinite alternate; }
+}
+@keyframes glyphs-glow { from { opacity: .55; filter: drop-shadow(0 0 2px #c98ae0); } to { opacity: 1; filter: drop-shadow(0 0 6px #8fe8e0); } }
+
 html[data-theme-a] .hero h1 { text-shadow: 0 2px 18px #000a, 0 0 30px color-mix(in srgb, var(--bronze) 45%, transparent); }
 html[data-theme-a] .hero { box-shadow: 0 22px 60px #05030a88, 0 0 60px color-mix(in srgb, var(--bronze) 18%, transparent); }
 html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #000, transparent 70%); }

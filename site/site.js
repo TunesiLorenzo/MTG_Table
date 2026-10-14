@@ -207,6 +207,7 @@ const THEMES = {
   wb: "Orzhov", ur: "Izzet", bg: "Golgari", rw: "Boros", gu: "Simic",
   wgu: "Bant", uwb: "Esper", bur: "Grixis", rbg: "Jund", grw: "Naya",
   wbg: "Abzan", urw: "Jeskai", bgu: "Sultai", rwb: "Mardu", gur: "Temur",
+  eldrazi: "Eldrazi",
 };
 
 function themeFromColors(value) {
@@ -217,7 +218,9 @@ function themeFromColors(value) {
   if (colors.length <= 3) return Object.keys(THEMES).find((key) => key.length === colors.length && colors.every((color) => key.includes(color)));
   return "gold";
 }
-const autoTheme = (name) => themeFromColors(deckInfo(name).card_colors) || themeFromColors(deckInfo(name).colors);
+/* An Eldrazi commander, by the type line Scryfall gives, brings the void. */
+const isEldrazi = (name) => /\bEldrazi\b/i.test(deckInfo(name).type_line || "");
+const autoTheme = (name) => (isEldrazi(name) ? "eldrazi" : themeFromColors(deckInfo(name).card_colors) || themeFromColors(deckInfo(name).colors));
 const deckTheme = (name, override = deckInfo(name).theme) => (override in THEMES ? override : autoTheme(name));
 
 /* Paints the page in a theme ("" for the page's own), and points the embers,
@@ -236,7 +239,8 @@ function applyTheme(key, colors = []) {
   }
   const lit = new Set(colors.map((color) => color.toLowerCase()).filter((color) => "wubrg".includes(color)));
   for (const symbol of document.querySelectorAll(".sigil-symbol")) symbol.classList.toggle("is-dim", lit.size > 0 && !lit.has(symbol.dataset.color));
-  embers.setColors(colors);
+  /* The void burns colourless, whatever the identity. */
+  embers.setColors(key === "eldrazi" ? ["C"] : colors);
 }
 
 /* A place in the standings, read the way a set symbol reads its rarity. */
@@ -484,7 +488,7 @@ function deckView(name) {
   return `
     ${backLink("deck")}
     <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
-      ${info.sound ? soundButton(info.sound) : ""}
+      ${info.sound ? soundButton(info.sound, info.volume) : ""}
       <div><span class="eyebrow">DECK · ${deck.games ? `#${position} BY WINS` : "NOT PLAYED YET"}</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
       <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}${deck.games ? `Played by ${deckPeople(deck).map(playerLink).join(", ")}` : deck.owners.size ? `Owned by ${deckPeople(deck).map(playerLink).join(", ")}, not played yet` : "Not played yet"}.</p></div>
     </section>
@@ -662,6 +666,8 @@ function startEmbers() {
   embers.colors = allColors;
   /* A deck's colours plus its theme's accent; none means all five again. */
   embers.setColors = (letters) => {
+    /* A theme may recolour colourless, as the void does. */
+    manaColor.C = getComputedStyle(document.documentElement).getPropertyValue("--mana-c").trim() || manaColor.C;
     const chosen = letters.map((color) => color.toUpperCase()).filter((color) => color in manaColor);
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--bronze-light").trim() || "#e3bb7a";
     embers.colors = chosen.length ? [...chosen.map((color) => manaColor[color]), accent] : allColors;
@@ -816,17 +822,18 @@ function startEmbers() {
 /* A deck's page plays its commander's sound as it opens, the one the table
    plays when that commander is revealed. Browsers keep a page silent until
    the visitor has clicked something, so a deck opened straight from a link
-   waits for its button. Turning the sound off is remembered. */
-const DECK_SOUND_VOLUME = 0.8;
+   waits for its button. Turning the sound off is remembered. Each deck can
+   set its own volume in percent; without one it plays at DECK_SOUND_VOLUME,
+   which mirrors ROSTER_SOUND_VOLUME_DEFAULT in web.py. */
+const DECK_SOUND_VOLUME = 80;
 const deckSound = new Audio();
-deckSound.volume = DECK_SOUND_VOLUME;
 let soundMuted = false;
 try { soundMuted = localStorage.getItem("deck-sound-muted") === "1"; } catch (error) { /* never remembered */ }
 
 const SOUND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="sound-cone" d="M4 9h4l5-4v14l-5-4H4z"/><path class="sound-waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/><path class="sound-slash" d="M16 9l6 6M22 9l-6 6"/></svg>';
 
-function soundButton(url) {
-  return `<button type="button" class="hero-sound" data-sound="${escapeHtml(url)}">${SOUND_ICON}<span></span></button>`;
+function soundButton(url, volume) {
+  return `<button type="button" class="hero-sound" data-sound="${escapeHtml(url)}" data-volume="${Number(volume) || DECK_SOUND_VOLUME}">${SOUND_ICON}<span></span></button>`;
 }
 
 /* The button reads off, playing, or ready to play again. */
@@ -853,6 +860,7 @@ function startDeckSound() {
     return;
   }
   if (deckSound.getAttribute("src") !== button.dataset.sound) deckSound.src = button.dataset.sound;
+  deckSound.volume = Math.min(Math.max(Number(button.dataset.volume) / 100, 0), 1);
   if (soundMuted) deckSound.pause();
   else playDeckSound();
   paintSoundButton();
@@ -869,6 +877,57 @@ app.addEventListener("click", (event) => {
   else playDeckSound();
   paintSoundButton();
 });
+
+/* ------------------------------------------------------------- glyphs -- */
+
+/* The Eldrazi theme's alien script: each glyph a stem with rings, dots,
+   bars, arcs and ticks hung on it, drawn at random once per visit. A wall of
+   them, carved, goes into --glyph-wall for the background; a glowing line of
+   them into --glyph-band, under a deck's name (see site.css). */
+function alienGlyph(x, y, w, h) {
+  const n = (value) => value.toFixed(1);
+  const ring = (cx, cy, r) => `M${n(cx - r)} ${n(cy)}a${n(r)} ${n(r)} 0 1 0 ${n(r * 2)} 0a${n(r)} ${n(r)} 0 1 0 ${n(-r * 2)} 0`;
+  const mid = x + w / 2;
+  const lean = (Math.random() - 0.5) * w * 0.5;
+  const parts = [`M${n(mid - lean / 2)} ${n(y)}L${n(mid + lean / 2)} ${n(y + h)}`];
+  const at = (share) => [mid - lean / 2 + lean * share, y + h * share];
+  for (const share of [0.15 + Math.random() * 0.2, 0.55 + Math.random() * 0.3]) {
+    const [sx, sy] = at(share);
+    const shape = Math.random();
+    if (shape < 0.25) parts.push(ring(sx + (Math.random() < 0.5 ? -1 : 1) * w * 0.32, sy, w * 0.16));
+    else if (shape < 0.45) parts.push(`M${n(sx - w * 0.45)} ${n(sy)}L${n(sx + w * 0.45)} ${n(sy)}`);
+    else if (shape < 0.6) parts.push(`M${n(sx - w * 0.4)} ${n(sy - h * 0.12)}Q${n(sx)} ${n(sy + h * 0.2)} ${n(sx + w * 0.4)} ${n(sy - h * 0.12)}`);
+    else if (shape < 0.78) parts.push(`M${n(sx)} ${n(sy)}L${n(sx + (Math.random() < 0.5 ? -1 : 1) * w * 0.45)} ${n(sy + h * 0.18)}`);
+  }
+  if (Math.random() < 0.55) parts.push(ring(...(Math.random() < 0.5 ? at(0) : at(1)), w * 0.13));
+  return parts.join("");
+}
+
+function glyphLine(x, y, width, w, h) {
+  let d = "";
+  for (let along = x; along < x + width - w; along += w * 1.35) {
+    d += alienGlyph(along, y, w, h);
+    if (Math.random() < 0.16) along += w * 1.2;
+  }
+  return d;
+}
+
+const svgUrl = (markup) => `url("data:image/svg+xml,${encodeURIComponent(markup)}")`;
+
+function inscribeGlyphs() {
+  /* The wall: rows of script between carved rules, a dark stroke under a
+     pale one so it reads as cut into stone. */
+  let rows = "";
+  for (let y = 18; y < 420; y += 52) rows += glyphLine(10, y, 440, 11, 22) + `M0 ${y + 36}H460`;
+  const wall = `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="420" fill="none" stroke-linecap="round">`
+    + `<path d="${rows}" stroke="#000" stroke-opacity=".6" stroke-width="1.6" transform="translate(1 1.2)"/>`
+    + `<path d="${rows}" stroke="#efe4cc" stroke-opacity=".075" stroke-width="1.2"/></svg>`;
+  const band = glyphLine(2, 2, 400, 7, 12);
+  const line = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="16" fill="none" stroke-linecap="round">`
+    + `<path d="${band}" stroke="#d9a8ff" stroke-width="1.1"/></svg>`;
+  document.documentElement.style.setProperty("--glyph-wall", svgUrl(wall));
+  document.documentElement.style.setProperty("--glyph-band", svgUrl(line));
+}
 
 /* --------------------------------------------------------------- router -- */
 
@@ -1050,5 +1109,6 @@ async function start() {
   }
 }
 
+inscribeGlyphs();
 startEmbers();
 start();

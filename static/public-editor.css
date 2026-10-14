@@ -8,6 +8,9 @@ main { padding-bottom: 130px; }
 .editor-sound { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .editor-card .editor-sound .editor-add { flex: none; }
 .editor-card .editor-sound .editor-add:disabled { opacity: .45; cursor: default; }
+.editor-volume { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.editor-card .editor-volume input { flex: 1; min-height: 0; padding: 0; border: 0; background: none; accent-color: var(--bronze); cursor: pointer; }
+.editor-volume output { flex: none; min-width: 3.2em; color: #f3ece1; font-variant-numeric: tabular-nums; text-align: right; }
 .editor-cards { display: grid; gap: 14px; }
 .editor-cards:empty { display: none; }
 .editor-card input, .editor-card select { width: 100%; min-width: 0; min-height: 42px; padding: 0 12px; border: 1px solid #4a3d2f; border-radius: 12px; background: #120f0b; color: #fff; font: inherit; }
