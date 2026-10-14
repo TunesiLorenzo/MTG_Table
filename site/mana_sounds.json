@@ -1,0 +1,26 @@
+{
+  "W": {
+    "sound": "Plain.wav",
+    "volume": 85
+  },
+  "U": {
+    "sound": "Island.wav",
+    "volume": 85
+  },
+  "B": {
+    "sound": "Swamp.mp3",
+    "volume": 60
+  },
+  "R": {
+    "sound": "Mountain.mp3",
+    "volume": 95
+  },
+  "G": {
+    "sound": "Forest.mp3",
+    "volume": 60
+  },
+  "C": {
+    "sound": "",
+    "volume": 80
+  }
+}

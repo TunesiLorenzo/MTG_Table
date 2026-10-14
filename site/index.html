@@ -11,45 +11,62 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mana-font@1.18.0/css/mana.min.css">
   <link rel="stylesheet" href="site.css">
   <script>
-    /* The grimoire opens once per visit, and never for reduced motion; see
-       playGrimoire() in site.js. Decided here so it never flashes. */
+    /* The grimoire is skipped for reduced motion, and on a later load in the
+       same tab when the intro is set to play once per visit (playGrimoire()
+       in site.js keeps that note). Decided here so it never flashes. */
     try {
       if (sessionStorage.getItem("grimoire-opened") || matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("no-grimoire");
     } catch (error) { /* storage blocked: it simply plays */ }
   </script>
 </head>
 <body>
-  <div class="grimoire" aria-hidden="true">
-    <svg class="grimoire-defs" width="0" height="0"><filter id="ink-rough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="2.2"/></filter></svg>
-    <div class="grimoire-float">
-      <div class="grimoire-stage">
-        <div class="grimoire-pages"><svg class="grimoire-ink" data-ink="right" viewBox="0 0 240 330"></svg><span class="grimoire-glow"></span></div>
-        <div class="grimoire-leaf" style="--order:0"><div class="leaf-face"><svg class="grimoire-ink" data-ink="faded" viewBox="0 0 240 330"></svg></div><div class="leaf-face leaf-back"><svg class="grimoire-ink" data-ink="faded" viewBox="0 0 240 330"></svg></div></div>
-        <div class="grimoire-leaf" style="--order:1"><div class="leaf-face"><svg class="grimoire-ink" data-ink="faded" viewBox="0 0 240 330"></svg></div><div class="leaf-face leaf-back"><svg class="grimoire-ink" data-ink="left" viewBox="0 0 240 330"></svg></div></div>
-        <div class="grimoire-cover">
-          <div class="grimoire-cover-front"><span class="grimoire-corner" data-corner="tl"></span><span class="grimoire-corner" data-corner="tr"></span><span class="grimoire-corner" data-corner="bl"></span><span class="grimoire-corner" data-corner="br"></span><svg class="grimoire-emblem" viewBox="0 0 200 200"><defs><path id="emblem-ring" d="M100 100m-76 0a76 76 0 1 1 152 0a76 76 0 1 1-152 0"/></defs><g class="emblem-base"><circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="62"/><path d="M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z"/><circle cx="100" cy="40" r="9"/><circle cx="157.1" cy="81.5" r="9"/><circle cx="135.3" cy="148.5" r="9"/><circle cx="64.7" cy="148.5" r="9"/><circle cx="42.9" cy="81.5" r="9"/><circle cx="100" cy="100" r="14"/><text><textPath href="#emblem-ring" textLength="470">ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟᚠᚢᚦᚨᚱᚲ</textPath></text></g><g class="emblem-fire"><circle cx="100" cy="100" r="92" pathLength="1"/><circle cx="100" cy="100" r="62" pathLength="1"/><path d="M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z" pathLength="1"/><circle cx="100" cy="40" r="9" pathLength="1"/><circle cx="157.1" cy="81.5" r="9" pathLength="1"/><circle cx="135.3" cy="148.5" r="9" pathLength="1"/><circle cx="64.7" cy="148.5" r="9" pathLength="1"/><circle cx="42.9" cy="81.5" r="9" pathLength="1"/><circle cx="100" cy="100" r="14" pathLength="1"/></g></svg><span class="grimoire-title">Commander Night</span><span class="grimoire-clasp"></span></div>
-          <div class="grimoire-cover-back"></div>
-        </div>
-      </div>
-    </div>
-    <span class="grimoire-bloom"></span>
-    <div class="grimoire-rising"><i class="ms ms-w ms-cost ms-shadow" style="--order:0"></i><i class="ms ms-u ms-cost ms-shadow" style="--order:1"></i><i class="ms ms-b ms-cost ms-shadow" style="--order:2"></i><i class="ms ms-r ms-cost ms-shadow" style="--order:3"></i><i class="ms ms-g ms-cost ms-shadow" style="--order:4"></i></div>
-    <span class="grimoire-skip">Click to skip</span>
-  </div>
+  <!-- The opening: covers the page from the first paint; site.js builds the book inside. -->
+  <div class="grimoire"></div>
   <div class="ambient" aria-hidden="true"><span></span><span></span><span></span></div>
   <div class="sigil" aria-hidden="true">
+    <span class="sigil-core"></span>
     <svg viewBox="0 0 200 200">
-      <g class="sigil-ticks"><circle cx="100" cy="100" r="94"/><circle class="sigil-dashes" cx="100" cy="100" r="89"/></g>
-      <circle cx="100" cy="100" r="84"/>
-      <path class="sigil-pentagon" d="M100 40 157.1 81.5 135.3 148.5 64.7 148.5 42.9 81.5Z"/>
-      <path class="sigil-star" d="M100 40 135.3 148.5 42.9 81.5 157.1 81.5 64.7 148.5Z"/>
-      <circle class="sigil-node" cx="100" cy="40" r="20"/><circle class="sigil-node" cx="157.1" cy="81.5" r="20"/><circle class="sigil-node" cx="135.3" cy="148.5" r="20"/><circle class="sigil-node" cx="64.7" cy="148.5" r="20"/><circle class="sigil-node" cx="42.9" cy="81.5" r="20"/>
+      <defs>
+        <!-- Each line and ring glows in its own colours: a blurred copy under the sharp one. -->
+        <filter id="sigil-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <linearGradient id="sigil-link-wu" gradientUnits="userSpaceOnUse" x1="100" y1="40" x2="157.1" y2="81.5"><stop offset="0" style="stop-color:var(--sigil-w)"/><stop offset="1" style="stop-color:var(--sigil-u)"/></linearGradient>
+        <linearGradient id="sigil-link-ub" gradientUnits="userSpaceOnUse" x1="157.1" y1="81.5" x2="135.3" y2="148.5"><stop offset="0" style="stop-color:var(--sigil-u)"/><stop offset="1" style="stop-color:var(--sigil-b)"/></linearGradient>
+        <linearGradient id="sigil-link-br" gradientUnits="userSpaceOnUse" x1="135.3" y1="148.5" x2="64.7" y2="148.5"><stop offset="0" style="stop-color:var(--sigil-b)"/><stop offset="1" style="stop-color:var(--sigil-r)"/></linearGradient>
+        <linearGradient id="sigil-link-rg" gradientUnits="userSpaceOnUse" x1="64.7" y1="148.5" x2="42.9" y2="81.5"><stop offset="0" style="stop-color:var(--sigil-r)"/><stop offset="1" style="stop-color:var(--sigil-g)"/></linearGradient>
+        <linearGradient id="sigil-link-gw" gradientUnits="userSpaceOnUse" x1="42.9" y1="81.5" x2="100" y2="40"><stop offset="0" style="stop-color:var(--sigil-g)"/><stop offset="1" style="stop-color:var(--sigil-w)"/></linearGradient>
+        <linearGradient id="sigil-link-wb" gradientUnits="userSpaceOnUse" x1="100" y1="40" x2="135.3" y2="148.5"><stop offset="0" style="stop-color:var(--sigil-w)"/><stop offset="1" style="stop-color:var(--sigil-b)"/></linearGradient>
+        <linearGradient id="sigil-link-ur" gradientUnits="userSpaceOnUse" x1="157.1" y1="81.5" x2="64.7" y2="148.5"><stop offset="0" style="stop-color:var(--sigil-u)"/><stop offset="1" style="stop-color:var(--sigil-r)"/></linearGradient>
+        <linearGradient id="sigil-link-bg" gradientUnits="userSpaceOnUse" x1="135.3" y1="148.5" x2="42.9" y2="81.5"><stop offset="0" style="stop-color:var(--sigil-b)"/><stop offset="1" style="stop-color:var(--sigil-g)"/></linearGradient>
+        <linearGradient id="sigil-link-rw" gradientUnits="userSpaceOnUse" x1="64.7" y1="148.5" x2="100" y2="40"><stop offset="0" style="stop-color:var(--sigil-r)"/><stop offset="1" style="stop-color:var(--sigil-w)"/></linearGradient>
+        <linearGradient id="sigil-link-gu" gradientUnits="userSpaceOnUse" x1="42.9" y1="81.5" x2="157.1" y2="81.5"><stop offset="0" style="stop-color:var(--sigil-g)"/><stop offset="1" style="stop-color:var(--sigil-u)"/></linearGradient>
+      </defs>
+      <g class="sigil-frame"><g class="sigil-ticks"><circle cx="100" cy="100" r="94"/><circle class="sigil-dashes" cx="100" cy="100" r="89"/></g><circle cx="100" cy="100" r="84"/></g>
+      <!-- Pentagon edges join allied colours, the star's join enemies; each runs from one colour into the other. -->
+      <g class="sigil-links" filter="url(#sigil-glow)">
+        <line class="sigil-link sigil-link--ally" data-a="w" data-b="u" style="--order:0" x1="100" y1="40" x2="157.1" y2="81.5" stroke="url(#sigil-link-wu)"/>
+        <line class="sigil-link sigil-link--ally" data-a="u" data-b="b" style="--order:1" x1="157.1" y1="81.5" x2="135.3" y2="148.5" stroke="url(#sigil-link-ub)"/>
+        <line class="sigil-link sigil-link--ally" data-a="b" data-b="r" style="--order:2" x1="135.3" y1="148.5" x2="64.7" y2="148.5" stroke="url(#sigil-link-br)"/>
+        <line class="sigil-link sigil-link--ally" data-a="r" data-b="g" style="--order:3" x1="64.7" y1="148.5" x2="42.9" y2="81.5" stroke="url(#sigil-link-rg)"/>
+        <line class="sigil-link sigil-link--ally" data-a="g" data-b="w" style="--order:4" x1="42.9" y1="81.5" x2="100" y2="40" stroke="url(#sigil-link-gw)"/>
+        <line class="sigil-link sigil-link--enemy" data-a="w" data-b="b" style="--order:0" x1="100" y1="40" x2="135.3" y2="148.5" stroke="url(#sigil-link-wb)"/>
+        <line class="sigil-link sigil-link--enemy" data-a="u" data-b="r" style="--order:1" x1="157.1" y1="81.5" x2="64.7" y2="148.5" stroke="url(#sigil-link-ur)"/>
+        <line class="sigil-link sigil-link--enemy" data-a="b" data-b="g" style="--order:2" x1="135.3" y1="148.5" x2="42.9" y2="81.5" stroke="url(#sigil-link-bg)"/>
+        <line class="sigil-link sigil-link--enemy" data-a="r" data-b="w" style="--order:3" x1="64.7" y1="148.5" x2="100" y2="40" stroke="url(#sigil-link-rw)"/>
+        <line class="sigil-link sigil-link--enemy" data-a="g" data-b="u" style="--order:4" x1="42.9" y1="81.5" x2="157.1" y2="81.5" stroke="url(#sigil-link-gu)"/>
+      </g>
+      <g class="sigil-nodes" filter="url(#sigil-glow)">
+        <g class="sigil-node" data-color="w" style="--node:var(--sigil-w);--order:0"><circle cx="100" cy="40" r="20"/><circle class="sigil-node-inner" cx="100" cy="40" r="15.5"/></g>
+        <g class="sigil-node" data-color="u" style="--node:var(--sigil-u);--order:1"><circle cx="157.1" cy="81.5" r="20"/><circle class="sigil-node-inner" cx="157.1" cy="81.5" r="15.5"/></g>
+        <g class="sigil-node" data-color="b" style="--node:var(--sigil-b);--order:2"><circle cx="135.3" cy="148.5" r="20"/><circle class="sigil-node-inner" cx="135.3" cy="148.5" r="15.5"/></g>
+        <g class="sigil-node" data-color="r" style="--node:var(--sigil-r);--order:3"><circle cx="64.7" cy="148.5" r="20"/><circle class="sigil-node-inner" cx="64.7" cy="148.5" r="15.5"/></g>
+        <g class="sigil-node" data-color="g" style="--node:var(--sigil-g);--order:4"><circle cx="42.9" cy="81.5" r="20"/><circle class="sigil-node-inner" cx="42.9" cy="81.5" r="15.5"/></g>
+      </g>
     </svg>
-    <i class="ms ms-w sigil-symbol" data-color="w" style="left:50%;top:20%;--mana:var(--mana-w);--order:0"></i>
-    <i class="ms ms-u sigil-symbol" data-color="u" style="left:78.55%;top:40.75%;--mana:var(--mana-u);--order:1"></i>
-    <i class="ms ms-b sigil-symbol" data-color="b" style="left:67.65%;top:74.25%;--mana:var(--mana-b);--order:2"></i>
-    <i class="ms ms-r sigil-symbol" data-color="r" style="left:32.35%;top:74.25%;--mana:var(--mana-r);--order:3"></i>
-    <i class="ms ms-g sigil-symbol" data-color="g" style="left:21.45%;top:40.75%;--mana:var(--mana-g);--order:4"></i>
+    <i class="ms ms-w sigil-symbol" data-color="w" style="left:50%;top:20%;--mana:var(--sigil-w);--order:0"></i>
+    <i class="ms ms-u sigil-symbol" data-color="u" style="left:78.55%;top:40.75%;--mana:var(--sigil-u);--order:1"></i>
+    <i class="ms ms-b sigil-symbol" data-color="b" style="left:67.65%;top:74.25%;--mana:var(--sigil-b);--order:2"></i>
+    <i class="ms ms-r sigil-symbol" data-color="r" style="left:32.35%;top:74.25%;--mana:var(--sigil-r);--order:3"></i>
+    <i class="ms ms-g sigil-symbol" data-color="g" style="left:21.45%;top:40.75%;--mana:var(--sigil-g);--order:4"></i>
   </div>
   <canvas id="embers" aria-hidden="true"></canvas>
   <main id="app"><div class="empty">Loading the leaderboard…</div></main>

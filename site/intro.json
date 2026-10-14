@@ -1,0 +1,13 @@
+{
+  "sound": "Magic Short.mp3",
+  "thud": "Thud.mp3",
+  "page": "",
+  "repeat": "always",
+  "volume": 82,
+  "rattle": 60,
+  "rattle_every": 1.8,
+  "pages": 18,
+  "shuffle_seconds": 1.8,
+  "glow_seconds": 2.5,
+  "flight_seconds": 1.6
+}

@@ -52,17 +52,37 @@ body {
     radial-gradient(ellipse at var(--glow-2-at, 50% 115%), var(--glow-2), transparent 45%) fixed,
     radial-gradient(ellipse at 50% -10%, var(--glow) 0, var(--mid) 38%, var(--base) 75%) fixed;
 }
-/* The colour wheel in the corner: rings, a pentagon and a star in gold, and
-   each colour's symbol on its node, kept upright while the wheel turns. */
-.sigil { position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none; }
-.sigil { color: var(--bronze-light); transition: opacity 1s ease; }
-.sigil svg { display: block; width: 100%; height: 100%; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.1; opacity: .3; filter: drop-shadow(0 0 3px currentColor); }
-/* On a deck's page the colours outside its identity fade back. */
-.sigil-symbol.is-dim { opacity: .07 !important; }
+/* The colour wheel in the corner: a bronze frame, each colour on its own
+   ringed node with its symbol kept upright while the wheel turns, and glowing
+   links between them, the pentagon joining allies and the star enemies, each
+   running from one colour into the other. A core in the middle burns in the
+   colours in play. paintSigil() in site.js marks which those are: with some
+   lit, their nodes and the links between them beat together and the rest
+   fade back; with none, all five take turns. */
+.sigil {
+  position: fixed; z-index: -1; top: -110px; right: -150px; width: 640px; aspect-ratio: 1; pointer-events: none;
+  color: var(--bronze-light); transition: opacity 1s ease;
+  /* The colours as the wheel shows them: brighter than the page's own, and
+     black a bright violet, since it glows here rather than sits in text. */
+  --sigil-w: #fff0a6; --sigil-u: #5cb8ff; --sigil-b: #c592ff; --sigil-r: #ff6b4d; --sigil-g: #4fe38f;
+  --core: conic-gradient(var(--sigil-w), var(--sigil-u), var(--sigil-b), var(--sigil-r), var(--sigil-g), var(--sigil-w));
+}
+.sigil svg { position: relative; display: block; width: 100%; height: 100%; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.1; }
+.sigil-frame { opacity: .4; filter: drop-shadow(0 0 3px currentColor); }
 .sigil-dashes { stroke-width: 2.4; stroke-dasharray: 1 5; }
-.sigil-star { stroke-dasharray: 14 10; }
-.sigil-node { fill: #0f0d0a66; }
-.sigil-symbol { position: absolute; color: var(--mana); font-size: 36px; opacity: .3; translate: -50% -50%; text-shadow: 0 0 10px var(--mana); }
+.sigil-link { stroke-width: 1.7; stroke-linecap: round; opacity: .6; transition: opacity .8s ease, stroke-width .8s ease; }
+.sigil-link--enemy { stroke-width: 1.3; stroke-dasharray: 14 10; }
+.sigil-node { stroke: var(--node); transition: opacity .8s ease; }
+.sigil-node circle { fill: #0b0907e6; stroke-width: 2.6; }
+.sigil-node .sigil-node-inner { fill: color-mix(in srgb, var(--node) 14%, transparent); stroke-width: .8; stroke-opacity: .7; }
+.sigil-core {
+  position: absolute; top: 50%; left: 50%; width: 30%; aspect-ratio: 1; border-radius: 50%;
+  translate: -50% -50%; background: var(--core); filter: blur(26px); opacity: .32;
+}
+.sigil-symbol { position: absolute; color: var(--mana); font-size: 40px; opacity: .85; translate: -50% -50%; text-shadow: 0 0 10px var(--mana), 0 0 24px var(--mana); transition: opacity .8s ease; }
+/* A deck's page: the colours outside its identity fade back. */
+.sigil.has-focus .is-dim { opacity: .12 !important; }
+.sigil.has-focus .sigil-link.is-lit { stroke-width: 2.6; opacity: .95; }
 /* Behind the page: slow drifting glows, and the embers canvas (startEmbers). */
 .ambient { position: fixed; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; }
 .ambient span { position: absolute; width: 70vmax; aspect-ratio: 1; border-radius: 50%; opacity: .55; }
@@ -231,6 +251,47 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 .deck-art { flex: 3 1 420px; }
 .deck-printing { flex: 1 1 190px; max-width: 280px; }
 
+/* ------------------------------------------------------------- settings -- */
+/* The gear in the corner and its panel; see the settings section of site.js. */
+.settings { position: fixed; z-index: 50; right: 16px; bottom: 16px; display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 10px; }
+.settings-toggle { display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid #5a4630; border-radius: 50%; background: #0f0d0ae6; color: var(--bronze-light); box-shadow: 0 8px 24px #000a; cursor: pointer; }
+.settings-toggle:hover, .settings-toggle[aria-expanded="true"] { border-color: var(--bronze); color: #fff; }
+.settings-toggle:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 2px; }
+.settings-toggle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.settings-panel { width: min(280px, calc(100vw - 32px)); padding: 16px 18px; border: 1px solid var(--line); border-radius: 18px; background: #16120ef5; box-shadow: 0 16px 40px #000c; }
+.settings-panel[hidden] { display: none; }
+.settings-panel p { margin: 8px 0 0; color: var(--muted); font: italic .9rem var(--serif); }
+.settings-volume { display: grid; grid-template-columns: auto 1fr 3.2em; align-items: center; gap: 12px; margin-top: 10px; font: 700 .9rem var(--display); }
+.settings-volume > span { min-width: 3.6em; }
+.settings-volume output { color: var(--bronze-light); font-size: .85rem; text-align: right; }
+/* The slider: a bronze fill up to a gem-cut thumb. --fill is set from site.js. */
+.settings-volume input { width: 100%; min-width: 0; height: 26px; margin: 0; background: transparent; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.settings-volume input::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: linear-gradient(90deg, #8a5f28, var(--bronze-light)) 0 / var(--fill, 60%) 100% no-repeat, #0d0b08; box-shadow: inset 0 1px 2px #000; }
+.settings-volume input::-moz-range-track { height: 8px; border-radius: 999px; background: #0d0b08; box-shadow: inset 0 1px 2px #000; }
+.settings-volume input::-moz-range-progress { height: 8px; border-radius: 999px; background: linear-gradient(90deg, #8a5f28, var(--bronze-light)); }
+.settings-volume input::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -6px; border: 0; background: linear-gradient(160deg, #fff0b8, #d9ac44 50%, #8a6418); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); -webkit-appearance: none; appearance: none; }
+.settings-volume input::-moz-range-thumb { width: 20px; height: 20px; border: 0; border-radius: 0; background: linear-gradient(160deg, #fff0b8, #d9ac44 50%, #8a6418); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.settings-volume input:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 4px; border-radius: 6px; }
+
+/* ----------------------------------------------------------------- zoom -- */
+/* A picture opened large over the page; see zoom() in site.js. */
+[data-zoom] { cursor: zoom-in; }
+.hero-portrait .zoomable { display: block; border-radius: 50%; }
+.hero-portrait .zoomable:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 3px; }
+.lightbox { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 64px 16px 24px; border: 0; background: transparent; overflow: hidden; }
+.lightbox[open] { display: grid; place-items: center; }
+.lightbox::backdrop { background: #070503d9; backdrop-filter: blur(5px); }
+.lightbox img { max-width: 100%; max-height: calc(100dvh - 88px); border: 1px solid var(--line); border-radius: 16px; object-fit: contain; box-shadow: 0 24px 80px #000; cursor: default; }
+.lightbox-close { position: fixed; top: 14px; right: 14px; display: grid; place-items: center; width: 46px; height: 46px; padding: 0 0 3px; border: 1px solid #5a4630; border-radius: 50%; background: #0f0d0acc; color: #f3ece1; font: 400 2rem/1 var(--display); cursor: pointer; }
+.lightbox-close:hover { border-color: var(--bronze); color: #fff; }
+.lightbox-close:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .lightbox[open] img { animation: zoom-open .28s cubic-bezier(.2, .8, .2, 1) both; }
+  .lightbox[open]::backdrop { animation: zoom-dim .28s ease both; }
+}
+@keyframes zoom-open { from { opacity: 0; transform: scale(.92); } }
+@keyframes zoom-dim { from { opacity: 0; } }
+
 /* -------------------------------------------------------- commander zone -- */
 .commander-zone { position: relative; display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 26px; overflow: hidden; border-style: dashed; border-color: #6b5536; }
 .commander-zone::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: linear-gradient(180deg, var(--mana, var(--bronze), var(--bronze))); }
@@ -277,7 +338,7 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 @media (max-width: 560px) {
   main { padding: 14px 12px 80px; }
   .sigil { width: 420px; right: -170px; }
-  .sigil-symbol { font-size: 24px; }
+  .sigil-symbol { font-size: 26px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
   .hero.has-art { min-height: 300px; }
   .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
@@ -331,9 +392,23 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 @media (prefers-reduced-motion: no-preference) {
   .sigil { animation: spin 240s linear infinite; }
   .sigil-ticks { transform-box: view-box; transform-origin: 50% 50%; animation: spin 90s linear infinite reverse; }
-  .sigil-star { animation: star-flow 6s linear infinite; }
+  .sigil-link--enemy { animation: star-flow 6s linear infinite; }
+  /* All five: each colour's turn comes round, its ring, symbol and the
+     links leaving it lighting together. */
+  .sigil-link { animation: link-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
+  .sigil-link--enemy { animation: star-flow 6s linear infinite, link-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
+  .sigil-node { animation: ring-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
   .sigil-symbol { animation: counter-spin 240s linear infinite, node-pulse 10s ease-in-out calc(var(--order) * 2s) infinite; }
   .sigil-symbol.is-flaring { animation: counter-spin 240s linear infinite, node-flare 1.6s ease-out; }
+  .sigil-core { animation: core-breathe 10s ease-in-out infinite; }
+  /* Colours in play: theirs beat as one, a heartbeat every 2.4 seconds. */
+  .sigil.has-focus .sigil-node.is-lit { animation: ring-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .sigil-symbol.is-lit { animation: counter-spin 240s linear infinite, symbol-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .sigil-symbol.is-lit.is-flaring { animation: counter-spin 240s linear infinite, node-flare 1.6s ease-out; }
+  .sigil.has-focus .sigil-link.is-lit { animation: link-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .sigil-link--enemy.is-lit { animation: star-flow 3s linear infinite, link-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .sigil-core { animation: core-beat 2.4s ease-in-out infinite; }
+  .sigil.has-focus .is-dim { animation-play-state: paused; }
   .page-header h1 { background: linear-gradient(100deg, #f3ece1 42%, #fff4cf 50%, #f3ece1 58%) 120% 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: title-shine 7s ease-in-out 1.5s infinite; }
   .game-player.is-winner .log-icon { animation: crown-glow 2.8s ease-in-out infinite; }
   .ambient span { animation: glow-drift 40s ease-in-out infinite alternate; }
@@ -347,8 +422,15 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 @keyframes spin { to { transform: rotate(1turn); } }
 @keyframes counter-spin { to { transform: rotate(-1turn); } }
 @keyframes star-flow { to { stroke-dashoffset: -96; } }
-@keyframes node-pulse { 0%, 30%, 100% { opacity: .3; scale: 1; } 12% { opacity: .95; scale: 1.18; text-shadow: 0 0 18px var(--mana), 0 0 36px var(--mana); } }
-@keyframes node-flare { 0% { opacity: .3; scale: 1; } 18% { opacity: 1; scale: 1.5; text-shadow: 0 0 22px var(--mana), 0 0 50px var(--mana); } 100% { opacity: .3; scale: 1; } }
+@keyframes node-pulse { 0%, 30%, 100% { opacity: .85; scale: 1; } 12% { opacity: 1; scale: 1.22; text-shadow: 0 0 18px var(--mana), 0 0 44px var(--mana); } }
+@keyframes node-flare { 0% { opacity: .85; scale: 1; } 18% { opacity: 1; scale: 1.5; text-shadow: 0 0 22px var(--mana), 0 0 56px var(--mana); } 100% { opacity: .85; scale: 1; } }
+@keyframes ring-pulse { 0%, 30%, 100% { stroke-width: 1; } 12% { stroke-width: 1.9; } }
+@keyframes link-pulse { 0%, 30%, 100% { opacity: .6; } 12% { opacity: 1; } }
+@keyframes core-breathe { 50% { opacity: .5; scale: 1.15; } }
+@keyframes symbol-beat { 0%, 60%, 100% { opacity: .9; scale: 1; } 20% { opacity: 1; scale: 1.24; text-shadow: 0 0 18px var(--mana), 0 0 48px var(--mana); } }
+@keyframes ring-beat { 0%, 60%, 100% { stroke-width: 1; } 20% { stroke-width: 2.1; } }
+@keyframes link-beat { 0%, 60%, 100% { opacity: .7; } 20% { opacity: 1; stroke-width: 3.4; } }
+@keyframes core-beat { 0%, 60%, 100% { opacity: .38; scale: 1; } 20% { opacity: .7; scale: 1.3; } }
 @keyframes title-shine { 0%, 55% { background-position: 120% 0; } 100% { background-position: -20% 0; } }
 @keyframes crown-glow { 50% { filter: drop-shadow(0 0 5px #e2b862); } }
 
@@ -448,6 +530,11 @@ html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #00
 /* One colour's symbol flaring behind the page; the sparks and the ring are
    drawn on the embers canvas. Removed when its animation ends. */
 .mana-burst { position: fixed; z-index: -1; color: var(--mana); font-size: 42px; pointer-events: none; translate: -50% -50%; text-shadow: 0 0 14px var(--mana), 0 0 40px var(--mana); animation: mana-burst 1.5s cubic-bezier(.2, .8, .2, 1) forwards; }
+/* Set off by a click on the page itself: over the page, smaller, with its own
+   shockwave, since the canvas's sparks and ring stay behind the cards. */
+.mana-burst.is-front { z-index: 60; font-size: 30px; }
+.mana-burst.is-front::after { content: ""; position: absolute; top: 50%; left: 50%; width: 1.6em; aspect-ratio: 1; border: 2px solid var(--mana); border-radius: 50%; translate: -50% -50%; box-shadow: 0 0 12px var(--mana), inset 0 0 10px var(--mana); animation: burst-ring .9s ease-out forwards; }
+@keyframes burst-ring { from { opacity: .9; scale: .4; } to { opacity: 0; scale: 3.2; } }
 @keyframes mana-burst {
   0% { opacity: 0; scale: .3; rotate: -40deg; }
   20% { opacity: 1; scale: 1.25; rotate: 0deg; }
@@ -455,96 +542,103 @@ html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #00
 }
 
 /* ------------------------------------------------------------- grimoire -- */
-/* The opening: an ancient tome. It rises, its emblem burns awake, the clasp
-   falls away, the cover swings open and two pages turn; then the magic writes
-   itself across the pages in ink (drawn by playGrimoire() in site.js), the
-   ink ignites, light pours out with the five mana symbols, and it zooms away.
-   The stage is the right half of the book with the spine on its left edge:
-   closed it sits centred, and as it opens it slides right so the spread is. */
-.grimoire { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 55%, #2a1a0c, #0a0705 70%); perspective: 1600px; cursor: pointer; }
+/* The opening (built and run by playGrimoire() in site.js): a big shut
+   grimoire that rattles until tapped, then opens and riffles its pages to the
+   last, where the colour wheel lights up and flies to its corner of the page.
+   Nested so each move has its own element: .grimoire-zoom arrives and fades,
+   .grimoire-fit slides and shrinks the open book to fit, and .grimoire-book
+   shakes. The book is the right-hand page with the spine on its left edge;
+   leaves and the cover turn about that edge. The backdrop is a layer of its
+   own so it can fade while the wheel is still in flight. */
+.grimoire { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; overflow: hidden; perspective: 2000px; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.grimoire::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, #2e1d0e, #0a0705 72%); transition: opacity var(--landing, .6s) ease-in-out; }
+.grimoire.is-landing::before { opacity: 0; }
 .no-grimoire .grimoire { display: none; }
-.grimoire-defs { position: absolute; }
-.grimoire.is-closing { pointer-events: none; animation: grimoire-out .75s ease forwards; }
-.grimoire-float { transform-style: preserve-3d; animation: book-arrive .9s cubic-bezier(.2, .8, .2, 1) both; }
-.grimoire.is-closing .grimoire-float { animation: book-away .75s cubic-bezier(.5, 0, .75, 0) forwards; }
-.grimoire-stage { position: relative; width: min(240px, 38vw); aspect-ratio: 8 / 11; transform-style: preserve-3d; animation: book-centre 1.1s .95s cubic-bezier(.6, 0, .25, 1) both; }
+.grimoire.is-open { cursor: default; }
+.grimoire.is-leaving { pointer-events: none; animation: grimoire-out .4s ease forwards; }
+.grimoire-zoom, .grimoire-fit { transform-style: preserve-3d; }
+.grimoire-zoom { animation: book-arrive 1s cubic-bezier(.2, .8, .2, 1) both; }
+.grimoire-book { position: relative; width: min(84vw, 52vh, 500px); aspect-ratio: 18 / 25; transform-style: preserve-3d; }
 
-/* Aged parchment: stains, foxing, burnt edges and a page block down the side. */
-.grimoire-pages, .leaf-face, .grimoire-cover-back {
+/* Aged parchment: stains, foxing and burnt edges. */
+.grimoire-block, .leaf-face {
   position: absolute; inset: 0; border-radius: 2px 7px 7px 2px;
   background: radial-gradient(circle at 80% 16%, #7a4a1c2e 0 7%, transparent 13%), radial-gradient(circle at 18% 84%, #6a3c142e 0 9%, transparent 17%), radial-gradient(circle at 62% 62%, #8a5a2a14 0 4%, transparent 8%),
     radial-gradient(ellipse at 50% 50%, transparent 52%, #6a42186e 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03' numOctaves='3' seed='9'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .3 0 0 0 0 .12 0 0 0 .2 -.06'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E"), linear-gradient(170deg, #ecdcb2, #dcc391 60%, #cdb07a);
 }
-.grimoire-pages { overflow: hidden; box-shadow: 2px 1px 0 #cdb685, 4px 2px 0 #b89d6a, 6px 3px 0 #a3885a, 7px 4px 0 #6a5030, 0 34px 70px #000e; }
-.grimoire-glow { position: absolute; inset: 0; background: radial-gradient(circle at 50% 48%, #fff1bf, #ffbf4a88 32%, transparent 68%); opacity: 0; mix-blend-mode: screen; animation: page-glow 1.1s 3s ease-out both; }
-.grimoire-leaf { position: absolute; inset: 0; transform-origin: 0 50%; transform-style: preserve-3d; transform: translateZ(calc(1px + var(--order) * 1px)); animation: leaf-turn .7s calc(1.3s + var(--order) * .2s) cubic-bezier(.45, 0, .3, 1) both; }
-.leaf-face { backface-visibility: hidden; box-shadow: inset 10px 0 16px -12px #4a30108c; }
-.leaf-back { transform: rotateY(180deg); border-radius: 7px 2px 2px 7px; box-shadow: inset -10px 0 16px -12px #4a30108c; }
+/* The last page, with the edges of the page block beside and below it. */
+.grimoire-block { box-shadow: 2px 1px 0 #cdb685, 4px 2px 0 #b89d6a, 6px 3px 0 #a3885a, 7px 4px 0 #6a5030, 0 40px 80px #000e; }
+.grimoire-leaf { position: absolute; inset: 0; transform-origin: 0 50%; transform-style: preserve-3d; }
+.leaf-face { backface-visibility: hidden; box-shadow: inset 12px 0 18px -14px #4a30108c; }
+.leaf-back { transform: rotateY(180deg); border-radius: 7px 2px 2px 7px; box-shadow: inset -12px 0 18px -14px #4a30108c; }
 
-/* The ink. Each stroke is drawn on (see playGrimoire()); the hand-made
-   wobble comes from the #ink-rough filter in index.html. */
-.grimoire-ink { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; color: #2b1607; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; filter: url(#ink-rough); }
-.grimoire-ink .ink { stroke-width: 1.05; stroke-dasharray: 1; stroke-dashoffset: 1; animation: ink-write var(--d) var(--t) cubic-bezier(.4, .1, .6, .9) forwards; }
+/* The nonsense written on every page (gibberish() in site.js). */
+.grimoire-ink { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; color: #2b1607; stroke: currentColor; stroke-width: 1.05; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
 .grimoire-ink .ink-bold { stroke-width: 1.7; }
 .grimoire-ink .ink-red { stroke: #7c1d0e; }
-.grimoire-ink text { fill: currentColor; stroke: none; font: 9px "Segoe UI Historic", "Noto Sans Runic", serif; opacity: 0; animation: runes-in .6s var(--t) ease forwards; }
-.grimoire-ink[data-ink="faded"] { color: #6a4a2a; opacity: .4; }
-.grimoire-ink[data-ink="faded"] .ink { stroke-dashoffset: 0; animation: none; }
-.grimoire-ink[data-ink="right"], .grimoire-ink[data-ink="left"] { animation: ink-ignite .8s 3s ease forwards; }
+.grimoire-ink text { fill: currentColor; stroke: none; font: 9px "Segoe UI Historic", "Noto Sans Runic", serif; }
 
-/* The cover: worn oxblood leather, tooled borders, bronze corners and a clasp. */
-.grimoire-cover { position: absolute; inset: -6px -9px -6px 0; transform-origin: 0 50%; transform: translateZ(5px); transform-style: preserve-3d; animation: cover-open 1.1s .95s cubic-bezier(.6, 0, .25, 1) both; }
-.grimoire-cover-front, .grimoire-cover-back { backface-visibility: hidden; }
-.grimoire-cover-front {
-  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; border-radius: 4px 12px 12px 4px;
+/* The colour wheel in ink on the last page (lastPage() in site.js), drawn on
+   the plan of the page's sigil, its symbols the same share of its width. Lit,
+   the ink turns to fire before the real wheel fades in over it. */
+.grimoire-pentacle { position: absolute; top: 23.1%; left: 13%; width: 74%; aspect-ratio: 1; container-type: inline-size; color: #2b1607; transition: color .7s ease, filter .7s ease; }
+.grimoire-pentacle .grimoire-ink { color: inherit; opacity: .9; }
+.grimoire-ink .ink-dashes { stroke-width: 2.2; stroke-dasharray: 1 5; }
+.grimoire-ink .ink-faint { stroke-width: .8; opacity: .7; }
+.grimoire-ink .ink-node { stroke-width: 1.6; fill: #e2cd9c; }
+.grimoire-pentacle-mana { position: absolute; font-size: 6.25cqw; opacity: .9; translate: -50% -50%; }
+.grimoire-pentacle.is-lit { color: #ffcf6a; filter: drop-shadow(0 0 2px #ffb347) drop-shadow(0 0 8px #ff9a2a); }
+/* Everything but the wheel dims while it glows. */
+.grimoire-dim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+/* The page's own sigil, copied over the ink wheel and flown to its corner
+   (flyingSigil() in site.js). The copy keeps the sigil's own placing; this
+   layer covers the window and carries the move. */
+.grimoire-flight { position: absolute; inset: 0; opacity: 0; pointer-events: none; filter: brightness(1.8) drop-shadow(0 0 22px #ffcf7aaa); }
+/* Light escaping past the cover's edge as it rattles. */
+.grimoire-leak { position: absolute; top: 3%; right: -22px; bottom: 3%; width: 46px; border-radius: 50%; background: radial-gradient(ellipse at 25% 50%, #fff3c8, #ffbf4a99 32%, transparent 70%); opacity: 0; filter: blur(5px); pointer-events: none; }
+
+/* The cover: worn oxblood leather, tooled borders, bronze corners and a
+   clasp, sized by its own width so it scales with the book. */
+/* 3px above the page: closer, and browsers can draw the page over the cover
+   near the spine as it lifts. */
+.grimoire-cover { position: absolute; inset: -7px -10px -7px 0; transform-origin: 0 50%; transform: translateZ(3px); transform-style: preserve-3d; }
+.grimoire-cover-front, .grimoire-cover-back {
+  position: absolute; inset: 0; backface-visibility: hidden;
   background: radial-gradient(circle at 28% 22%, #ffffff14, transparent 38%), radial-gradient(circle at 72% 82%, #0000006a, transparent 42%), radial-gradient(circle at 85% 30%, #00000040, transparent 25%),
     linear-gradient(90deg, #000000a0, #00000030 7%, transparent 12%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.018' numOctaves='3' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 -.12'/%3E%3C/filter%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23m)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E"), radial-gradient(circle at 45% 40%, #5c2813, #3b160a 58%, #1c0904);
-  box-shadow: inset 0 0 0 10px transparent, inset 0 0 0 11px #9a7434aa, inset 0 0 0 14px transparent, inset 0 0 0 15px #6a4e22aa, inset 0 0 26px #000d, 0 26px 54px #000e;
 }
-.grimoire-cover-back { transform: rotateY(180deg); border-radius: 12px 4px 4px 12px; }
-.grimoire-corner { position: absolute; width: 34px; height: 34px; background: radial-gradient(circle at 30% 30%, #e8c98a 0 2px, transparent 3px), linear-gradient(135deg, #c9a05a, #7a5524 55%, #4a3014); box-shadow: inset 0 0 0 1px #00000066; }
+.grimoire-cover-front {
+  display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 14% 10% 13%; border-radius: 4px 14px 14px 4px; container-type: inline-size;
+  box-shadow: inset 0 0 0 2px #00000080, inset 0 0 0 4px #9a7434aa, inset 0 0 0 9px #2a0f06, inset 0 0 0 10px #6a4e22aa, inset 0 0 40px #000d, 0 30px 60px #000e;
+}
+/* Inside the cover, left of the open book: leather edged with a pastedown. */
+.grimoire-cover-back { transform: rotateY(180deg); border-radius: 14px 4px 4px 14px; box-shadow: inset 0 0 0 7px #3b160a, inset 0 0 0 8px #9a743455, inset 0 0 30px #000c; }
+.grimoire-corner { position: absolute; width: 13%; aspect-ratio: 1; background: radial-gradient(circle at 30% 30%, #e8c98a 0 2px, transparent 3px), linear-gradient(135deg, #c9a05a, #7a5524 55%, #4a3014); box-shadow: inset 0 0 0 1px #00000066; }
 .grimoire-corner[data-corner="tl"] { top: 0; left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); border-top-left-radius: 4px; }
-.grimoire-corner[data-corner="tr"] { top: 0; right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); border-top-right-radius: 12px; background-position: 70% 30%, 0 0; }
+.grimoire-corner[data-corner="tr"] { top: 0; right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); border-top-right-radius: 14px; background-position: 70% 30%, 0 0; }
 .grimoire-corner[data-corner="bl"] { bottom: 0; left: 0; clip-path: polygon(0 0, 100% 100%, 0 100%); border-bottom-left-radius: 4px; background-position: 30% 70%, 0 0; }
-.grimoire-corner[data-corner="br"] { right: 0; bottom: 0; clip-path: polygon(100% 0, 100% 100%, 0 100%); border-bottom-right-radius: 12px; background-position: 70% 70%, 0 0; }
-.grimoire-emblem { width: 66%; overflow: visible; fill: none; }
-.emblem-base { stroke: #8a6830; stroke-width: 2.2; opacity: .85; filter: drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #ffffff1a); }
-.emblem-base text { fill: #8a6830; stroke: none; font: 15px "Segoe UI Historic", "Noto Sans Runic", serif; }
-.emblem-fire { stroke: #ffb347; stroke-width: 2.4; stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 3px #ff9a2a) drop-shadow(0 0 8px #ff7a1a); animation: emblem-burn 1s .2s cubic-bezier(.4, 0, .4, 1) forwards, emblem-flicker 1.4s 1.2s ease-in-out infinite alternate; }
-.grimoire-title { color: #b08a46; font: 400 clamp(1.05rem, 3.6vw, 1.45rem) "UnifrakturMaguntia", "Old English Text MT", serif; letter-spacing: .02em; text-shadow: 0 1px 0 #000, 0 -1px 0 #ffffff22; }
-.grimoire-clasp { position: absolute; top: 50%; right: -16px; width: 42px; height: 28px; margin-top: -14px; border-radius: 3px 8px 8px 3px; background: radial-gradient(circle at 70% 50%, #f0d49a 0 3px, #6a4a1e 4px, transparent 5px), linear-gradient(180deg, #c9a05a, #7a5524 60%, #4a3014); box-shadow: 0 2px 6px #000a, inset 0 0 0 1px #00000066; animation: clasp-open .4s .6s cubic-bezier(.5, 0, .5, 1) both; }
-.grimoire-dust { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #e9d6a6; opacity: 0; pointer-events: none; animation: dust-rise 1.8s var(--t) ease-out both; }
+.grimoire-corner[data-corner="br"] { right: 0; bottom: 0; clip-path: polygon(100% 0, 100% 100%, 0 100%); border-bottom-right-radius: 14px; background-position: 70% 70%, 0 0; }
+/* The planeswalker's spark in a tooled ring, the five colours glowing round it. */
+.grimoire-emblem { position: relative; display: grid; place-items: center; width: 92%; aspect-ratio: 1; }
+.grimoire-ring { position: absolute; inset: 14%; border: 2px solid #9a7434aa; border-radius: 50%; outline: 1px solid #6a4e2299; outline-offset: 6px; box-shadow: inset 0 0 30px #000b, 0 0 0 1px #000a; }
+.grimoire-logo { color: #d8b06a; font-size: 30vmin; font-size: 34cqw; text-shadow: 0 1px 0 #000, 0 -1px 0 #fff3; animation: logo-glow 3.2s ease-in-out infinite alternate; }
+.grimoire-mana { position: absolute; color: var(--mana); font-size: 10vmin; font-size: 12cqw; translate: -50% -50%; text-shadow: 0 0 .12em var(--mana), 0 0 .45em var(--mana), 0 0 1em var(--mana); animation: mana-glow 2.6s calc(var(--order) * -.52s) ease-in-out infinite alternate; }
+.grimoire-title { color: #c79c52; font: 400 7vmin "UnifrakturMaguntia", "Old English Text MT", serif; font-size: 9.5cqw; letter-spacing: .02em; text-shadow: 0 1px 0 #000, 0 -1px 0 #ffffff22, 0 0 14px #ffb34733; }
+.grimoire-clasp { position: absolute; top: 50%; right: -5%; width: 11%; height: 7%; border-radius: 3px 9px 9px 3px; background: radial-gradient(circle at 68% 50%, #f0d49a 0 9%, #6a4a1e 12%, transparent 15%), linear-gradient(180deg, #c9a05a, #7a5524 60%, #4a3014); box-shadow: 0 2px 6px #000a, inset 0 0 0 1px #00000066; translate: 0 -50%; transition: opacity .3s ease, transform .4s cubic-bezier(.5, 0, .5, 1); }
+.grimoire.is-open .grimoire-clasp { opacity: 0; transform: translateX(40%) rotate(28deg); }
 
-/* Light and the five symbols pour from the magic circle on the right page.
-   They sit flat over the book rather than inside its 3D stage. */
-.grimoire-bloom { position: absolute; top: 49%; left: calc(50% + min(120px, 19vw)); width: min(600px, 130vw); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff3c6dd, #ffbf4a66 26%, transparent 62%); opacity: 0; pointer-events: none; mix-blend-mode: screen; translate: -50% -50%; animation: bloom 1.3s 3.05s ease-out both; }
-.grimoire-rising { position: absolute; top: 49%; left: calc(50% + min(120px, 19vw)); width: 0; height: 0; pointer-events: none; }
-.grimoire-rising .ms { position: absolute; font-size: clamp(22px, 6vw, 34px); opacity: 0; translate: -50% -50%; filter: drop-shadow(0 0 10px #ffd98a); animation: mana-rise 1.2s calc(3.15s + var(--order) * .07s) cubic-bezier(.2, .8, .2, 1) both; --angle: calc(-90deg + (var(--order) - 2) * 34deg); }
-.grimoire-skip { position: absolute; bottom: 28px; left: 50%; color: #8f8474; font: italic .95rem var(--serif); translate: -50% 0; animation: skip-in .6s 1s ease both; }
+.grimoire-hint { position: absolute; bottom: max(26px, env(safe-area-inset-bottom)); left: 50%; margin: 0; color: #d8c39a; font: italic 1.1rem var(--serif); letter-spacing: .03em; white-space: nowrap; text-shadow: 0 1px 4px #000; pointer-events: none; translate: -50% 0; animation: hint-in .8s 1.3s ease both, hint-breathe 2.4s 2.1s ease-in-out infinite alternate; }
+.grimoire-skip { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px; padding: 7px 14px; border: 1px solid #5a4630; border-radius: 999px; background: #0f0d0acc; color: #bfae90; font: 700 .75rem var(--display); letter-spacing: .06em; cursor: pointer; }
+.grimoire-skip:hover { border-color: var(--bronze); color: #fff; }
+.grimoire-skip:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 2px; }
+.grimoire.is-open .grimoire-hint, .grimoire.is-open .grimoire-skip { visibility: hidden; }
 
-@keyframes book-arrive { from { opacity: 0; transform: translateY(46px) scale(.84) rotateX(20deg); } }
-@keyframes book-centre { to { transform: translateX(50%); } }
-@keyframes cover-open { to { transform: translateZ(5px) rotateY(-178deg); } }
-@keyframes leaf-turn { to { transform: translateZ(calc(1px + var(--order) * 1px)) rotateY(calc(-176deg + var(--order) * 2deg)); } }
-@keyframes clasp-open { to { opacity: 0; transform: translateX(22px) rotate(28deg); } }
-@keyframes emblem-burn { to { stroke-dashoffset: 0; } }
-@keyframes emblem-flicker { to { opacity: .7; } }
-@keyframes ink-write { to { stroke-dashoffset: 0; } }
-@keyframes runes-in { to { opacity: .9; } }
-@keyframes ink-ignite { 0% { color: #2b1607; } 50% { color: #c8781e; } 100% { color: #ffd06a; filter: url(#ink-rough) drop-shadow(0 0 2px #ffb347) drop-shadow(0 0 6px #ff9a2a); } }
-@keyframes page-glow { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: .6; } }
-@keyframes dust-rise { 0% { opacity: 0; transform: translate(0, 0); } 20% { opacity: .7; } 100% { opacity: 0; transform: translate(var(--dx), -90px); } }
-@keyframes mana-rise {
-  0% { opacity: 0; transform: rotate(var(--angle)) translateX(0) rotate(calc(-1 * var(--angle))) scale(.4); }
-  25%, 70% { opacity: 1; }
-  100% { opacity: 0; transform: rotate(var(--angle)) translateX(min(230px, 36vw)) rotate(calc(-1 * var(--angle))) scale(1.35); }
-}
-@keyframes skip-in { from { opacity: 0; } }
+@keyframes book-arrive { from { opacity: 0; transform: translateY(40px) scale(.92); } }
+@keyframes logo-glow { from { text-shadow: 0 1px 0 #000, 0 -1px 0 #fff3, 0 0 .1em #ffb34744; } to { text-shadow: 0 1px 0 #000, 0 -1px 0 #fff3, 0 0 .3em #ffb347aa; } }
+@keyframes mana-glow { from { opacity: .55; scale: .94; } to { opacity: 1; scale: 1.06; } }
+@keyframes hint-in { from { opacity: 0; translate: -50% 8px; } }
+@keyframes hint-breathe { to { opacity: .5; } }
 @keyframes grimoire-out { to { opacity: 0; visibility: hidden; } }
-@keyframes book-away { to { transform: scale(2.4) translateZ(200px); opacity: 0; } }
-@keyframes bloom { 0% { opacity: 0; scale: .2; } 40% { opacity: 1; } 100% { opacity: .35; scale: 1; } }
-@keyframes grimoire-out { to { opacity: 0; visibility: hidden; } }
-@keyframes book-away { to { transform: scale(2.4) translateZ(200px); opacity: 0; } }
 @keyframes glow-drift { 50% { transform: translate(7vmax, 4vmax) scale(1.15); } 100% { transform: translate(-5vmax, 8vmax) scale(.92); } }
 @keyframes banner-drift { from { transform: scale(1); } to { transform: scale(1.07) translateX(-1.5%); } }
 @keyframes card-float { 50% { transform: translateY(-6px); } }

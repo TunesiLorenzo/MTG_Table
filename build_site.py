@@ -1,10 +1,12 @@
 """Assemble the public leaderboard into ``_site/`` for GitHub Pages.
 
 The published site is the ``site/`` folder plus what it reads:
-``game_history.json`` and the pictures and deck sounds named in
-``site/roster.json``. Nothing else in the repository is copied, so the life
-tracker, the lights page, the table's other sounds and any picture or sound the
-roster does not mention stay off the public site.
+``game_history.json``, the pictures and deck sounds named in
+``site/roster.json``, the intro's sound named in ``site/intro.json``, and the
+site's overall volume in ``site/settings.json``.
+Nothing else in the repository is copied, so the life tracker, the lights
+page, the table's other sounds and any picture or sound the roster does not
+mention stay off the public site.
 
 Pictures are re-encoded on the way out. The originals are multi-megabyte PNGs
 and the leaderboard shows a dozen of them at once.
@@ -23,9 +25,14 @@ BASE_DIR = Path(__file__).resolve().parent
 SITE_DIR = BASE_DIR / "site"
 # A deck's sound is a file name in here, the folder the table plays them from.
 SOUND_DIR = BASE_DIR / "sound" / "Commander"
+# The intro's sound, picked in the editor on /public, is a file name in here.
+INTRO_SOUND_DIR = BASE_DIR / "sound" / "Intro"
+# The mana bursts' sounds, picked per colour in the editor on /public.
+MANA_SOUND_DIR = BASE_DIR / "sound" / "Mana"
 OUT_DIR = BASE_DIR / "_site"
 
-PAGE_FILES = ("index.html", "site.css", "site.js")
+# click.mp3 is the life tracker's own button click (sound/click.mp3), for the site's buttons.
+PAGE_FILES = ("index.html", "site.css", "site.js", "click.mp3")
 # index.html's own stylesheet and script. Pages caches every file for ten
 # minutes and a browser reloading the page asks again only for the page itself,
 # so each gets a ?v= of its contents: a new deploy is a new URL, never a stale
@@ -66,19 +73,56 @@ def publish_image(source):
     return entry
 
 
-def publish_sound(name):
-    """Copy one deck sound as it is (they are small already) and return its site path."""
-    if name in published_sounds:
-        return published_sounds[name]
-    path = (SOUND_DIR / name).resolve()
-    if path.parent != SOUND_DIR or not path.is_file():
-        raise SystemExit(f"site/roster.json: no such sound in sound/Commander: {name}")
-    target = "sound/" + re.sub(r"[^a-z0-9]+", "-", path.stem.lower()).strip("-") + path.suffix.lower()
+def publish_sound(name, folder=SOUND_DIR, source="site/roster.json"):
+    """Copy one sound as it is (they are small already) and return its site path.
+
+    A deck's sound comes from sound/Commander; one from another folder is
+    published under that folder's name, so the two never collide."""
+    if (folder, name) in published_sounds:
+        return published_sounds[(folder, name)]
+    path = (folder / name).resolve()
+    if path.parent != folder or not path.is_file():
+        raise SystemExit(f"{source}: no such sound in {folder.relative_to(BASE_DIR).as_posix()}: {name}")
+    prefix = "" if folder == SOUND_DIR else f"{folder.name.lower()}-"
+    target = "sound/" + prefix + re.sub(r"[^a-z0-9]+", "-", path.stem.lower()).strip("-") + path.suffix.lower()
     if target in published_sounds.values():
-        raise SystemExit(f"site/roster.json: {name} collides with another sound named {target}")
+        raise SystemExit(f"{source}: {name} collides with another sound named {target}")
     shutil.copy2(path, OUT_DIR / target)
-    published_sounds[name] = target
+    published_sounds[(folder, name)] = target
     return target
+
+
+def publish_intro():
+    """site/intro.json, the opening's settings, pointing at its published sound."""
+    path = SITE_DIR / "intro.json"
+    if not path.is_file():
+        return
+    intro = json.loads(path.read_text(encoding="utf-8"))
+    # The sound as it opens, the thud and the page turn.
+    for key in ("sound", "thud", "page"):
+        if intro.get(key):
+            intro[key] = publish_sound(intro[key], INTRO_SOUND_DIR, "site/intro.json")
+    (OUT_DIR / "intro.json").write_text(json.dumps(intro, ensure_ascii=False), encoding="utf-8")
+
+
+def publish_mana_sounds():
+    """site/mana_sounds.json, each colour's burst sound pointing at its published
+    file; "" (built in) and "none" stay as they are."""
+    path = SITE_DIR / "mana_sounds.json"
+    if not path.is_file():
+        return
+    sounds = json.loads(path.read_text(encoding="utf-8"))
+    for entry in sounds.values():
+        if entry.get("sound") and entry["sound"] != "none":
+            entry["sound"] = publish_sound(entry["sound"], MANA_SOUND_DIR, "site/mana_sounds.json")
+    (OUT_DIR / "mana_sounds.json").write_text(json.dumps(sounds, ensure_ascii=False), encoding="utf-8")
+
+
+def publish_settings():
+    """site/settings.json, the site's overall volume, copied as it is."""
+    path = SITE_DIR / "settings.json"
+    if path.is_file():
+        shutil.copy2(path, OUT_DIR / "settings.json")
 
 
 def publish_roster():
@@ -119,6 +163,9 @@ def main():
     publish_page()
     shutil.copy2(BASE_DIR / "game_history.json", OUT_DIR / "game_history.json")
     roster = publish_roster()
+    publish_intro()
+    publish_mana_sounds()
+    publish_settings()
     size = sum(file.stat().st_size for file in OUT_DIR.rglob("*") if file.is_file())
     print(f"Built {OUT_DIR.name}/: {len(roster['players'])} players and {len(roster['decks'])} decks "
           f"in the roster, {len(published)} pictures, {len(published_sounds)} sounds, {size / 1_000_000:.1f} MB")

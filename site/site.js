@@ -237,10 +237,35 @@ function applyTheme(key, colors = []) {
     delete root.dataset.themeA;
     delete root.dataset.themeB;
   }
-  const lit = new Set(colors.map((color) => color.toLowerCase()).filter((color) => "wubrg".includes(color)));
-  for (const symbol of document.querySelectorAll(".sigil-symbol")) symbol.classList.toggle("is-dim", lit.size > 0 && !lit.has(symbol.dataset.color));
+  paintSigil(colors);
   /* The void burns colourless, whatever the identity. */
   embers.setColors(key === "eldrazi" ? ["C"] : colors);
+}
+
+/* Points the colour wheel at the colours in play. Some lit: their nodes and
+   symbols, and the links between two of them, beat together, the rest fade
+   back, and the core burns in just those colours. A colourless deck lights
+   none and its core goes grey. None given: all five take turns. */
+function paintSigil(colors) {
+  const sigil = document.querySelector(".sigil");
+  if (!sigil) return;
+  const letters = colors.map((color) => color.toLowerCase());
+  const lit = new Set(letters.filter((color) => "wubrg".includes(color)));
+  const focused = lit.size > 0 || letters.includes("c");
+  sigil.classList.toggle("has-focus", focused);
+  for (const part of sigil.querySelectorAll("[data-color]")) {
+    part.classList.toggle("is-lit", lit.has(part.dataset.color));
+    part.classList.toggle("is-dim", focused && !lit.has(part.dataset.color));
+  }
+  for (const link of sigil.querySelectorAll(".sigil-link")) {
+    const both = lit.has(link.dataset.a) && lit.has(link.dataset.b);
+    link.classList.toggle("is-lit", both);
+    link.classList.toggle("is-dim", focused && !both);
+  }
+  const tints = [..."wubrg"].filter((color) => !focused || lit.has(color)).map((color) => `var(--sigil-${color})`);
+  if (!tints.length) sigil.style.setProperty("--core", "radial-gradient(circle, var(--mana-c), transparent 70%)");
+  else if (tints.length === 1) sigil.style.setProperty("--core", `radial-gradient(circle, ${tints[0]}, transparent 70%)`);
+  else sigil.style.setProperty("--core", `conic-gradient(${[...tints, tints[0]].join(", ")})`);
 }
 
 /* A place in the standings, read the way a set symbol reads its rarity. */
@@ -445,13 +470,14 @@ function playerView(name) {
   const slides = playerBanner(player);
   const position = stats.players.indexOf(player) + 1;
   const decks = byPlay(player.decks);
+  const portrait = playerInfo(player.name).portrait;
   document.title = `${player.name} · MTG Leaderboard`;
   return `
     ${backLink("player")}
     <section class="hero${slides.length ? " has-art" : ""}"${styleAttr(manaVar(playerColors(player)))}>
       ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
       ${slides.length > 1 ? `<span class="hero-wipe" aria-hidden="true"></span><span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
-      <span class="hero-portrait">${avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
+      <span class="hero-portrait">${portrait ? `<a class="zoomable" href="${escapeHtml(portrait.full)}" data-zoom="${escapeHtml(portrait.full)}" data-zoom-alt="${escapeHtml(player.name)}" aria-label="Enlarge ${escapeHtml(player.name)}'s photo">${avatar(player.name, "avatar-large")}</a>` : avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
       <div><span class="eyebrow">PLAYER · #${position} IN THE STANDINGS</span><h1>${escapeHtml(player.name)}</h1>
       <p>${plural(player.games, "recorded game")} with ${plural(playedDecks(player), "deck")}${player.historicalWins ? `, plus ${plural(player.historicalWins, "win")} from before games were recorded` : ""}.</p></div>
     </section>
@@ -481,8 +507,8 @@ function deckView(name) {
   const position = stats.decks.indexOf(deck) + 1;
   const colors = deckColors(deck.name);
   const pictures = [
-    ...(info.art ? [`<a class="deck-art" href="${escapeHtml(info.art.full)}"><img src="${escapeHtml(info.art.full)}" alt="${escapeHtml(deck.name)} art"></a>`] : []),
-    ...(info.cards || []).map((card) => `<a class="deck-printing" href="${escapeHtml(card.full)}"><img src="${escapeHtml(card.full)}" alt="${escapeHtml(info.commander || deck.name)} card" loading="lazy"></a>`),
+    ...(info.art ? [`<a class="deck-art" href="${escapeHtml(info.art.full)}" data-zoom="${escapeHtml(info.art.full)}"><img src="${escapeHtml(info.art.full)}" alt="${escapeHtml(deck.name)} art"></a>`] : []),
+    ...(info.cards || []).map((card) => `<a class="deck-printing" href="${escapeHtml(card.full)}" data-zoom="${escapeHtml(card.full)}"><img src="${escapeHtml(card.full)}" alt="${escapeHtml(info.commander || deck.name)} card" loading="lazy"></a>`),
   ];
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
@@ -567,7 +593,8 @@ function startSlides() {
 
 /* What the embers and bursts are made of; applyTheme() narrows it to a deck's
    colours. startEmbers() fills in setColors once it is running. */
-const embers = { colors: [], bursts: [...MANA_ORDER], setColors: () => {} };
+/* Colourless bursts too, on every page. */
+const embers = { colors: [], bursts: [...MANA_ORDER, "C"], setColors: () => {}, burst: () => {} };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
@@ -615,8 +642,12 @@ function revealOnScroll() {
       show(entry.target);
     }
   }, { rootMargin: "0px 0px -6% 0px" });
-  const singles = app.querySelectorAll(".page-header, .hero, .card, .section-heading");
-  const rows = app.querySelectorAll(".summary, .deck-card, .game-card, .deck-gallery > a");
+  /* Drawn under the opening, what is already in view is simply there, so
+     the page is whole as the book fades away round it. */
+  const intro = Boolean(document.querySelector(".grimoire"));
+  const later = (element) => !intro || element.getBoundingClientRect().top >= window.innerHeight;
+  const singles = [...app.querySelectorAll(".page-header, .hero, .card, .section-heading")].filter(later);
+  const rows = [...app.querySelectorAll(".summary, .deck-card, .game-card, .deck-gallery > a")].filter(later);
   for (const element of singles) element.classList.add("reveal");
   for (const element of rows) {
     element.classList.add("reveal");
@@ -625,7 +656,8 @@ function revealOnScroll() {
   }
   for (const chart of app.querySelectorAll(".bar-chart")) {
     chart.querySelectorAll(".bar-fill").forEach((bar, index) => { bar.style.transitionDelay = `${150 + index * 60}ms`; });
-    revealObserver.observe(chart);
+    if (later(chart)) revealObserver.observe(chart);
+    else chart.classList.add("is-grown");
   }
   for (const element of [...singles, ...rows]) revealObserver.observe(element);
 }
@@ -671,7 +703,7 @@ function startEmbers() {
     const chosen = letters.map((color) => color.toUpperCase()).filter((color) => color in manaColor);
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--bronze-light").trim() || "#e3bb7a";
     embers.colors = chosen.length ? [...chosen.map((color) => manaColor[color]), accent] : allColors;
-    embers.bursts = chosen.length ? chosen : [...MANA_ORDER];
+    embers.bursts = chosen.length ? chosen : [...MANA_ORDER, "C"];
     for (const mote of motes) mote.color = embers.colors[Math.floor(Math.random() * embers.colors.length)];
   };
   const pointer = { x: -1e4, y: -1e4 };
@@ -707,8 +739,10 @@ function startEmbers() {
   document.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   resize();
 
-  const burst = (x, y, color = embers.bursts[Math.floor(Math.random() * embers.bursts.length)]) => {
+  /* Only a burst someone set off makes a sound; the random ones are silent. */
+  const burst = (x, y, color = embers.bursts[Math.floor(Math.random() * embers.bursts.length)], front = false, silent = false) => {
     const tint = manaColor[color];
+    if (!silent) playManaSound(color);
     for (let index = 0; index < 42; index += 1) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 70 + Math.random() * 260;
@@ -716,7 +750,7 @@ function startEmbers() {
     }
     rings.push({ x, y, age: 0, life: 1.1, size: 90 + Math.random() * 70, color: tint });
     const symbol = document.createElement("i");
-    symbol.className = `ms ms-${color.toLowerCase()} mana-burst`;
+    symbol.className = `ms ms-${color.toLowerCase()} mana-burst${front ? " is-front" : ""}`;
     symbol.setAttribute("aria-hidden", "true");
     symbol.style.cssText = `left:${x}px;top:${y}px;--mana:${tint}`;
     symbol.addEventListener("animationend", () => symbol.remove());
@@ -727,14 +761,26 @@ function startEmbers() {
     clearTimeout(node?.flareTimer);
     if (node) node.flareTimer = setTimeout(() => node.classList.remove("is-flaring"), 1700);
   };
+  embers.burst = burst;
   /* A burst every few seconds, somewhere on screen, while the tab is shown. */
   const scheduleBurst = () => setTimeout(() => {
-    if (!document.hidden) burst(width * (0.06 + Math.random() * 0.88), height * (0.1 + Math.random() * 0.8));
+    if (!document.hidden) burst(width * (0.06 + Math.random() * 0.88), height * (0.1 + Math.random() * 0.8), undefined, false, true);
     scheduleBurst();
   }, 2600 + Math.random() * 4200);
   scheduleBurst();
+  /* A click on the empty background bursts behind the page; one on the page
+     itself bursts over it, where it was clicked. Either way it is one of the
+     colours in play, so a deck's page keeps to its commander's colours and the
+     void to colourless. Typing and picking in the editor stay quiet, and so
+     does a picture opened large. */
   document.addEventListener("click", (event) => {
-    if (event.target === document.body || event.target === document.documentElement || event.target === app) burst(event.clientX, event.clientY);
+    if (!event.isTrusted || event.button) return;
+    if (event.target === document.body || event.target === document.documentElement || event.target === app) {
+      burst(event.clientX, event.clientY);
+      return;
+    }
+    if (!app.contains(event.target) || event.target.closest("input, select, textarea, label, .editor-card")) return;
+    burst(event.clientX, event.clientY, undefined, true);
   });
 
   let last = performance.now();
@@ -817,6 +863,76 @@ function startEmbers() {
   requestAnimationFrame(frame);
 }
 
+/* ------------------------------------------------------------- settings -- */
+
+/* Two volumes multiply into every sound here. The site's is set in the
+   editor on /public and published as settings.json, so it is the same for
+   everyone. The visitor's, from the gear in the corner, runs from nothing to
+   the site's level and is remembered by their browser. Each deck's own level,
+   and the intro's, apply on top of both. */
+const SITE_VOLUME_DEFAULT = 100;
+let siteVolume = SITE_VOLUME_DEFAULT;
+let visitorVolume = 100;
+try {
+  const saved = localStorage.getItem("visitor-volume");
+  if (saved !== null && Number(saved) >= 0 && Number(saved) <= 100) visitorVolume = Number(saved);
+} catch (error) { /* full each visit */ }
+const volumeShare = () => (siteVolume / 100) * (visitorVolume / 100);
+loadJson("settings.json").then((saved) => {
+  const volume = Number(saved.volume);
+  if (saved.volume !== undefined && volume >= 0 && volume <= 100) siteVolume = volume;
+  applyDeckVolume();
+}).catch(() => { /* none published: the default */ });
+
+/* One labelled slider; the editor on /public adds the site's to the panel. */
+const volumeRow = (label, value, attribute) => `<label class="settings-volume"><span>${label}</span>
+  <input type="range" ${attribute} min="0" max="100" step="5" value="${value}"><output>${value}%</output></label>`;
+function paintSlider(input) {
+  input.style.setProperty("--fill", `${input.value}%`);
+  input.nextElementSibling.textContent = `${input.value}%`;
+}
+
+const settings = document.createElement("div");
+settings.className = "settings";
+settings.innerHTML = `<button type="button" class="settings-toggle" aria-expanded="false" aria-controls="settings-panel" title="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/></svg>
+    <span class="visually-hidden">Settings</span></button>
+  <div class="settings-panel" id="settings-panel" hidden>
+    <span class="eyebrow">SETTINGS</span>
+    ${volumeRow("Volume", visitorVolume, "data-visitor-volume")}
+    <p>Clicks, mana bursts and commander sounds</p>
+  </div>`;
+document.body.append(settings);
+const settingsToggle = settings.querySelector(".settings-toggle");
+const settingsPanel = settings.querySelector(".settings-panel");
+const volumeSlider = settings.querySelector("[data-visitor-volume]");
+paintSlider(volumeSlider);
+
+function openSettings(open) {
+  settingsPanel.hidden = !open;
+  settingsToggle.setAttribute("aria-expanded", String(open));
+}
+settingsToggle.addEventListener("click", () => openSettings(settingsPanel.hidden));
+document.addEventListener("click", (event) => {
+  if (!settingsPanel.hidden && !settings.contains(event.target)) openSettings(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsPanel.hidden) {
+    openSettings(false);
+    settingsToggle.focus();
+  }
+});
+/* Changes as it slides; a click on letting go is a sample of the new level. */
+volumeSlider.addEventListener("input", () => {
+  visitorVolume = Number(volumeSlider.value);
+  paintSlider(volumeSlider);
+  applyDeckVolume();
+});
+volumeSlider.addEventListener("change", () => {
+  try { localStorage.setItem("visitor-volume", String(visitorVolume)); } catch (error) { /* this visit only */ }
+  thud();
+});
+
 /* ----------------------------------------------------------- deck sound -- */
 
 /* A deck's page plays its commander's sound as it opens, the one the table
@@ -827,6 +943,9 @@ function startEmbers() {
    which mirrors ROSTER_SOUND_VOLUME_DEFAULT in web.py. */
 const DECK_SOUND_VOLUME = 80;
 const deckSound = new Audio();
+/* This deck's own level, 0 to 1, before the site volume scales it. */
+let deckVolume = DECK_SOUND_VOLUME / 100;
+const applyDeckVolume = () => { deckSound.volume = deckVolume * volumeShare(); };
 let soundMuted = false;
 try { soundMuted = localStorage.getItem("deck-sound-muted") === "1"; } catch (error) { /* never remembered */ }
 
@@ -860,8 +979,10 @@ function startDeckSound() {
     return;
   }
   if (deckSound.getAttribute("src") !== button.dataset.sound) deckSound.src = button.dataset.sound;
-  deckSound.volume = Math.min(Math.max(Number(button.dataset.volume) / 100, 0), 1);
-  if (soundMuted) deckSound.pause();
+  deckVolume = Math.min(Math.max(Number(button.dataset.volume) / 100, 0), 1);
+  applyDeckVolume();
+  /* Under the opening it waits: playGrimoire() starts it as the book goes. */
+  if (soundMuted || document.querySelector(".grimoire")) deckSound.pause();
   else playDeckSound();
   paintSoundButton();
 }
@@ -876,6 +997,158 @@ app.addEventListener("click", (event) => {
   if (playing) deckSound.pause();
   else playDeckSound();
   paintSoundButton();
+});
+
+/* ----------------------------------------------------------- mana sound -- */
+
+/* A mana burst someone sets off, with a click or a touch, makes a small sound
+   of its colour's own; the ones that come on their own stay silent. Which
+   sound and how loud is chosen per colour in the editor on /public and published as
+   mana_sounds.json: "" is the built-in sound below, "none" silence, anything
+   else a file. Both volumes in the settings apply, and turning deck sounds
+   off quiets these too. The editor changes manaSounds as you edit, so the
+   bursts on its page already sound the way they will once saved. */
+const MANA_SOUND_DEFAULT_VOLUME = 60;
+const manaSounds = Object.fromEntries([...MANA_ORDER, "C"].map((color) => [color, { sound: "", volume: MANA_SOUND_DEFAULT_VOLUME }]));
+loadJson("mana_sounds.json").then((saved) => {
+  for (const color of Object.keys(manaSounds)) {
+    const entry = saved[color];
+    if (!entry) continue;
+    if (typeof entry.sound === "string") manaSounds[color].sound = entry.sound;
+    if (Number(entry.volume) >= 0 && Number(entry.volume) <= 100) manaSounds[color].volume = Number(entry.volume);
+  }
+}).catch(() => { /* none published: every colour built in */ });
+
+let manaAudio = null;
+
+/* The built-in sounds, made here rather than loaded: White a bright bell,
+   Blue a watery bloop, Black a low dark swell, Red a crackle of fire, Green a
+   woody pluck, colourless a hollow metallic ping. */
+function synthMana(color, level) {
+  try {
+    manaAudio ||= new (window.AudioContext || window.webkitAudioContext)();
+  } catch (error) {
+    return;
+  }
+  if (manaAudio.state === "suspended") manaAudio.resume().catch(() => {});
+  const now = manaAudio.currentTime;
+  const output = manaAudio.createGain();
+  output.gain.value = level;
+  output.connect(manaAudio.destination);
+  const tone = (type, from, to, start, length, peak, filter) => {
+    const oscillator = manaAudio.createOscillator();
+    const gain = manaAudio.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(from, now + start);
+    if (to !== from) oscillator.frequency.exponentialRampToValueAtTime(to, now + start + length * 0.6);
+    gain.gain.setValueAtTime(0.0001, now + start);
+    gain.gain.exponentialRampToValueAtTime(peak, now + start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
+    let chain = oscillator.connect(gain);
+    if (filter) {
+      const shaped = manaAudio.createBiquadFilter();
+      shaped.type = "lowpass";
+      shaped.frequency.value = filter;
+      chain = chain.connect(shaped);
+    }
+    chain.connect(output);
+    oscillator.start(now + start);
+    oscillator.stop(now + start + length + 0.05);
+  };
+  const noise = (length, type, frequency, peak, crackle = false) => {
+    const samples = Math.floor(manaAudio.sampleRate * length);
+    const buffer = manaAudio.createBuffer(1, samples, manaAudio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < samples; index += 1) {
+      const fade = (1 - index / samples) ** 2;
+      data[index] = (Math.random() * 2 - 1) * fade * (crackle ? (Math.random() < 0.06 ? 1 : 0.15) : 1);
+    }
+    const source = manaAudio.createBufferSource();
+    const shaped = manaAudio.createBiquadFilter();
+    const gain = manaAudio.createGain();
+    source.buffer = buffer;
+    shaped.type = type;
+    shaped.frequency.value = frequency;
+    gain.gain.value = peak;
+    source.connect(shaped).connect(gain).connect(output);
+    source.start(now);
+  };
+  if (color === "W") {
+    tone("sine", 1046.5, 1046.5, 0, 0.9, 0.5);
+    tone("sine", 1568, 1568, 0.01, 0.7, 0.22);
+    tone("sine", 2093, 2093, 0.02, 0.4, 0.08);
+  } else if (color === "U") {
+    tone("sine", 320, 760, 0, 0.3, 0.6);
+    tone("sine", 430, 980, 0.09, 0.24, 0.3);
+  } else if (color === "B") {
+    tone("sine", 82, 64, 0, 0.95, 0.8, 500);
+    tone("triangle", 123, 96, 0.02, 0.8, 0.35, 380);
+  } else if (color === "R") {
+    noise(0.38, "bandpass", 1800, 1.1, true);
+    tone("sine", 110, 45, 0, 0.25, 0.7);
+  } else if (color === "G") {
+    tone("triangle", 196, 180, 0, 0.5, 0.6);
+    tone("sine", 294, 280, 0.005, 0.4, 0.3);
+    noise(0.03, "lowpass", 2000, 0.35);
+  } else {
+    tone("sine", 1320, 1320, 0, 0.75, 0.3);
+    tone("sine", 1840, 1840, 0, 0.6, 0.2);
+    tone("sine", 2760, 2760, 0, 0.4, 0.1);
+    tone("sine", 220, 210, 0, 0.6, 0.25);
+  }
+}
+
+function playManaSound(color, setting = manaSounds[color]) {
+  if (soundMuted || !setting || setting.sound === "none") return;
+  const level = (setting.volume / 100) * volumeShare();
+  if (level <= 0) return;
+  if (!setting.sound) {
+    synthMana(color, level);
+    return;
+  }
+  const audio = new Audio(setting.sound);
+  audio.volume = Math.min(1, level);
+  audio.play().catch(() => { /* not allowed before the first click */ });
+}
+
+/* ------------------------------------------------------------- ui sound -- */
+
+/* Every click through the site makes the life tracker's own button click
+   (sound/click.mp3, copied beside this page); going back plays it a little
+   slower and lower. A few copies take turns so quick clicks can overlap.
+   Turning deck sounds off quiets these too. */
+const CLICK_VOLUME = 0.8;
+const clickPool = Array.from({ length: 4 }, () => {
+  const audio = new Audio("click.mp3");
+  audio.preload = "auto";
+  audio.volume = CLICK_VOLUME;
+  audio.preservesPitch = false;
+  return audio;
+});
+let nextClick = 0;
+
+function thud(back = false) {
+  if (soundMuted) return;
+  const audio = clickPool[nextClick];
+  nextClick = (nextClick + 1) % clickPool.length;
+  audio.volume = CLICK_VOLUME * volumeShare();
+  audio.playbackRate = back ? 0.78 : 1;
+  audio.currentTime = 0;
+  audio.play().catch(() => { /* not allowed before the first click */ });
+}
+
+/* Anything clickable clicks as it is pressed; a back link clicks deeper. The
+   deck sound button stays quiet, as it plays a sound of its own. */
+let lastThud = 0;
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("a, button, select, summary, [role='button'], .editor-mana, .editor-upload, .grimoire");
+  if (!target || target.disabled || target.closest(".hero-sound")) return;
+  lastThud = performance.now();
+  thud(Boolean(target.closest(".back-link, .lightbox-close")));
+}, true);
+/* A page change nobody clicked for is the browser's back or forward. */
+window.addEventListener("hashchange", () => {
+  if (performance.now() - lastThud > 400) thud(true);
 });
 
 /* ------------------------------------------------------------- glyphs -- */
@@ -929,6 +1202,45 @@ function inscribeGlyphs() {
   document.documentElement.style.setProperty("--glyph-band", svgUrl(line));
 }
 
+/* ----------------------------------------------------------------- zoom -- */
+
+/* A deck's art and card, and a player's photo, open large over the page
+   instead of on a page of their own, with the rest of the site dimmed
+   behind. The cross, a click beside the picture, Escape or the phone's back
+   button closes it. The links keep their href, so a middle click still opens
+   the file itself. */
+const lightbox = document.createElement("dialog");
+lightbox.className = "lightbox";
+lightbox.innerHTML = '<button type="button" class="lightbox-close" aria-label="Close">&times;</button><img alt="">';
+document.body.append(lightbox);
+const lightboxImage = lightbox.querySelector("img");
+
+function zoom(url, alt) {
+  lightboxImage.src = url;
+  lightboxImage.alt = alt || "";
+  lightbox.showModal();
+  /* An entry of its own, so going back closes the picture, not the page. */
+  history.pushState({ ...history.state, zoom: true }, "");
+}
+
+app.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-zoom]");
+  if (!trigger || event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  zoom(trigger.dataset.zoom, trigger.dataset.zoomAlt || trigger.querySelector("img")?.alt);
+});
+lightbox.addEventListener("click", (event) => {
+  if (event.target !== lightboxImage) lightbox.close();
+});
+/* However it closed, step off the picture's history entry. */
+lightbox.addEventListener("close", () => {
+  lightboxImage.removeAttribute("src");
+  if (history.state?.zoom) history.back();
+});
+window.addEventListener("popstate", () => {
+  if (lightbox.open && !history.state?.zoom) lightbox.close();
+});
+
 /* --------------------------------------------------------------- router -- */
 
 function route() {
@@ -976,15 +1288,132 @@ async function loadJson(path) {
 
 /* ------------------------------------------------------------- grimoire -- */
 
-/* The opening: an ancient tome rises, its emblem burns awake, it opens and
-   two pages turn, then the magic writes itself across the pages, ignites,
-   and pours out as light and the five mana symbols before it zooms away.
-   Its markup is in index.html and its timing in site.css; this writes the
-   ink (fresh scribbles every time), ends it after GRIMOIRE_SECONDS or at
-   once on a click or a key, and resolves as it starts to fade, so the page
-   rises in behind it. */
-const GRIMOIRE_SECONDS = 3.9;
+/* The opening. An old grimoire lies shut, the five mana symbols glowing
+   around the planeswalker's spark on its cover, and every so often it
+   rattles with a thud and its cover lifts a crack, light leaking out, as if
+   something inside wants out. A tap (or Enter) plays the intro sound and
+   throws it open: the pages riffle past, each with its own rustle, scrawled
+   with nonsense, down to the last, where the colour wheel is drawn in ink.
+   The wheel catches light and everything else dims; it comes alive as the
+   wheel this page wears, then glides to its place in the corner while the
+   book fades and the page, drawn underneath all along, comes up round it.
+
+   Its sounds and timings come from intro.json, set in the editor on /public;
+   INTRO_DEFAULTS mirrors INTRO_NUMBERS in web.py. index.html holds only the
+   empty, opaque .grimoire, so nothing flashes before this builds the book. */
+const INTRO_DEFAULTS = {
+  sound: "", thud: "", page: "", volume: 80, repeat: "always", rattle: 60, rattle_every: 1.8,
+  pages: 18, shuffle_seconds: 1.8, glow_seconds: 2.5, flight_seconds: 1.6,
+};
+const introSettings = loadJson("intro.json").then((saved) => ({ ...INTRO_DEFAULTS, ...saved })).catch(() => ({ ...INTRO_DEFAULTS }));
 const RUNES = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ";
+/* Resolved once start() has drawn the page, theme and all, which the
+   wheel's flight to its corner needs. */
+let markPageReady = () => {};
+const pageReady = new Promise((resolve) => { markPageReady = resolve; });
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+/* The intro's sounds go through one audio context, so a riffle of page turns
+   can be timed to the pages and every sound obeys the volume, iPhones
+   included. Browsers keep it silent until the visitor first taps or clicks:
+   rattles before then usually make no sound, and the tap that opens the
+   book is what wakes it. */
+const introAudio = { context: null, noise: null, buffers: new Map() };
+
+function introContext() {
+  if (!introAudio.context) {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return null;
+    introAudio.context = new Context();
+  }
+  return introAudio.context;
+}
+
+/* A sound file named in intro.json, fetched and decoded once. */
+function introBuffer(url) {
+  const context = introContext();
+  if (!url || !context) return Promise.resolve(null);
+  if (!introAudio.buffers.has(url)) {
+    introAudio.buffers.set(url, fetch(url).then((response) => response.arrayBuffer())
+      .then((data) => new Promise((resolve, reject) => context.decodeAudioData(data, resolve, reject)))
+      .catch(() => null));
+  }
+  return introAudio.buffers.get(url);
+}
+
+function noiseBuffer(context) {
+  if (!introAudio.noise) {
+    introAudio.noise = context.createBuffer(1, Math.round(context.sampleRate * 0.4), context.sampleRate);
+    const samples = introAudio.noise.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) samples[index] = Math.random() * 2 - 1;
+  }
+  return introAudio.noise;
+}
+
+/* A gain that swells to peak and dies away, wired to the speakers. */
+function envelope(context, when, peak, attack, release) {
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), when + attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + attack + release);
+  gain.connect(context.destination);
+  return gain;
+}
+
+/* What plays when no file is chosen: a heavy book's dull knock, and the
+   swish of a page. */
+const INTRO_SYNTH = {
+  thud(context, when, level) {
+    const body = context.createOscillator();
+    body.frequency.setValueAtTime(110, when);
+    body.frequency.exponentialRampToValueAtTime(42, when + 0.16);
+    body.connect(envelope(context, when, level, 0.006, 0.3));
+    body.start(when);
+    body.stop(when + 0.34);
+    const knock = context.createBufferSource();
+    knock.buffer = noiseBuffer(context);
+    const muffle = context.createBiquadFilter();
+    muffle.type = "lowpass";
+    muffle.frequency.value = 700;
+    knock.connect(muffle).connect(envelope(context, when, level * 0.6, 0.003, 0.07));
+    knock.start(when, Math.random() * 0.3, 0.09);
+  },
+  page(context, when, level) {
+    const swish = context.createBufferSource();
+    swish.buffer = noiseBuffer(context);
+    swish.playbackRate.value = 0.8 + Math.random() * 0.5;
+    const paper = context.createBiquadFilter();
+    paper.type = "bandpass";
+    paper.frequency.value = 1800 + Math.random() * 1600;
+    paper.Q.value = 0.8;
+    const length = 0.14 + Math.random() * 0.08;
+    swish.connect(paper).connect(envelope(context, when, level * 0.55, 0.035, length));
+    swish.start(when, Math.random() * 0.15, length + 0.06);
+  },
+};
+
+/* Plays one of the intro's sounds, "sound", "thud" or "page", delay seconds
+   from now, at the intro's volume under the site's and the visitor's. */
+function introSound(kind, settings, delay = 0, level = 1) {
+  const context = introAudio.context;
+  if (!context || context.state !== "running") return;
+  const volume = Math.min(Math.max(settings.volume / 100, 0), 1) * volumeShare() * level;
+  if (volume <= 0) return;
+  const when = context.currentTime + delay;
+  introBuffer(settings[kind]).then((buffer) => {
+    const start = Math.max(when, context.currentTime);
+    if (buffer) {
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      const gain = context.createGain();
+      gain.gain.value = volume;
+      source.connect(gain).connect(context.destination);
+      source.start(start);
+    } else if (INTRO_SYNTH[kind]) {
+      INTRO_SYNTH[kind](context, start, volume);
+    }
+  });
+}
 
 /* A line of cursive that is not quite any language: humps, cups, loops above
    and below the line, and gaps between "words", drifting a little. */
@@ -1026,76 +1455,357 @@ function wobblyCircle(cx, cy, r) {
   return d;
 }
 
-function inkPage(svg, page) {
-  const strokes = [];
-  const write = (d, start, seconds, extra = "") => strokes.push(`<path class="ink${extra}" pathLength="1" d="${d}" style="--t:${start.toFixed(2)}s;--d:${seconds.toFixed(2)}s"/>`);
-  const lines = (from, to, step, x, width, start, extra = "") => {
-    for (let y = from, index = 0; y <= to; y += step, index += 1) {
-      const length = width * (0.62 + Math.random() * 0.38);
-      write(scribble(x, y + (Math.random() - 0.5), length), start + index * 0.1, 0.32 + length / 600, extra);
-    }
-  };
-  if (page === "faded") {
-    lines(34, 300, 13, 30, 180, 0);
-  } else if (page === "left") {
-    write(scribble(40, 40, 120), 2.2, 0.4, " ink-bold ink-red");
-    lines(60, 150, 13, 30, 182, 2.3);
-    write(wobblyCircle(120, 214, 38), 2.45, 0.5);
-    write("M120 180 L152 232 L88 232 Z", 2.7, 0.45);
-    write(wobblyCircle(120, 214, 8), 2.85, 0.2);
-    lines(272, 308, 12, 30, 182, 2.6);
-  } else {
-    write("M28 44 c-6 -14 14 -20 16 -6 c2 12 -14 14 -10 2", 2.15, 0.3, " ink-bold ink-red");
-    write(scribble(50, 40, 110), 2.2, 0.4, " ink-bold ink-red");
-    write(wobblyCircle(120, 158, 64), 2.25, 0.55);
-    write(wobblyCircle(120, 158, 52), 2.4, 0.5);
-    const tips = [0, 2, 4, 1, 3, 0].map((step) => {
-      const angle = -Math.PI / 2 + step * Math.PI * 2 / 5;
-      return `${(120 + Math.cos(angle) * 48).toFixed(1)} ${(158 + Math.sin(angle) * 48).toFixed(1)}`;
-    });
-    write(`M${tips.join(" L")}`, 2.55, 0.55);
-    write(wobblyCircle(120, 158, 9), 2.85, 0.2);
-    strokes.push(`<path id="ink-rune-ring" d="M120 158m-58 0a58 58 0 1 1 116 0a58 58 0 1 1-116 0" stroke="none"/><text style="--t:2.5s"><textPath href="#ink-rune-ring" textLength="355">${RUNES}${RUNES.slice(0, 8)}</textPath></text>`);
-    lines(236, 302, 12, 30, 182, 2.3);
-  }
-  svg.innerHTML = strokes.join("");
+/* A straight line drawn by hand: it bows a little. */
+function inkLine([x1, y1], [x2, y2]) {
+  const bow = (Math.random() - 0.5) * 2.4;
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const midX = (x1 + x2) / 2 - ((y2 - y1) / length) * bow;
+  const midY = (y1 + y2) / 2 + ((x2 - x1) / length) * bow;
+  return `M${x1} ${y1} Q${midX.toFixed(1)} ${midY.toFixed(1)} ${x2} ${y2}`;
 }
 
-function playGrimoire() {
-  const book = document.querySelector(".grimoire");
-  if (!book || document.documentElement.classList.contains("no-grimoire")) {
-    book?.remove();
+function pentagram(cx, cy, r) {
+  const tips = [0, 2, 4, 1, 3, 0].map((step) => {
+    const angle = -Math.PI / 2 + step * Math.PI * 2 / 5;
+    return `${(cx + Math.cos(angle) * r).toFixed(1)} ${(cy + Math.sin(angle) * r).toFixed(1)}`;
+  });
+  return `M${tips.join(" L")}`;
+}
+
+/* A page of nonsense on a 240 × 330 sheet: a red heading, lines of
+   not-quite-writing, and here and there a magic circle with notes beside it
+   or a row of runes. Different every time. */
+function gibberish() {
+  const between = (low, high) => low + Math.random() * (high - low);
+  const runes = (count) => Array.from({ length: count }, () => RUNES[Math.floor(Math.random() * RUNES.length)]).join("");
+  const parts = [];
+  let y = between(32, 40);
+  parts.push(`<path class="ink-bold ink-red" d="${scribble(28, y, between(60, 150))}"/>`);
+  y += 20;
+  while (y < 306) {
+    const roll = Math.random();
+    if (roll < 0.12 && y < 236) {
+      const r = between(20, 32);
+      const left = Math.random() < 0.5;
+      const cx = left ? 30 + r : 210 - r;
+      parts.push(`<path d="${wobblyCircle(cx, y + r, r)}"/>`, `<path d="${Math.random() < 0.6 ? pentagram(cx, y + r, r * 0.86) : wobblyCircle(cx, y + r, r * 0.6)}"/>`);
+      const notesX = left ? cx + r + 12 : 28;
+      const notesWidth = 184 - 2 * r - 12;
+      for (let line = 0; line < Math.floor(r / 6); line += 1) parts.push(`<path d="${scribble(notesX, y + 8 + line * 12, notesWidth * between(0.6, 1))}"/>`);
+      y += 2 * r + 16;
+    } else if (roll < 0.2) {
+      parts.push(`<text x="28" y="${(y + 3).toFixed(1)}">${runes(Math.floor(between(12, 24)))}</text>`);
+      y += 15;
+    } else if (roll < 0.26) {
+      y += 9;
+    } else {
+      const indent = Math.random() < 0.12 ? 14 : 0;
+      parts.push(`<path d="${scribble(28 + indent, y, (184 - indent) * between(0.55, 1))}"/>`);
+      y += 12;
+    }
+  }
+  return parts.join("");
+}
+
+const inkSheet = () => `<svg class="grimoire-ink" viewBox="0 0 240 330">${gibberish()}</svg>`;
+
+/* The last page: a heading and a few lines above and below the colour wheel,
+   which is drawn in ink on the page's own sigil's plan (see .sigil in
+   index.html: a 200-unit square, nodes on these points, each symbol at the
+   same share of the width), so it can hand over to that one exactly. */
+const SIGIL_POINTS = [[100, 40], [157.1, 81.5], [135.3, 148.5], [64.7, 148.5], [42.9, 81.5]];
+
+function lastPage() {
+  const between = (low, high) => low + Math.random() * (high - low);
+  const lines = [`<path class="ink-bold ink-red" d="${scribble(28, 36, between(70, 130))}"/>`];
+  for (const y of [54, 66, 274, 286, 298, 310]) lines.push(`<path d="${scribble(28, y, 184 * between(0.55, 1))}"/>`);
+  const wheel = [wobblyCircle(100, 100, 94), wobblyCircle(100, 100, 84)].map((d) => `<path d="${d}"/>`);
+  wheel.push(`<path class="ink-dashes" d="${wobblyCircle(100, 100, 89)}"/>`);
+  SIGIL_POINTS.forEach((point, index) => {
+    wheel.push(`<path d="${inkLine(point, SIGIL_POINTS[(index + 1) % 5])}"/>`, `<path class="ink-faint" d="${inkLine(point, SIGIL_POINTS[(index + 2) % 5])}"/>`);
+  });
+  for (const [x, y] of SIGIL_POINTS) wheel.push(`<path class="ink-node" d="${wobblyCircle(x, y, 20)}"/>`, `<path class="ink-faint" d="${wobblyCircle(x, y, 15.5)}"/>`);
+  const symbols = MANA_ORDER.map((color, index) => {
+    const [x, y] = SIGIL_POINTS[index];
+    return `<i class="ms ms-${color.toLowerCase()} grimoire-pentacle-mana" style="left:${x / 2}%;top:${y / 2}%"></i>`;
+  }).join("");
+  return `<svg class="grimoire-ink" viewBox="0 0 240 330">${lines.join("")}</svg>
+    <div class="grimoire-pentacle"><svg class="grimoire-ink" viewBox="0 0 200 200">${wheel.join("")}</svg>${symbols}</div>`;
+}
+
+/* Worn oxblood leather with bronze corners and a clasp, and on it the
+   planeswalker's spark in a tooled ring, the five colours glowing round it. */
+function grimoireCover() {
+  const mana = MANA_ORDER.map((color, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / 5;
+    const letter = color.toLowerCase();
+    return `<i class="ms ms-${letter} grimoire-mana" style="left:${(50 + Math.cos(angle) * 40).toFixed(2)}%;top:${(50 + Math.sin(angle) * 40).toFixed(2)}%;--mana:var(--mana-${letter});--order:${index}"></i>`;
+  }).join("");
+  const corners = ["tl", "tr", "bl", "br"].map((corner) => `<span class="grimoire-corner" data-corner="${corner}"></span>`).join("");
+  return `<div class="grimoire-cover">
+      <div class="grimoire-cover-front">${corners}
+        <div class="grimoire-emblem"><span class="grimoire-ring"></span><i class="ms ms-planeswalker grimoire-logo"></i>${mana}</div>
+        <span class="grimoire-title">Commander Night</span>
+        <span class="grimoire-clasp"></span>
+      </div>
+      <div class="grimoire-cover-back"></div>
+    </div>`;
+}
+
+/* The book shut on its last page. The leaves in between are added as it opens. */
+function buildGrimoire(overlay) {
+  overlay.innerHTML = `
+    <div class="grimoire-zoom"><div class="grimoire-fit"><div class="grimoire-book" aria-hidden="true">
+      <div class="grimoire-block">${lastPage()}<span class="grimoire-leak"></span></div>
+      ${grimoireCover()}
+    </div></div></div>
+    <div class="grimoire-dim"></div>
+    <p class="grimoire-hint">${finePointer.matches ? "Click" : "Tap"} the grimoire to open it</p>
+    <button type="button" class="grimoire-skip">Skip intro</button>`;
+  const part = (name) => overlay.querySelector(`.grimoire-${name}`);
+  return { overlay, zoom: part("zoom"), fit: part("fit"), book: part("book"), cover: part("cover"), leak: part("leak"), pentacle: part("pentacle"), dim: part("dim") };
+}
+
+/* Now and then the shut book shakes with a thud and its cover lifts a crack,
+   light leaking out: harder with a stronger rattle, sooner with a shorter
+   pause. Returns what stops it. */
+function rattle(parts, settings) {
+  let timer = 0;
+  let running = [];
+  const swing = (amount) => ((Math.random() * 2 - 1) * amount).toFixed(2);
+  const shake = () => {
+    const strength = settings().rattle / 100;
+    if (strength > 0) {
+      const count = 5 + Math.floor(Math.random() * 5);
+      const frames = [{ transform: "none" }];
+      for (let index = 0; index < count; index += 1) {
+        const fade = 1 - index / count / 2;
+        frames.push({ transform: `translate(${swing(7 * strength * fade)}px, ${swing(4 * strength * fade)}px) rotate(${swing(2.2 * strength * fade)}deg)` });
+      }
+      frames.push({ transform: "none" });
+      const duration = 240 + count * 60;
+      const lift = -(3 + Math.random() * 12 * strength);
+      running = [
+        parts.book.animate(frames, { duration }),
+        parts.cover.animate([{ transform: "translateZ(3px) rotateY(0deg)" }, { transform: `translateZ(3px) rotateY(${lift.toFixed(1)}deg)`, offset: 0.3 }, { transform: "translateZ(3px) rotateY(0deg)" }], { duration, easing: "ease-out" }),
+        parts.leak.animate([{ opacity: 0 }, { opacity: Math.min(1, 0.35 + strength), offset: 0.3 }, { opacity: 0 }], { duration: duration + 250, easing: "ease-out" }),
+      ];
+      /* A knock as it jumps, and a softer one as the cover drops back. */
+      introSound("thud", settings(), 0, 0.4 + 0.6 * strength);
+      introSound("thud", settings(), duration * 0.7 / 1000, 0.25 + 0.3 * strength);
+    }
+    timer = setTimeout(shake, settings().rattle_every * 1000 * (0.5 + Math.random()));
+  };
+  timer = setTimeout(shake, 1100);
+  return () => {
+    clearTimeout(timer);
+    for (const animation of running) animation.cancel();
+  };
+}
+
+/* A copy of the page's sigil, laid over the ink wheel on the last page at
+   the same size, that glides to where the real one sits. The copy keeps the
+   page's own placing (.grimoire's perspective makes the overlay what fixed
+   things are placed in, and it covers the window), so where it lands is
+   exactly where the real one is; measured with its spin stopped, it is moved
+   from the ink wheel by a transform about that spot. Its animations are set
+   to the real one's, so the two match when it lands. */
+function flyingSigil(overlay, sigil, from) {
+  const element = document.createElement("div");
+  element.className = "grimoire-flight";
+  const copy = sigil.cloneNode(true);
+  /* The copy's url(#…) references still find the originals. */
+  for (const node of [copy, ...copy.querySelectorAll("[id]")]) node.removeAttribute("id");
+  copy.style.removeProperty("visibility");
+  copy.style.animation = "none";
+  element.append(copy);
+  overlay.append(element);
+  const target = copy.getBoundingClientRect();
+  copy.style.removeProperty("animation");
+  if (!target.width || !from.width) {
+    element.remove();
+    return null;
+  }
+  const centreX = target.left + target.width / 2;
+  const centreY = target.top + target.height / 2;
+  const start = `translate(${(from.left + from.width / 2 - centreX).toFixed(1)}px, ${(from.top + from.height / 2 - centreY).toFixed(1)}px) scale(${(from.width / target.width).toFixed(4)})`;
+  Object.assign(element.style, { transformOrigin: `${centreX.toFixed(1)}px ${centreY.toFixed(1)}px`, transform: start });
+  return {
+    element,
+    sync() {
+      const real = sigil.getAnimations({ subtree: true });
+      copy.getAnimations({ subtree: true }).forEach((animation, index) => {
+        if (real[index] && real[index].animationName === animation.animationName) animation.currentTime = real[index].currentTime;
+      });
+    },
+    land(duration) {
+      return element.animate([
+        { transform: start, filter: "brightness(1.8) drop-shadow(0 0 22px #ffcf7aaa)" },
+        { transform: "none", filter: "brightness(1) drop-shadow(0 0 0 #ffcf7a00)" },
+      ], { duration, easing: "cubic-bezier(.55, 0, .25, 1)", fill: "forwards" }).finished;
+    },
+  };
+}
+
+async function openGrimoire(parts, settings) {
+  const { overlay, zoom, fit, book, cover, pentacle, dim } = parts;
+  const width = book.offsetWidth;
+  const height = book.offsetHeight;
+  const viewWidth = document.documentElement.clientWidth;
+  const viewHeight = window.innerHeight;
+  const count = settings.pages;
+  /* Leaves stack a hair apart, the first on top on the right, and each
+     lands on the left on top of the ones before it. Any closer and browsers
+     can draw them in the wrong order near the spine. */
+  const gap = 0.5;
+  const leaves = Array.from({ length: count }, (_, index) => {
+    const leaf = document.createElement("div");
+    leaf.className = "grimoire-leaf";
+    leaf.style.transform = `translateZ(${(count - index) * gap}px)`;
+    leaf.innerHTML = `<div class="leaf-face">${inkSheet()}</div><div class="leaf-face leaf-back">${inkSheet()}</div>`;
+    return leaf;
+  });
+  cover.before(...leaves);
+
+  /* The cover swings over to the left, landing with a thud, while the book
+     slides right and, where the window is narrow, shrinks until both pages fit. */
+  overlay.classList.add("is-open");
+  const fitScale = Math.min(1, (viewWidth * 0.96) / (width * 2), (viewHeight * 0.92) / height);
+  fit.animate([{ transform: "none" }, { transform: `scale(${fitScale}) translateX(50%)` }], { duration: 900, easing: "cubic-bezier(.55, 0, .25, 1)", fill: "forwards" });
+  cover.animate([
+    { transform: `translateZ(${(count + 2) * gap + 3}px) rotateY(0deg)` },
+    { transform: "translateZ(-0.5px) rotateY(-180deg)" },
+  ], { duration: 850, easing: "cubic-bezier(.5, 0, .3, 1)", fill: "forwards" });
+  await wait(380);
+  /* Scheduled from here, once the tap has woken the sound. */
+  introSound("thud", settings, 0.42, 0.9);
+
+  /* The pages riffle over, one after another, all within shuffle_seconds,
+     each rustling as it passes upright. */
+  const shuffle = settings.shuffle_seconds * 1000;
+  const flip = Math.min(520, shuffle * 0.45);
+  const step = count > 1 ? (shuffle - flip) / (count - 1) : 0;
+  const flips = leaves.map((leaf, index) => {
+    introSound("page", settings, (index * step + flip * 0.45) / 1000, 0.7 + Math.random() * 0.3);
+    return leaf.animate([
+      { transform: `translateZ(${(count - index) * gap}px) rotateY(0deg)` },
+      { transform: `translateZ(${(index + 1) * gap}px) rotateY(-180deg)` },
+    ], { duration: flip, delay: index * step, easing: "cubic-bezier(.4, .1, .4, 1)", fill: "forwards" });
+  });
+  await Promise.all(flips.map((animation) => animation.finished));
+  await pageReady;
+  await wait(300);
+
+  /* The ink wheel catches light and the rest dims; over it the page's own
+     wheel fades in, alive, and holds there for glow_seconds. */
+  const sigil = document.querySelector("body > .sigil");
+  pentacle.classList.add("is-lit");
+  dim.animate([{ opacity: 0 }, { opacity: 0.82 }], { duration: 900, delay: 250, easing: "ease", fill: "both" });
+  const flight = sigil && flyingSigil(overlay, sigil, pentacle.getBoundingClientRect());
+  if (flight) {
+    flight.sync();
+    sigil.style.visibility = "hidden";
+    flight.element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 400, easing: "ease", fill: "both" });
+    pentacle.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, delay: 1000, fill: "forwards" });
+  }
+  await wait(settings.glow_seconds * 1000);
+
+  /* Then it glides to its corner while the book and the dark fade and the
+     page comes up round it. */
+  const travel = settings.flight_seconds * 1000;
+  const fade = { duration: travel, easing: "ease-in-out", fill: "forwards" };
+  overlay.style.setProperty("--landing", `${travel}ms`);
+  overlay.classList.add("is-landing");
+  zoom.animate([{ opacity: 1 }, { opacity: 0 }], fade);
+  dim.animate([{ opacity: 0.82 }, { opacity: 0 }], fade);
+  if (!flight) {
+    await wait(travel);
+    return;
+  }
+  await flight.land(travel);
+  flight.sync();
+  sigil.style.removeProperty("visibility");
+  await flight.element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }).finished;
+}
+
+/* Plays the opening, or with preview (from the editor on /public) plays it
+   again with settings not saved yet. Resolves once the page shows. */
+function playGrimoire(preview = null) {
+  let overlay = document.querySelector(".grimoire");
+  if (preview) {
+    overlay?.remove();
+    overlay = document.createElement("div");
+    overlay.className = "grimoire";
+    document.body.prepend(overlay);
+    document.documentElement.classList.remove("no-grimoire");
+    /* The editor's click counts as the tap that lets sound play. */
+    introContext()?.resume();
+  }
+  if (!overlay || document.documentElement.classList.contains("no-grimoire")) {
+    overlay?.remove();
     return Promise.resolve();
   }
-  try { sessionStorage.setItem("grimoire-opened", "1"); } catch (error) { /* plays again next time */ }
-  for (const svg of book.querySelectorAll(".grimoire-ink")) inkPage(svg, svg.dataset.ink);
-  /* Dust shaken loose as the cover opens. */
-  for (let index = 0; index < 18; index += 1) {
-    const mote = document.createElement("span");
-    mote.className = "grimoire-dust";
-    mote.style.cssText = `left:${38 + Math.random() * 30}%;top:${40 + Math.random() * 28}%;--t:${(1 + Math.random() * 0.8).toFixed(2)}s;--dx:${((Math.random() - 0.5) * 80).toFixed(0)}px`;
-    book.append(mote);
-  }
+  const parts = buildGrimoire(overlay);
+  let settings = { ...INTRO_DEFAULTS, ...preview };
+  (preview ? Promise.resolve(settings) : introSettings).then((saved) => {
+    settings = saved;
+    if (!preview) {
+      try {
+        if (saved.repeat === "visit") sessionStorage.setItem("grimoire-opened", "1");
+        else sessionStorage.removeItem("grimoire-opened");
+      } catch (error) { /* plays every time */ }
+    }
+    /* Fetched now, so the tap does not wait for them. */
+    for (const kind of ["sound", "thud", "page"]) introBuffer(saved[kind]);
+  });
+  const stopRattle = rattle(parts, () => settings);
+
   return new Promise((resolve) => {
-    let closed = false;
-    const close = () => {
-      if (closed) return;
-      closed = true;
-      book.classList.add("is-closing");
-      setTimeout(() => book.remove(), 800);
+    let stage = "shut";
+    const end = () => {
+      if (stage === "done") return;
+      stage = "done";
+      stopRattle();
+      window.removeEventListener("keydown", onKey);
+      document.querySelector("body > .sigil")?.style.removeProperty("visibility");
+      overlay.classList.add("is-leaving");
+      setTimeout(() => {
+        overlay.remove();
+        startDeckSound();
+      }, 450);
       resolve();
     };
-    setTimeout(close, GRIMOIRE_SECONDS * 1000);
-    book.addEventListener("click", close);
-    window.addEventListener("keydown", close, { once: true });
+    /* A tap on the shut book opens it; another while it opens skips the rest. */
+    const open = () => {
+      if (stage !== "shut") {
+        end();
+        return;
+      }
+      stage = "opening";
+      stopRattle();
+      const context = introContext();
+      if (context) context.resume().then(() => introSound("sound", settings)).catch(() => { /* silent, still opens */ });
+      openGrimoire(parts, settings).catch(() => {}).finally(end);
+    };
+    function onKey(event) {
+      if (event.key === "Escape") end();
+      else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    }
+    overlay.addEventListener("click", (event) => (event.target.closest(".grimoire-skip") ? end() : open()));
+    /* The page underneath stays put while the book is up. */
+    overlay.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
+    window.addEventListener("keydown", onKey);
   });
 }
 
-const opening = playGrimoire();
+playGrimoire();
 
 async function start() {
   try {
-    const [history, pictures] = await Promise.all([loadJson("game_history.json"), loadJson("roster.json"), opening]);
+    const [history, pictures] = await Promise.all([loadJson("game_history.json"), loadJson("roster.json")]);
     games = Array.isArray(history.games) ? history.games : [];
     historicalWins = Array.isArray(history.historical_wins) ? history.historical_wins : [];
     for (const group of ["players", "decks"]) {
@@ -1107,6 +1817,7 @@ async function start() {
   } catch (error) {
     app.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   }
+  markPageReady();
 }
 
 inscribeGlyphs();
