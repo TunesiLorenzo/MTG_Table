@@ -434,12 +434,6 @@ function homeView() {
   document.title = "MTG Leaderboard";
   return `
     <header class="page-header"><div><span class="eyebrow">COMMANDER NIGHT</span><h1>Leaderboard</h1></div></header>
-    ${tiles([
-      ["GAMES RECORDED", games.length, games.length === 1 ? "match in the archive" : "matches in the archive"],
-      ["MOST WINS", champion ? champion.name : "—", champion ? `${plural(champion.detailedWins, "recorded win")}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
-      ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${players(strongest)} · ${plural(strongest.wins, "win")} · ${percent(strongest.wins, strongest.games)} rate` : "No results yet"],
-      ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${players(mostPlayed)} · ${plural(mostPlayed.games, "appearance")}` : "No results yet"],
-    ])}
     <section class="card">
       ${heading("ALL-TIME TABLE", "Player standings", "Sorted by recorded wins, then historical wins")}
       <div class="table-wrap"><table>
@@ -448,6 +442,12 @@ function homeView() {
       </table></div>
       <p class="table-key" aria-hidden="true">GP games · W wins · HW historical wins · W% win rate · T2 top-two finishes · Avg average finish</p>
     </section>
+    ${tiles([
+      ["GAMES RECORDED", games.length, games.length === 1 ? "match in the archive" : "matches in the archive"],
+      ["MOST WINS", champion ? champion.name : "—", champion ? `${plural(champion.detailedWins, "recorded win")}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
+      ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${players(strongest)} · ${plural(strongest.wins, "win")} · ${percent(strongest.wins, strongest.games)} rate` : "No results yet"],
+      ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${players(mostPlayed)} · ${plural(mostPlayed.games, "appearance")}` : "No results yet"],
+    ])}
     <section class="card">
       ${heading("ALL-TIME WINS", "Player win histogram")}
       ${stats.players.length ? bars([...stats.players].sort((a, b) => b.wins - a.wins).map((player) => [escapeHtml(player.name), player.name, player.wins, `${plural(player.wins, "win")}${player.historicalWins ? ` · ${player.historicalWins} historical` : ""}`, playerColors(player)])) : '<div class="empty">No results yet.</div>'}
@@ -642,8 +642,8 @@ function revealOnScroll() {
       show(entry.target);
     }
   }, { rootMargin: "0px 0px -6% 0px" });
-  /* Drawn under the opening, what is already in view is simply there, so
-     the page is whole as the book fades away round it. */
+  /* The intro handles the visible panels in order after the sigil lands.
+     Sections below the fold keep their usual scroll-triggered entrances. */
   const intro = Boolean(document.querySelector(".grimoire"));
   const later = (element) => !intro || element.getBoundingClientRect().top >= window.innerHeight;
   const singles = [...app.querySelectorAll(".page-header, .hero, .card, .section-heading")].filter(later);
@@ -768,20 +768,16 @@ function startEmbers() {
     scheduleBurst();
   }, 2600 + Math.random() * 4200);
   scheduleBurst();
-  /* A click on the empty background bursts behind the page; one on the page
-     itself bursts over it, where it was clicked. Either way it is one of the
-     colours in play, so a deck's page keeps to its commander's colours and the
-     void to colourless. Typing and picking in the editor stay quiet, and so
-     does a picture opened large. */
+  /* Inspect the original target before navigation can replace the page. */
   document.addEventListener("click", (event) => {
-    if (!event.isTrusted || event.button) return;
+    if (!isEmptyManaClick(event)) return;
     if (event.target === document.body || event.target === document.documentElement || event.target === app) {
       burst(event.clientX, event.clientY);
       return;
     }
-    if (!app.contains(event.target) || event.target.closest("input, select, textarea, label, .editor-card")) return;
+    if (!app.contains(event.target)) return;
     burst(event.clientX, event.clientY, undefined, true);
-  });
+  }, true);
 
   let last = performance.now();
   const frame = (now) => {
@@ -865,48 +861,79 @@ function startEmbers() {
 
 /* ------------------------------------------------------------- settings -- */
 
+const MANA_CLICK_EXCLUSIONS = "a, button, input, select, textarea, label, summary, audio, video, iframe, [role], [tabindex], [onclick], [contenteditable]:not([contenteditable='false']), [data-zoom], .editor-card, .settings, dialog, .lightbox, .grimoire";
+function isEmptyManaClick(event) {
+  return event.isTrusted && !event.button && event.detail > 0 && !event.defaultPrevented &&
+    !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey &&
+    !event.target.closest(MANA_CLICK_EXCLUSIONS);
+}
+const SOUND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="sound-cone" d="M4 9h4l5-4v14l-5-4H4z"/><path class="sound-waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/><path class="sound-slash" d="M16 9l6 6M22 9l-6 6"/></svg>';
+const MIN_VOLUME_DB = -60;
+// Stored site levels remain linear percentages for existing published sites.
+const dbToGain = (db) => db <= MIN_VOLUME_DB ? 0 : 10 ** (db / 20);
+const percentToDb = (percent) => percent > 0 ? Math.max(MIN_VOLUME_DB, 20 * Math.log10(percent / 100)) : MIN_VOLUME_DB;
+// Display the position as 0–100%, while the audio gain still follows the dB curve.
+const volumeLabel = (db) => `${Math.round((db - MIN_VOLUME_DB) / -MIN_VOLUME_DB * 100)}%`;
+
 /* Two volumes multiply into every sound here. The site's is set in the
    editor on /public and published as settings.json, so it is the same for
-   everyone. The visitor's, from the gear in the corner, runs from nothing to
+   everyone. The visitor's, from the speaker in the corner, runs from nothing to
    the site's level and is remembered by their browser. Each deck's own level,
    and the intro's, apply on top of both. */
 const SITE_VOLUME_DEFAULT = 100;
 let siteVolume = SITE_VOLUME_DEFAULT;
-let visitorVolume = 100;
+let visitorVolume = 0;
+let visitorMuted = false;
 try {
-  const saved = localStorage.getItem("visitor-volume");
-  if (saved !== null && Number(saved) >= 0 && Number(saved) <= 100) visitorVolume = Number(saved);
+  const saved = localStorage.getItem("visitor-volume-db");
+  const legacy = localStorage.getItem("visitor-volume");
+  if (saved !== null && Number(saved) >= MIN_VOLUME_DB && Number(saved) <= 0) visitorVolume = Number(saved);
+  else if (legacy !== null && Number(legacy) >= 0 && Number(legacy) <= 100) visitorVolume = percentToDb(Number(legacy));
+  visitorMuted = localStorage.getItem("visitor-muted") === "1";
 } catch (error) { /* full each visit */ }
-const volumeShare = () => (siteVolume / 100) * (visitorVolume / 100);
+const volumeShare = () => visitorMuted ? 0 : (siteVolume / 100) * dbToGain(visitorVolume);
 loadJson("settings.json").then((saved) => {
   const volume = Number(saved.volume);
   if (saved.volume !== undefined && volume >= 0 && volume <= 100) siteVolume = volume;
-  applyDeckVolume();
+  applySiteVolume();
 }).catch(() => { /* none published: the default */ });
 
 /* One labelled slider; the editor on /public adds the site's to the panel. */
 const volumeRow = (label, value, attribute) => `<label class="settings-volume"><span>${label}</span>
-  <input type="range" ${attribute} min="0" max="100" step="5" value="${value}"><output>${value}%</output></label>`;
+  <input type="range" ${attribute} min="${MIN_VOLUME_DB}" max="0" step="1" value="${Math.round(value)}"><output>${volumeLabel(value)}</output></label>`;
 function paintSlider(input) {
-  input.style.setProperty("--fill", `${input.value}%`);
-  input.nextElementSibling.textContent = `${input.value}%`;
+  input.style.setProperty("--fill", `${(Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
+  input.nextElementSibling.textContent = volumeLabel(Number(input.value));
+  input.setAttribute("aria-valuetext", volumeLabel(Number(input.value)));
 }
 
 const settings = document.createElement("div");
 settings.className = "settings";
-settings.innerHTML = `<button type="button" class="settings-toggle" aria-expanded="false" aria-controls="settings-panel" title="Settings">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/></svg>
-    <span class="visually-hidden">Settings</span></button>
+settings.innerHTML = `<button type="button" class="settings-toggle" aria-expanded="false" aria-controls="settings-panel" title="Sound settings">
+    ${SOUND_ICON}<span class="visually-hidden">Sound settings</span></button>
   <div class="settings-panel" id="settings-panel" hidden>
-    <span class="eyebrow">SETTINGS</span>
+    <span class="eyebrow">SOUND</span>
     ${volumeRow("Volume", visitorVolume, "data-visitor-volume")}
-    <p>Clicks, mana bursts and commander sounds</p>
+    <button type="button" class="settings-mute" aria-pressed="false">Mute all sounds</button>
+    <p>All sounds, including the intro. 100% is full volume.</p>
   </div>`;
 document.body.append(settings);
 const settingsToggle = settings.querySelector(".settings-toggle");
 const settingsPanel = settings.querySelector(".settings-panel");
 const volumeSlider = settings.querySelector("[data-visitor-volume]");
 paintSlider(volumeSlider);
+const muteToggle = settings.querySelector(".settings-mute");
+function paintMute() {
+  settingsToggle.dataset.muted = String(volumeShare() === 0);
+  muteToggle.setAttribute("aria-pressed", String(visitorMuted));
+  muteToggle.textContent = visitorMuted ? "Unmute all sounds" : "Mute all sounds";
+}
+paintMute();
+muteToggle.addEventListener("click", () => {
+  visitorMuted = !visitorMuted;
+  try { localStorage.setItem("visitor-muted", visitorMuted ? "1" : "0"); } catch (error) { /* this visit only */ }
+  applySiteVolume();
+});
 
 function openSettings(open) {
   settingsPanel.hidden = !open;
@@ -926,12 +953,156 @@ document.addEventListener("keydown", (event) => {
 volumeSlider.addEventListener("input", () => {
   visitorVolume = Number(volumeSlider.value);
   paintSlider(volumeSlider);
-  applyDeckVolume();
+  applySiteVolume();
 });
 volumeSlider.addEventListener("change", () => {
-  try { localStorage.setItem("visitor-volume", String(visitorVolume)); } catch (error) { /* this visit only */ }
+  try { localStorage.setItem("visitor-volume-db", String(visitorVolume)); } catch (error) { /* this visit only */ }
   thud();
 });
+
+/* One low-latency context and master gain for all short effects and the intro.
+   Decode files ahead of taps; never queue an old click behind a download. */
+const siteAudio = { context: null, master: null, buffers: new Map(), decoded: new Map(), voices: new Set(), noise: new Map() };
+function audioContext() {
+  if (!siteAudio.context) {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return null;
+    try {
+      siteAudio.context = new Context({ latencyHint: "interactive" });
+      siteAudio.master = siteAudio.context.createGain();
+      siteAudio.master.gain.value = volumeShare();
+      siteAudio.master.connect(siteAudio.context.destination);
+    } catch (error) { return null; }
+  }
+  return siteAudio.context;
+}
+function applySiteVolume() {
+  const context = siteAudio.context;
+  if (context) {
+    siteAudio.master.gain.cancelScheduledValues(context.currentTime);
+    siteAudio.master.gain.setTargetAtTime(volumeShare(), context.currentTime, 0.005);
+  }
+  applyDeckVolume();
+  paintMute();
+  document.dispatchEvent(new Event("sitevolumechange"));
+}
+function unlockAudio() {
+  siteAudio.activated = true;
+  const context = audioContext();
+  if (context && context.state !== "running") context.resume().catch(() => {});
+}
+for (const type of ["pointerdown", "keydown", "click"]) {
+  document.addEventListener(type, unlockAudio, { capture: true, passive: true });
+}
+function audioBuffer(url) {
+  const context = audioContext();
+  if (!url || !context) return Promise.resolve(null);
+  if (!siteAudio.buffers.has(url)) {
+    siteAudio.buffers.set(url, fetch(url).then((response) => {
+      if (!response.ok) throw new Error(`Could not load audio (${response.status})`);
+      return response.arrayBuffer();
+    }).then((data) => new Promise((resolve, reject) => context.decodeAudioData(data, resolve, reject)))
+      .then((buffer) => { siteAudio.decoded.set(url, buffer); return buffer; })
+      .catch(() => { siteAudio.buffers.delete(url); return null; }));
+  }
+  return siteAudio.buffers.get(url);
+}
+function playEffect(url, level, rate = 1) {
+  const context = audioContext();
+  const buffer = siteAudio.decoded.get(url);
+  if (!buffer) { audioBuffer(url); return false; }
+  if (!context || context.state !== "running" || volumeShare() === 0) return false;
+  // Bound overlapping samples on phones, especially long custom mana clips.
+  if (siteAudio.voices.size >= 8) {
+    const oldest = siteAudio.voices.values().next().value;
+    oldest.stop();
+    siteAudio.voices.delete(oldest);
+  }
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = buffer;
+  source.playbackRate.value = rate;
+  gain.gain.value = level;
+  source.connect(gain).connect(siteAudio.master);
+  siteAudio.voices.add(source);
+  source.onended = () => { source.disconnect(); gain.disconnect(); siteAudio.voices.delete(source); };
+  source.start();
+  return true;
+}
+
+/* Commander clips can wait for decoding and Android's asynchronous resume.
+   A request token prevents an old page/preview from starting after Stop. */
+function createClipPlayer() {
+  const events = new EventTarget();
+  let url = "", request = 0, source = null, gain = null, level = 1;
+  const player = {
+    paused: true, loading: false, error: null,
+    addEventListener: (...args) => events.addEventListener(...args),
+    get src() { return url; },
+    set src(value) {
+      if (url === value) return;
+      url = value;
+      player.error = null;
+      player.pause();
+      if (url) audioBuffer(url);
+    },
+    get volume() { return level; },
+    set volume(value) {
+      level = Math.min(1, Math.max(0, value));
+      if (gain) gain.gain.setTargetAtTime(level, audioContext().currentTime, 0.005);
+    },
+    pause() {
+      request += 1;
+      if (source) { source.onended = null; source.stop(); source.disconnect(); }
+      gain?.disconnect();
+      source = gain = null;
+      player.paused = true;
+      player.loading = false;
+      events.dispatchEvent(new Event("pause"));
+    },
+    async play() {
+      player.pause();
+      const token = request;
+      const context = audioContext();
+      player.error = null;
+      player.paused = false;
+      player.loading = true;
+      events.dispatchEvent(new Event("loading"));
+      try {
+        if (!context || !url) throw new Error("Audio is unavailable");
+        // Invoke resume before the first await, inside the user's gesture.
+        const awake = context.state === "running" ? Promise.resolve() : context.resume();
+        const [buffer] = await Promise.all([audioBuffer(url), awake]);
+        if (token !== request) return;
+        if (!buffer) throw new Error("Could not load this sound. Tap to retry.");
+        if (context.state !== "running") throw new Error("Tap to enable sound");
+        gain = context.createGain();
+        gain.gain.value = level;
+        source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gain).connect(siteAudio.master);
+        source.onended = () => {
+          if (token !== request) return;
+          source.disconnect();
+          gain.disconnect();
+          source = gain = null;
+          player.paused = true;
+          events.dispatchEvent(new Event("ended"));
+        };
+        source.start();
+        player.loading = false;
+        events.dispatchEvent(new Event("play"));
+      } catch (error) {
+        if (token !== request) return;
+        player.pause();
+        player.error = error;
+        events.dispatchEvent(new Event("error"));
+        throw error;
+      }
+    },
+  };
+  return player;
+}
 
 /* ----------------------------------------------------------- deck sound -- */
 
@@ -942,14 +1113,13 @@ volumeSlider.addEventListener("change", () => {
    set its own volume in percent; without one it plays at DECK_SOUND_VOLUME,
    which mirrors ROSTER_SOUND_VOLUME_DEFAULT in web.py. */
 const DECK_SOUND_VOLUME = 80;
-const deckSound = new Audio();
+const deckSound = createClipPlayer();
 /* This deck's own level, 0 to 1, before the site volume scales it. */
 let deckVolume = DECK_SOUND_VOLUME / 100;
-const applyDeckVolume = () => { deckSound.volume = deckVolume * volumeShare(); };
+const applyDeckVolume = () => { deckSound.volume = deckVolume; };
+let deckSoundRoute = null;
 let soundMuted = false;
 try { soundMuted = localStorage.getItem("deck-sound-muted") === "1"; } catch (error) { /* never remembered */ }
-
-const SOUND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="sound-cone" d="M4 9h4l5-4v14l-5-4H4z"/><path class="sound-waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/><path class="sound-slash" d="M16 9l6 6M22 9l-6 6"/></svg>';
 
 function soundButton(url, volume) {
   return `<button type="button" class="hero-sound" data-sound="${escapeHtml(url)}" data-volume="${Number(volume) || DECK_SOUND_VOLUME}">${SOUND_ICON}<span></span></button>`;
@@ -959,35 +1129,56 @@ function soundButton(url, volume) {
 function paintSoundButton() {
   const button = app.querySelector(".hero-sound");
   if (!button) return;
-  const state = soundMuted ? "off" : deckSound.paused ? "ready" : "playing";
-  const labels = { off: "Sound off", ready: "Play sound", playing: "Stop sound" };
+  const state = soundMuted ? "off" : deckSound.error ? "error" : deckSound.loading ? "loading" : deckSound.paused ? "ready" : "playing";
+  const labels = { off: "Sound off", ready: "Play sound", playing: "Stop sound", loading: "Loading sound…", error: "Retry sound" };
   button.dataset.state = state;
   button.querySelector("span").textContent = labels[state];
-  button.title = state === "off" ? "Turn deck sounds back on" : state === "playing" ? "Stop, and keep deck pages quiet" : "Play the commander's sound";
+  button.title = deckSound.error?.message || (state === "off" ? "Turn deck sounds back on" : state === "loading" ? "Cancel loading" : state === "playing" ? "Stop, and keep deck pages quiet" : "Play the commander's sound");
 }
 
 function playDeckSound() {
-  deckSound.currentTime = 0;
-  deckSound.play().catch(() => { /* not allowed before a click: the button waits */ }).finally(paintSoundButton);
+  deckSound.play().catch(() => { /* The button shows the error and offers a retry. */ }).finally(paintSoundButton);
 }
 
-/* Called on every redraw: a deck page starts its sound, anything else stops it. */
+/* Start once on entering a deck; an editor redraw must not restart its clip. */
 function startDeckSound() {
   const button = app.querySelector(".hero-sound");
   if (!button) {
     deckSound.pause();
+    deckSoundRoute = null;
     return;
   }
-  if (deckSound.getAttribute("src") !== button.dataset.sound) deckSound.src = button.dataset.sound;
+  const routeKey = `${window.location.hash}|${button.dataset.sound}`;
+  const changed = routeKey !== deckSoundRoute;
+  if (changed) deckSound.pause();
+  deckSound.src = button.dataset.sound;
   deckVolume = Math.min(Math.max(Number(button.dataset.volume) / 100, 0), 1);
   applyDeckVolume();
   /* Under the opening it waits: playGrimoire() starts it as the book goes. */
-  if (soundMuted || document.querySelector(".grimoire")) deckSound.pause();
-  else playDeckSound();
+  if (document.querySelector(".grimoire")) {
+    deckSound.pause();
+    deckSoundRoute = null;
+  } else {
+    deckSoundRoute = routeKey;
+    if (soundMuted || volumeShare() === 0) deckSound.pause();
+    else if (changed && (siteAudio.activated || audioContext()?.state === "running")) playDeckSound();
+  }
   paintSoundButton();
 }
 
-for (const event of ["play", "pause", "ended"]) deckSound.addEventListener(event, paintSoundButton);
+for (const event of ["loading", "play", "pause", "ended", "error"]) deckSound.addEventListener(event, paintSoundButton);
+
+/* Start downloading on touch-down/focus, before navigation builds the deck's
+   pictures and editor. Later visits reuse the decoded recording. */
+function prepareDeckSound(event) {
+  const link = event.target.closest("a[href^='#/deck/']");
+  if (!link) return;
+  try {
+    const info = deckInfo(decodeURIComponent(link.getAttribute("href").slice("#/deck/".length)));
+    if (info.sound) audioBuffer(info.sound);
+  } catch (error) { /* Ignore malformed hand-written links. */ }
+}
+for (const event of ["pointerdown", "pointerover", "focusin"]) app.addEventListener(event, prepareDeckSound);
 
 app.addEventListener("click", (event) => {
   if (!event.target.closest(".hero-sound")) return;
@@ -1005,8 +1196,7 @@ app.addEventListener("click", (event) => {
    of its colour's own; the ones that come on their own stay silent. Which
    sound and how loud is chosen per colour in the editor on /public and published as
    mana_sounds.json: "" is the built-in sound below, "none" silence, anything
-   else a file. Both volumes in the settings apply, and turning deck sounds
-   off quiets these too. The editor changes manaSounds as you edit, so the
+   else a file. Both volumes and the global mute apply. The editor changes manaSounds as you edit, so the
    bursts on its page already sound the way they will once saved. */
 const MANA_SOUND_DEFAULT_VOLUME = 60;
 const manaSounds = Object.fromEntries([...MANA_ORDER, "C"].map((color) => [color, { sound: "", volume: MANA_SOUND_DEFAULT_VOLUME }]));
@@ -1016,25 +1206,28 @@ loadJson("mana_sounds.json").then((saved) => {
     if (!entry) continue;
     if (typeof entry.sound === "string") manaSounds[color].sound = entry.sound;
     if (Number(entry.volume) >= 0 && Number(entry.volume) <= 100) manaSounds[color].volume = Number(entry.volume);
+    if (entry.sound && entry.sound !== "none") audioBuffer(entry.sound);
   }
 }).catch(() => { /* none published: every colour built in */ });
-
-let manaAudio = null;
 
 /* The built-in sounds, made here rather than loaded: White a bright bell,
    Blue a watery bloop, Black a low dark swell, Red a crackle of fire, Green a
    woody pluck, colourless a hollow metallic ping. */
 function synthMana(color, level) {
-  try {
-    manaAudio ||= new (window.AudioContext || window.webkitAudioContext)();
-  } catch (error) {
-    return;
-  }
-  if (manaAudio.state === "suspended") manaAudio.resume().catch(() => {});
+  const manaAudio = audioContext();
+  if (!manaAudio || manaAudio.state !== "running") return;
   const now = manaAudio.currentTime;
   const output = manaAudio.createGain();
   output.gain.value = level;
-  output.connect(manaAudio.destination);
+  output.connect(siteAudio.master);
+  let active = 0;
+  const track = (source, nodes) => {
+    active += 1;
+    source.onended = () => {
+      for (const node of [source, ...nodes]) node.disconnect();
+      if (--active === 0) output.disconnect();
+    };
+  };
   const tone = (type, from, to, start, length, peak, filter) => {
     const oscillator = manaAudio.createOscillator();
     const gain = manaAudio.createGain();
@@ -1045,32 +1238,40 @@ function synthMana(color, level) {
     gain.gain.exponentialRampToValueAtTime(peak, now + start + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
     let chain = oscillator.connect(gain);
+    const nodes = [gain];
     if (filter) {
       const shaped = manaAudio.createBiquadFilter();
       shaped.type = "lowpass";
       shaped.frequency.value = filter;
       chain = chain.connect(shaped);
+      nodes.push(shaped);
     }
     chain.connect(output);
+    track(oscillator, nodes);
     oscillator.start(now + start);
     oscillator.stop(now + start + length + 0.05);
   };
   const noise = (length, type, frequency, peak, crackle = false) => {
-    const samples = Math.floor(manaAudio.sampleRate * length);
-    const buffer = manaAudio.createBuffer(1, samples, manaAudio.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let index = 0; index < samples; index += 1) {
-      const fade = (1 - index / samples) ** 2;
-      data[index] = (Math.random() * 2 - 1) * fade * (crackle ? (Math.random() < 0.06 ? 1 : 0.15) : 1);
+    const key = `${length}:${crackle}`;
+    if (!siteAudio.noise.has(key)) {
+      const samples = Math.floor(manaAudio.sampleRate * length);
+      const buffer = manaAudio.createBuffer(1, samples, manaAudio.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let index = 0; index < samples; index += 1) {
+        const fade = (1 - index / samples) ** 2;
+        data[index] = (Math.random() * 2 - 1) * fade * (crackle ? (Math.random() < 0.06 ? 1 : 0.15) : 1);
+      }
+      siteAudio.noise.set(key, buffer);
     }
     const source = manaAudio.createBufferSource();
     const shaped = manaAudio.createBiquadFilter();
     const gain = manaAudio.createGain();
-    source.buffer = buffer;
+    source.buffer = siteAudio.noise.get(key);
     shaped.type = type;
     shaped.frequency.value = frequency;
     gain.gain.value = peak;
     source.connect(shaped).connect(gain).connect(output);
+    track(source, [shaped, gain]);
     source.start(now);
   };
   if (color === "W") {
@@ -1099,42 +1300,25 @@ function synthMana(color, level) {
 }
 
 function playManaSound(color, setting = manaSounds[color]) {
-  if (soundMuted || !setting || setting.sound === "none") return;
-  const level = (setting.volume / 100) * volumeShare();
+  if (!setting || setting.sound === "none" || volumeShare() === 0) return;
+  const level = setting.volume / 100;
   if (level <= 0) return;
-  if (!setting.sound) {
+  if (!setting.sound || !playEffect(setting.sound, level)) {
     synthMana(color, level);
-    return;
   }
-  const audio = new Audio(setting.sound);
-  audio.volume = Math.min(1, level);
-  audio.play().catch(() => { /* not allowed before the first click */ });
 }
 
 /* ------------------------------------------------------------- ui sound -- */
 
 /* Every click through the site makes the life tracker's own button click
    (sound/click.mp3, copied beside this page); going back plays it a little
-   slower and lower. A few copies take turns so quick clicks can overlap.
-   Turning deck sounds off quiets these too. */
+   slower and lower. The decoded sample is reused by the shared audio engine. */
 const CLICK_VOLUME = 0.8;
-const clickPool = Array.from({ length: 4 }, () => {
-  const audio = new Audio("click.mp3");
-  audio.preload = "auto";
-  audio.volume = CLICK_VOLUME;
-  audio.preservesPitch = false;
-  return audio;
-});
-let nextClick = 0;
+audioBuffer("click.mp3");
 
 function thud(back = false) {
-  if (soundMuted) return;
-  const audio = clickPool[nextClick];
-  nextClick = (nextClick + 1) % clickPool.length;
-  audio.volume = CLICK_VOLUME * volumeShare();
-  audio.playbackRate = back ? 0.78 : 1;
-  audio.currentTime = 0;
-  audio.play().catch(() => { /* not allowed before the first click */ });
+  if (volumeShare() === 0) return;
+  playEffect("click.mp3", CLICK_VOLUME, back ? 0.78 : 1);
 }
 
 /* Anything clickable clicks as it is pressed; a back link clicks deeper. The
@@ -1142,7 +1326,7 @@ function thud(back = false) {
 let lastThud = 0;
 document.addEventListener("click", (event) => {
   const target = event.target.closest("a, button, select, summary, [role='button'], .editor-mana, .editor-upload, .grimoire");
-  if (!target || target.disabled || target.closest(".hero-sound")) return;
+  if (!target || target.disabled || target.closest(".hero-sound, .settings-mute")) return;
   lastThud = performance.now();
   thud(Boolean(target.closest(".back-link, .lightbox-close")));
 }, true);
@@ -1288,21 +1472,20 @@ async function loadJson(path) {
 
 /* ------------------------------------------------------------- grimoire -- */
 
-/* The opening. An old grimoire lies shut, the five mana symbols glowing
-   around the planeswalker's spark on its cover, and every so often it
-   rattles with a thud and its cover lifts a crack, light leaking out, as if
-   something inside wants out. A tap (or Enter) plays the intro sound and
-   throws it open: the pages riffle past, each with its own rustle, scrawled
+/* The opening. A chained grimoire waits for a tap to release its lock and
+   wake the audio. Then it rattles with a thud and its cover lifts a crack,
+   light leaking out, as if something inside wants out. A second tap (or
+   Enter) throws it open: curled pages riffle past, each rustling, scrawled
    with nonsense, down to the last, where the colour wheel is drawn in ink.
    The wheel catches light and everything else dims; it comes alive as the
-   wheel this page wears, then glides to its place in the corner while the
-   book fades and the page, drawn underneath all along, comes up round it.
+   wheel this page wears, with the opening sound starting on its glow. It
+   glides to its corner, then the title and standings fade in, in that order.
 
    Its sounds and timings come from intro.json, set in the editor on /public;
    INTRO_DEFAULTS mirrors INTRO_NUMBERS in web.py. index.html holds only the
    empty, opaque .grimoire, so nothing flashes before this builds the book. */
 const INTRO_DEFAULTS = {
-  sound: "", thud: "", page: "", volume: 80, repeat: "always", rattle: 60, rattle_every: 1.8,
+  chain: "", sound: "", thud: "", page: "", volume: 80, repeat: "always", rattle: 90, rattle_every: 0.7,
   pages: 18, shuffle_seconds: 1.8, glow_seconds: 2.5, flight_seconds: 1.6,
 };
 const introSettings = loadJson("intro.json").then((saved) => ({ ...INTRO_DEFAULTS, ...saved })).catch(() => ({ ...INTRO_DEFAULTS }));
@@ -1316,29 +1499,17 @@ const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mill
 /* The intro's sounds go through one audio context, so a riffle of page turns
    can be timed to the pages and every sound obeys the volume, iPhones
    included. Browsers keep it silent until the visitor first taps or clicks:
-   rattles before then usually make no sound, and the tap that opens the
-   book is what wakes it. */
-const introAudio = { context: null, noise: null, buffers: new Map() };
+   the first tap releases the chain and wakes audio before any rattles begin.
+   The second tap opens the now-unbound book. */
+const introAudio = { get context() { return siteAudio.context; }, noise: null, decoded: siteAudio.decoded };
 
 function introContext() {
-  if (!introAudio.context) {
-    const Context = window.AudioContext || window.webkitAudioContext;
-    if (!Context) return null;
-    introAudio.context = new Context();
-  }
-  return introAudio.context;
+  return audioContext();
 }
 
 /* A sound file named in intro.json, fetched and decoded once. */
 function introBuffer(url) {
-  const context = introContext();
-  if (!url || !context) return Promise.resolve(null);
-  if (!introAudio.buffers.has(url)) {
-    introAudio.buffers.set(url, fetch(url).then((response) => response.arrayBuffer())
-      .then((data) => new Promise((resolve, reject) => context.decodeAudioData(data, resolve, reject)))
-      .catch(() => null));
-  }
-  return introAudio.buffers.get(url);
+  return audioBuffer(url);
 }
 
 function noiseBuffer(context) {
@@ -1356,27 +1527,57 @@ function envelope(context, when, peak, attack, release) {
   gain.gain.setValueAtTime(0.0001, when);
   gain.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), when + attack);
   gain.gain.exponentialRampToValueAtTime(0.0001, when + attack + release);
-  gain.connect(context.destination);
+  gain.connect(siteAudio.master);
   return gain;
+}
+
+function introChain(source, ...nodes) {
+  let tail = source;
+  for (const node of nodes) tail = tail.connect(node);
+  source.addEventListener("ended", () => {
+    for (const node of [source, ...nodes]) node.disconnect();
+  }, { once: true });
 }
 
 /* What plays when no file is chosen: a heavy book's dull knock, and the
    swish of a page. */
 const INTRO_SYNTH = {
+  chain(context, when, level) {
+    /* A short spill of uneven metal-on-metal clinks until a file is chosen. */
+    return Array.from({ length: 10 }, (_, index) => {
+      const clink = context.createOscillator();
+      const at = when + index * 0.095 + Math.random() * 0.025;
+      clink.type = "triangle";
+      clink.frequency.setValueAtTime(1200 + Math.random() * 2300, at);
+      introChain(clink, envelope(context, at, level * (0.15 - index * 0.009), 0.002, 0.09));
+      clink.start(at);
+      clink.stop(at + 0.12);
+      return clink;
+    });
+  },
   thud(context, when, level) {
     const body = context.createOscillator();
     body.frequency.setValueAtTime(110, when);
     body.frequency.exponentialRampToValueAtTime(42, when + 0.16);
-    body.connect(envelope(context, when, level, 0.006, 0.3));
+    introChain(body, envelope(context, when, level, 0.006, 0.3));
     body.start(when);
     body.stop(when + 0.34);
+    /* A woody midrange impact stays audible on small phone speakers. */
+    const tap = context.createOscillator();
+    tap.type = "triangle";
+    tap.frequency.setValueAtTime(460, when);
+    tap.frequency.exponentialRampToValueAtTime(160, when + 0.08);
+    introChain(tap, envelope(context, when, level * 0.35, 0.003, 0.12));
+    tap.start(when);
+    tap.stop(when + 0.14);
     const knock = context.createBufferSource();
     knock.buffer = noiseBuffer(context);
     const muffle = context.createBiquadFilter();
     muffle.type = "lowpass";
     muffle.frequency.value = 700;
-    knock.connect(muffle).connect(envelope(context, when, level * 0.6, 0.003, 0.07));
+    introChain(knock, muffle, envelope(context, when, level * 0.6, 0.003, 0.07));
     knock.start(when, Math.random() * 0.3, 0.09);
+    return [body, tap, knock];
   },
   page(context, when, level) {
     const swish = context.createBufferSource();
@@ -1387,30 +1588,53 @@ const INTRO_SYNTH = {
     paper.frequency.value = 1800 + Math.random() * 1600;
     paper.Q.value = 0.8;
     const length = 0.14 + Math.random() * 0.08;
-    swish.connect(paper).connect(envelope(context, when, level * 0.55, 0.035, length));
+    introChain(swish, paper, envelope(context, when, level * 0.55, 0.035, length));
     swish.start(when, Math.random() * 0.15, length + 0.06);
+    return [swish];
   },
 };
 
-/* Plays one of the intro's sounds, "sound", "thud" or "page", delay seconds
+/* Plays an intro sound (chain, glow, thud or page turn), delay seconds
    from now, at the intro's volume under the site's and the visitor's. */
-function introSound(kind, settings, delay = 0, level = 1) {
+function introSound(kind, settings, delay = 0, level = 1, signal = null) {
   const context = introAudio.context;
-  if (!context || context.state !== "running") return;
-  const volume = Math.min(Math.max(settings.volume / 100, 0), 1) * volumeShare() * level;
+  if (signal?.aborted || !context || context.state !== "running" || volumeShare() === 0) return;
+  const volume = Math.min(Math.max(settings.volume / 100, 0), 1) * level;
   if (volume <= 0) return;
   const when = context.currentTime + delay;
-  introBuffer(settings[kind]).then((buffer) => {
+  /* Short effects must land on time even if a mobile connection is still
+     downloading their files. Use the built-in effect until decoding finishes. */
+  const ready = introAudio.decoded.get(settings[kind]);
+  const bufferReady = (ready || INTRO_SYNTH[kind]) ? Promise.resolve(ready) : introBuffer(settings[kind]);
+  bufferReady.then((buffer) => {
+    if (signal?.aborted || volumeShare() === 0) return;
     const start = Math.max(when, context.currentTime);
     if (buffer) {
       const source = context.createBufferSource();
       source.buffer = buffer;
       const gain = context.createGain();
       gain.gain.value = volume;
-      source.connect(gain).connect(context.destination);
+      if (kind === "chain") {
+        gain.gain.setValueAtTime(volume, start);
+        gain.gain.setValueAtTime(volume, start + 1.05);
+        gain.gain.linearRampToValueAtTime(0, start + 1.3);
+      }
+      introChain(source, gain);
+      gain.connect(siteAudio.master);
       source.start(start);
+      if (kind === "chain") source.stop(start + Math.min(buffer.duration, 1.3));
+      if (signal) {
+        const stop = () => { source.stop(); };
+        signal.addEventListener("abort", stop, { once: true });
+        source.onended = () => { signal.removeEventListener("abort", stop); source.disconnect(); gain.disconnect(); };
+      }
     } else if (INTRO_SYNTH[kind]) {
-      INTRO_SYNTH[kind](context, start, volume);
+      for (const source of INTRO_SYNTH[kind](context, start, volume)) {
+        if (!signal) continue;
+        const stop = () => source.stop();
+        signal.addEventListener("abort", stop, { once: true });
+        source.onended = () => { signal.removeEventListener("abort", stop); source.disconnect(); };
+      }
     }
   });
 }
@@ -1419,23 +1643,30 @@ function introSound(kind, settings, delay = 0, level = 1) {
    and below the line, and gaps between "words", drifting a little. */
 function scribble(x, y, width) {
   const n = (value) => value.toFixed(1);
-  let d = `M${n(x)} ${n(y)}`;
+  /* Repeated letterforms give the hand a consistent ductus. Each word has
+     its own baseline and pen angle, with finer joins, dots and crossbars. */
+  const letters = [
+    "c -1 -4 3 -6 3 -3 c 0 3 -4 4 -3 1 m 3 -1 q -1 3 2 1",
+    "c 3 -2 5 -11 2 -9 c -2 1 -2 12 2 7 q 3 -3 2 1",
+    "c 4 -3 1 -5 0 -3 c -2 3 0 5 4 1",
+    "q 2 -6 3 -3 q -3 9 -4 7 q -2 -2 4 -5 l 2 -1",
+    "l 1 -4 q -2 7 2 3 m -1 -6 l .2 -.5 m 1 6 l 2 -1",
+    "q 3 -7 3 -3 l -1 3 q 3 -7 4 -4 l -1 4 q 2 0 3 -2",
+    "c 1 -2 0 -5 2 -4 q 2 1 3 0 m -4 3 q 1 3 4 0",
+    "q 4 -12 3 -9 l -3 8 q 0 3 4 0 m -4 -4 l 5 -1 m -1 5 l 1 -1",
+    "c 4 -5 1 -6 0 -3 c -1 2 4 1 3 3 q -2 2 -4 0 m 4 0 l 2 -1",
+  ];
+  let d = "";
   let along = x;
-  while (along < x + width - 6) {
-    const w = 2.6 + Math.random() * 3.4;
-    const h = 2 + Math.random() * 2.4;
-    const drift = (Math.random() - 0.5) * 0.5;
-    const shape = Math.random();
-    if (shape < 0.16) { d += ` c${n(w * 0.2)} ${n(-h * 2.9)} ${n(w * 0.95)} ${n(-h * 2.9)} ${n(w * 0.5)} ${n(drift)}`; along += w * 0.5; }
-    else if (shape < 0.28) { d += ` c${n(w * 0.2)} ${n(h * 2.3)} ${n(w * 0.95)} ${n(h * 2.3)} ${n(w * 0.5)} ${n(drift)}`; along += w * 0.5; }
-    else if (shape < 0.55) { d += ` q${n(w / 2)} ${n(-h * 1.4)} ${n(w)} ${n(drift)}`; along += w; }
-    else if (shape < 0.78) { d += ` q${n(w / 2)} ${n(h * 0.9)} ${n(w)} ${n(drift)}`; along += w; }
-    else { d += ` c${n(w * 0.1)} ${n(-h * 1.3)} ${n(w * 0.95)} ${n(-h * 1.3)} ${n(w * 0.4)} ${n(drift)}`; along += w * 0.4; }
-    if (Math.random() < 0.13) {
-      const gap = 4 + Math.random() * 5;
-      d += ` m${n(gap)} ${n((Math.random() - 0.5) * 0.8)}`;
-      along += gap;
+  while (along < x + width - 10) {
+    const count = 2 + Math.floor(Math.random() * 7);
+    const baseline = y + (Math.random() - 0.5) * 1.2;
+    for (let letter = 0; letter < count && along < x + width - 10; letter += 1) {
+      const form = Math.floor(Math.random() * letters.length);
+      d += ` M${n(along)} ${n(baseline)} ${letters[form]}`;
+      along += form === 5 ? 8 : 4 + Math.random() * 1.2;
     }
+    along += 4 + Math.random() * 4;
   }
   return d;
 }
@@ -1478,7 +1709,10 @@ function pentagram(cx, cy, r) {
 function gibberish() {
   const between = (low, high) => low + Math.random() * (high - low);
   const runes = (count) => Array.from({ length: count }, () => RUNES[Math.floor(Math.random() * RUNES.length)]).join("");
-  const parts = [];
+  const parts = [
+    '<path class="ink-rule" d="M23 24 L23 308 M27 24 L211 24"/>',
+    `<text class="ink-folio" x="194" y="320">${Math.floor(between(12, 180))}</text>`,
+  ];
   let y = between(32, 40);
   parts.push(`<path class="ink-bold ink-red" d="${scribble(28, y, between(60, 150))}"/>`);
   y += 20;
@@ -1500,7 +1734,7 @@ function gibberish() {
       y += 9;
     } else {
       const indent = Math.random() < 0.12 ? 14 : 0;
-      parts.push(`<path d="${scribble(28 + indent, y, (184 - indent) * between(0.55, 1))}"/>`);
+      parts.push(`<path style="stroke-width:${between(0.55, 0.85).toFixed(2)};opacity:${between(0.65, 0.95).toFixed(2)}" d="${scribble(28 + indent, y, (184 - indent) * between(0.72, 1))}"/>`);
       y += 12;
     }
   }
@@ -1543,7 +1777,7 @@ function grimoireCover() {
   }).join("");
   const corners = ["tl", "tr", "bl", "br"].map((corner) => `<span class="grimoire-corner" data-corner="${corner}"></span>`).join("");
   return `<div class="grimoire-cover">
-      <div class="grimoire-cover-front">${corners}
+      <div class="grimoire-cover-front">${corners}${coverDamage()}
         <div class="grimoire-emblem"><span class="grimoire-ring"></span><i class="ms ms-planeswalker grimoire-logo"></i>${mana}</div>
         <span class="grimoire-title">Commander Night</span>
         <span class="grimoire-clasp"></span>
@@ -1552,52 +1786,119 @@ function grimoireCover() {
     </div>`;
 }
 
-/* The book shut on its last page. The leaves in between are added as it opens. */
+function coverDamage() {
+  const cracks = Array.from({ length: 28 }, (_, index) => {
+    const x = index % 2 ? 216 + Math.random() * 18 : 5 + Math.random() * 18;
+    const y = 10 + Math.random() * 300;
+    const inward = index % 2 ? -1 : 1;
+    return `<path d="M${x} ${y} l${inward * 9} 4 l${inward * 3} 8 l${inward * 12} -2 m${inward * -15} -6 l${inward * 4} -9"/>`;
+  }).join("");
+  return `<svg class="cover-damage" viewBox="0 0 240 330" preserveAspectRatio="none">
+    <g class="cover-cracks">${cracks}</g>
+    <g class="cover-scuffs"><path d="M233 13 L217 22 L229 31 M227 288 L210 308 L223 315 M14 251 L27 269 M51 15 L73 18"/>
+    <path d="M188 76 l-32 22 m10 -2 l-22 17 M49 211 l34 16 m-12 2 l19 7"/></g>
+    <path class="cover-split" d="M8 39 L13 66 L8 104 L15 141 L9 179 L14 208 L7 272"/>
+    <path class="cover-stitches" d="M5 78 l12 -4 M5 86 l12 -4 M6 94 l12 -4 M6 194 l13 3 M6 202 l13 3"/>
+  </svg>`;
+}
+
+function grimoireChains() {
+  const arms = [-144, -36, 36, 144].map((angle, arm) => {
+    const links = Array.from({ length: 10 }, (_, index) => {
+      const x = 8 + index * 14;
+      return `<ellipse cx="${x}" cy="0" rx="11" ry="${index % 2 ? 3 : 6}" class="chain-link"/><ellipse cx="${x}" cy="-1" rx="9" ry="${index % 2 ? 1.5 : 4}" class="chain-glint"/>`;
+    }).join("");
+    return `<g transform="translate(120 165) rotate(${angle})"><g class="chain-arm" style="--arm:${arm}">${links}</g></g>`;
+  }).join("");
+  return `<svg class="grimoire-chains" viewBox="0 0 240 330" aria-hidden="true">${arms}
+    <g class="chain-lock"><path class="lock-shackle" d="M107 158 V145 C107 128 133 128 133 145 V158"/>
+      <path class="lock-body" d="M101 153 L138 151 L141 184 Q120 198 99 184 Z"/>
+      <path class="lock-scar" d="M104 158 L129 156 M103 180 L114 183 M134 163 L136 179"/>
+      <path class="lock-keyhole" d="M123 173 a4 4 0 1 0 -6 0 l-2 9 h10 Z"/>
+    </g></svg>`;
+}
+
+async function unlockGrimoire(parts, settings, signal) {
+  signal.throwIfAborted();
+  parts.hint.textContent = "The binding is breaking…";
+  introSound("chain", settings, 0, 1, signal);
+  const animations = [parts.chains.querySelector(".lock-shackle").animate([
+    { transform: "translateY(0) rotate(0deg)" },
+    { transform: "translateY(-12px) rotate(-20deg)" },
+  ], { duration: 300, fill: "forwards", easing: "ease-out" })];
+  for (const [index, arm] of [...parts.chains.querySelectorAll(".chain-arm")].entries()) {
+    animations.push(arm.animate([
+      { transform: "translateX(0)", opacity: 1 },
+      { transform: "translateX(-4px) rotate(3deg)", opacity: 1, offset: 0.2 },
+      { transform: `translate(110px, ${index % 2 ? 100 : -100}px) rotate(${index % 2 ? 40 : -40}deg)`, opacity: 0 },
+    ], { duration: 1000, delay: 260, fill: "forwards", easing: "cubic-bezier(.4,0,.8,.4)" }));
+  }
+  animations.push(parts.chains.querySelector(".chain-lock").animate([
+    { transform: "none", opacity: 1 },
+    { transform: "translate(12px, 165px) rotate(35deg)", opacity: 0 },
+  ], { duration: 900, delay: 400, fill: "forwards", easing: "ease-in" }));
+  const cancel = () => animations.forEach((animation) => animation.cancel());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    await Promise.all(animations.map((animation) => animation.finished));
+    signal.throwIfAborted();
+    parts.chains.remove();
+    parts.hint.textContent = `${finePointer.matches ? "Click" : "Tap"} the grimoire to open it`;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+/* The book shut and chained. The leaves are added only when it opens. */
 function buildGrimoire(overlay) {
   overlay.innerHTML = `
     <div class="grimoire-zoom"><div class="grimoire-fit"><div class="grimoire-book" aria-hidden="true">
-      <div class="grimoire-block">${lastPage()}<span class="grimoire-leak"></span></div>
+      <div class="grimoire-block"><div class="grimoire-last-sheet" style="--paper-tear:${tornPaper()}">${lastPage()}</div><span class="grimoire-leak"></span></div>
       ${grimoireCover()}
+      ${grimoireChains()}
     </div></div></div>
     <div class="grimoire-dim"></div>
-    <p class="grimoire-hint">${finePointer.matches ? "Click" : "Tap"} the grimoire to open it</p>
+    <p class="grimoire-hint" aria-live="polite">${finePointer.matches ? "Click" : "Tap"} to unlock the chain</p>
     <button type="button" class="grimoire-skip">Skip intro</button>`;
   const part = (name) => overlay.querySelector(`.grimoire-${name}`);
-  return { overlay, zoom: part("zoom"), fit: part("fit"), book: part("book"), cover: part("cover"), leak: part("leak"), pentacle: part("pentacle"), dim: part("dim") };
+  return { overlay, zoom: part("zoom"), fit: part("fit"), book: part("book"), cover: part("cover"), leak: part("leak"), pentacle: part("pentacle"), dim: part("dim"), chains: part("chains"), hint: part("hint") };
 }
 
 /* Now and then the shut book shakes with a thud and its cover lifts a crack,
    light leaking out: harder with a stronger rattle, sooner with a shorter
    pause. Returns what stops it. */
 function rattle(parts, settings) {
+  const controller = new AbortController();
   let timer = 0;
   let running = [];
   const swing = (amount) => ((Math.random() * 2 - 1) * amount).toFixed(2);
   const shake = () => {
     const strength = settings().rattle / 100;
+    let duration = 0;
     if (strength > 0) {
       const count = 5 + Math.floor(Math.random() * 5);
       const frames = [{ transform: "none" }];
       for (let index = 0; index < count; index += 1) {
         const fade = 1 - index / count / 2;
-        frames.push({ transform: `translate(${swing(7 * strength * fade)}px, ${swing(4 * strength * fade)}px) rotate(${swing(2.2 * strength * fade)}deg)` });
+        frames.push({ transform: `translate(${swing(12 * strength * fade)}px, ${swing(8 * strength * fade)}px) rotate(${swing(3.5 * strength * fade)}deg)` });
       }
       frames.push({ transform: "none" });
-      const duration = 240 + count * 60;
-      const lift = -(3 + Math.random() * 12 * strength);
+      duration = 180 + count * 45;
+      const lift = -(5 + Math.random() * 19 * strength);
       running = [
         parts.book.animate(frames, { duration }),
         parts.cover.animate([{ transform: "translateZ(3px) rotateY(0deg)" }, { transform: `translateZ(3px) rotateY(${lift.toFixed(1)}deg)`, offset: 0.3 }, { transform: "translateZ(3px) rotateY(0deg)" }], { duration, easing: "ease-out" }),
         parts.leak.animate([{ opacity: 0 }, { opacity: Math.min(1, 0.35 + strength), offset: 0.3 }, { opacity: 0 }], { duration: duration + 250, easing: "ease-out" }),
       ];
       /* A knock as it jumps, and a softer one as the cover drops back. */
-      introSound("thud", settings(), 0, 0.4 + 0.6 * strength);
-      introSound("thud", settings(), duration * 0.7 / 1000, 0.25 + 0.3 * strength);
+      introSound("thud", settings(), 0, 0.5 + 0.5 * strength, controller.signal);
+      introSound("thud", settings(), duration * 0.7 / 1000, 0.35 + 0.4 * strength, controller.signal);
     }
-    timer = setTimeout(shake, settings().rattle_every * 1000 * (0.5 + Math.random()));
+    timer = setTimeout(shake, duration + settings().rattle_every * 1000 * (0.5 + Math.random() * 0.7));
   };
-  timer = setTimeout(shake, 1100);
+  timer = setTimeout(shake, 160);
   return () => {
+    controller.abort();
     clearTimeout(timer);
     for (const animation of running) animation.cancel();
   };
@@ -1647,7 +1948,120 @@ function flyingSigil(overlay, sigil, from) {
   };
 }
 
-async function openGrimoire(parts, settings) {
+async function revealIntroPage(signal) {
+  const children = [...app.children];
+  const reveal = (element, duration) => element.animate(
+    [{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out", fill: "both" });
+  const animations = [];
+  const cancel = () => animations.forEach((animation) => animation.cancel());
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    /* Finish the title before starting the table. Remaining sections follow. */
+    for (const element of children.slice(0, 2)) {
+      signal.throwIfAborted();
+      const animation = reveal(element, 650);
+      animations.push(animation);
+      await animation.finished;
+    }
+    signal.throwIfAborted();
+    const rest = children.slice(2).map((element) => reveal(element, 500));
+    animations.push(...rest);
+    await Promise.all(rest.map((animation) => animation.finished));
+  } finally {
+    app.classList.remove("intro-pending");
+    cancel();
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+/* One torn silhouette per physical sheet, shared by all of its strips. */
+function tornPaper() {
+  const points = ["0% 0%"];
+  for (let x = 8; x <= 96; x += 8) points.push(`${x}% ${(Math.random() * 1.3).toFixed(2)}%`);
+  points.push("99% 2%");
+  const rip = 20 + Math.floor(Math.random() * 55);
+  for (let y = 5; y < 98; y += 3) {
+    const bite = Math.abs(y - rip) < 3 ? 6 + Math.random() * 4 : Math.random() * 1.8;
+    points.push(`${(100 - bite).toFixed(2)}% ${y}%`);
+  }
+  points.push("94% 98%", "91% 96%");
+  for (let x = 88; x > 0; x -= 8) points.push(`${x}% ${(98 + Math.random() * 2).toFixed(2)}%`);
+  points.push("0% 100%");
+  return `polygon(${points.join(",")})`;
+}
+
+function wornInk() {
+  const spots = Array.from({ length: 12 }, () => `<ellipse cx="${25 + Math.random() * 200}" cy="${15 + Math.random() * 300}" rx="${1 + Math.random() * 6}" ry="${1 + Math.random() * 4}"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 330">
+    <style>path{fill:none;stroke:#352213;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round}.ink-red{stroke:#7c1d0e}.ink-bold{stroke-width:1.15}.ink-rule{stroke:#87452e;opacity:.3}text{fill:#352213;font:italic 8px Georgia,serif}</style>
+    <g fill="#64401c" opacity=".17">${spots}</g>
+    <path d="M207 0 Q218 137 195 330 M0 249 Q119 232 240 251" style="stroke:#58371b;stroke-width:2;opacity:.12"/>
+    <g opacity=".8">${gibberish()}</g></svg>`;
+  return `<img class="grimoire-ink" alt="" src="data:image/svg+xml,${encodeURIComponent(svg)}">`;
+}
+
+/* Integrate the tangents across the paper. Every strip begins exactly at
+   the previous strip's end; the outer edge follows the spine with a curl. */
+function pageCurve(width, progress, segments = 8) {
+  let x = 0;
+  let z = 0;
+  return Array.from({ length: segments }, (_, index) => {
+    const angle = -180 * progress + 55 * Math.sin(Math.PI * progress) * Math.sin((index + 0.5) / segments * Math.PI / 2);
+    const transform = `translate3d(${x.toFixed(3)}px, 0, ${z.toFixed(3)}px) rotateY(${angle.toFixed(3)}deg)`;
+    x += Math.cos(angle * Math.PI / 180) * width / segments;
+    z -= Math.sin(angle * Math.PI / 180) * width / segments;
+    return transform;
+  });
+}
+
+function bendingLeaf(width, index, count, gap) {
+  const leaf = document.createElement("div");
+  leaf.className = "grimoire-leaf";
+  leaf.style.transform = `translateZ(${(count - index) * gap}px)`;
+  const tear = tornPaper();
+  leaf.style.setProperty("--paper-tear", tear);
+  leaf.style.setProperty("--paper-tear-back", tear.replace(/([\d.]+)% ([\d.]+)%/g, (_, x, y) => `${100 - Number(x)}% ${y}%`));
+  const front = wornInk();
+  const back = wornInk();
+  const segments = 8;
+  const stripWidth = width / segments;
+  leaf.innerHTML = Array.from({ length: segments }, (_, part) => `
+    <div class="leaf-strip" style="width:${stripWidth}px;transform:${pageCurve(width, 0, segments)[part]}">
+      <div class="leaf-surface"><div class="leaf-face leaf-sheet" style="width:${width}px;left:${-part * stripWidth}px">${front}</div></div>
+      <div class="leaf-surface leaf-strip-back"><div class="leaf-face leaf-sheet" style="width:${width}px;left:${-(segments - 1 - part) * stripWidth}px">${back}</div></div>
+    </div>`).join("");
+  return {
+    element: leaf,
+    async turn(duration, delay, signal) {
+      const frames = Array.from({ length: 25 }, (_, frame) => {
+        const t = frame / 24;
+        return pageCurve(width, t * t * (3 - 2 * t), segments);
+      });
+      const timing = { duration, delay, easing: "linear", fill: "both" };
+      const animations = [...leaf.querySelectorAll(".leaf-strip")].map((strip, part) => strip.animate(
+        frames.map((frame) => ({ transform: frame[part] })), timing));
+      animations.push(leaf.animate([
+        { transform: `translateZ(${(count - index) * gap}px)` },
+        { transform: `translateZ(${(index + 1) * gap}px)` },
+      ], timing));
+      const cancel = () => animations.forEach((animation) => animation.cancel());
+      signal.addEventListener("abort", cancel, { once: true });
+      try {
+        signal.throwIfAborted();
+        await Promise.all(animations.map((animation) => animation.finished));
+        signal.throwIfAborted();
+        /* Once flat, release the temporary strip layers and retain one sheet. */
+        leaf.innerHTML = `<div class="leaf-face">${front}</div><div class="leaf-face leaf-back">${back}</div>`;
+        leaf.style.transform = `translateZ(${(index + 1) * gap}px) rotateY(-180deg)`;
+      } finally {
+        cancel();
+        signal.removeEventListener("abort", cancel);
+      }
+    },
+  };
+}
+
+async function openGrimoire(parts, settings, signal) {
   const { overlay, zoom, fit, book, cover, pentacle, dim } = parts;
   const width = book.offsetWidth;
   const height = book.offsetHeight;
@@ -1658,14 +2072,8 @@ async function openGrimoire(parts, settings) {
      lands on the left on top of the ones before it. Any closer and browsers
      can draw them in the wrong order near the spine. */
   const gap = 0.5;
-  const leaves = Array.from({ length: count }, (_, index) => {
-    const leaf = document.createElement("div");
-    leaf.className = "grimoire-leaf";
-    leaf.style.transform = `translateZ(${(count - index) * gap}px)`;
-    leaf.innerHTML = `<div class="leaf-face">${inkSheet()}</div><div class="leaf-face leaf-back">${inkSheet()}</div>`;
-    return leaf;
-  });
-  cover.before(...leaves);
+  const leaves = Array.from({ length: count }, (_, index) => bendingLeaf(width, index, count, gap));
+  cover.before(...leaves.map((leaf) => leaf.element));
 
   /* The cover swings over to the left, landing with a thud, while the book
      slides right and, where the window is narrow, shrinks until both pages fit. */
@@ -1677,29 +2085,29 @@ async function openGrimoire(parts, settings) {
     { transform: "translateZ(-0.5px) rotateY(-180deg)" },
   ], { duration: 850, easing: "cubic-bezier(.5, 0, .3, 1)", fill: "forwards" });
   await wait(380);
+  signal.throwIfAborted();
   /* Scheduled from here, once the tap has woken the sound. */
-  introSound("thud", settings, 0.42, 0.9);
+  introSound("thud", settings, 0.42, 0.9, signal);
 
   /* The pages riffle over, one after another, all within shuffle_seconds,
      each rustling as it passes upright. */
   const shuffle = settings.shuffle_seconds * 1000;
-  const flip = Math.min(520, shuffle * 0.45);
+  const flip = Math.min(850, shuffle * 0.65);
   const step = count > 1 ? (shuffle - flip) / (count - 1) : 0;
   const flips = leaves.map((leaf, index) => {
-    introSound("page", settings, (index * step + flip * 0.45) / 1000, 0.7 + Math.random() * 0.3);
-    return leaf.animate([
-      { transform: `translateZ(${(count - index) * gap}px) rotateY(0deg)` },
-      { transform: `translateZ(${(index + 1) * gap}px) rotateY(-180deg)` },
-    ], { duration: flip, delay: index * step, easing: "cubic-bezier(.4, .1, .4, 1)", fill: "forwards" });
+    introSound("page", settings, (index * step + flip * 0.45) / 1000, 0.7 + Math.random() * 0.3, signal);
+    return leaf.turn(flip, index * step, signal);
   });
-  await Promise.all(flips.map((animation) => animation.finished));
+  await Promise.all(flips);
   await pageReady;
   await wait(300);
+  signal.throwIfAborted();
 
   /* The ink wheel catches light and the rest dims; over it the page's own
      wheel fades in, alive, and holds there for glow_seconds. */
   const sigil = document.querySelector("body > .sigil");
   pentacle.classList.add("is-lit");
+  introSound("sound", settings, 0, 1, signal);
   dim.animate([{ opacity: 0 }, { opacity: 0.82 }], { duration: 900, delay: 250, easing: "ease", fill: "both" });
   const flight = sigil && flyingSigil(overlay, sigil, pentacle.getBoundingClientRect());
   if (flight) {
@@ -1709,9 +2117,9 @@ async function openGrimoire(parts, settings) {
     pentacle.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, delay: 1000, fill: "forwards" });
   }
   await wait(settings.glow_seconds * 1000);
+  signal.throwIfAborted();
 
-  /* Then it glides to its corner while the book and the dark fade and the
-     page comes up round it. */
+  /* The book fades during flight, but the page stays hidden until landing. */
   const travel = settings.flight_seconds * 1000;
   const fade = { duration: travel, easing: "ease-in-out", fill: "forwards" };
   overlay.style.setProperty("--landing", `${travel}ms`);
@@ -1720,12 +2128,15 @@ async function openGrimoire(parts, settings) {
   dim.animate([{ opacity: 0.82 }, { opacity: 0 }], fade);
   if (!flight) {
     await wait(travel);
-    return;
+  } else {
+    await flight.land(travel);
+    signal.throwIfAborted();
+    flight.sync();
+    sigil.style.removeProperty("visibility");
+    await flight.element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }).finished;
   }
-  await flight.land(travel);
-  flight.sync();
-  sigil.style.removeProperty("visibility");
-  await flight.element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }).finished;
+  signal.throwIfAborted();
+  await revealIntroPage(signal);
 }
 
 /* Plays the opening, or with preview (from the editor on /public) plays it
@@ -1746,8 +2157,12 @@ function playGrimoire(preview = null) {
     return Promise.resolve();
   }
   const parts = buildGrimoire(overlay);
+  const controller = new AbortController();
+  app.classList.add("intro-pending");
+  app.inert = true;
+  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   let settings = { ...INTRO_DEFAULTS, ...preview };
-  (preview ? Promise.resolve(settings) : introSettings).then((saved) => {
+  const prepared = (preview ? Promise.resolve(settings) : introSettings).then((saved) => {
     settings = saved;
     if (!preview) {
       try {
@@ -1756,36 +2171,62 @@ function playGrimoire(preview = null) {
       } catch (error) { /* plays every time */ }
     }
     /* Fetched now, so the tap does not wait for them. */
-    for (const kind of ["sound", "thud", "page"]) introBuffer(saved[kind]);
+    return Promise.all(["chain", "sound", "thud", "page"].map((kind) => introBuffer(saved[kind])));
   });
-  const stopRattle = rattle(parts, () => settings);
+  let stopRattle = () => {};
 
   return new Promise((resolve) => {
-    let stage = "shut";
-    const end = () => {
+    let stage = "locked";
+    const end = (skip = true) => {
       if (stage === "done") return;
       stage = "done";
+      if (skip) controller.abort();
       stopRattle();
+      app.classList.remove("intro-pending");
+      app.inert = false;
       window.removeEventListener("keydown", onKey);
       document.querySelector("body > .sigil")?.style.removeProperty("visibility");
       overlay.classList.add("is-leaving");
       setTimeout(() => {
         overlay.remove();
+        for (const animation of overlay.getAnimations({ subtree: true })) animation.cancel();
         startDeckSound();
       }, 450);
       resolve();
     };
-    /* A tap on the shut book opens it; another while it opens skips the rest. */
+    /* First tap wakes sound and drops the chain. Only a later tap opens the
+       rattling book. Double taps while unlocking must not bypass this stage. */
     const open = () => {
+      if (stage === "unlocking" || stage === "done") return;
+      if (stage === "locked") {
+        stage = "unlocking";
+        parts.hint.textContent = "Unlocking…";
+        const context = introContext();
+        const awake = context ? context.resume().catch(() => {}) : Promise.resolve();
+        Promise.race([Promise.all([awake, prepared]), wait(1800)]).then(async () => {
+          controller.signal.throwIfAborted();
+          await unlockGrimoire(parts, settings, controller.signal);
+          controller.signal.throwIfAborted();
+          stage = "shut";
+          stopRattle = rattle(parts, () => settings);
+        }).catch(() => end());
+        return;
+      }
       if (stage !== "shut") {
         end();
         return;
       }
       stage = "opening";
       stopRattle();
+      /* resume() must run directly in the trusted tap/keyboard event. Wait
+         for activation before scheduling effects, with a silent fallback. */
       const context = introContext();
-      if (context) context.resume().then(() => introSound("sound", settings)).catch(() => { /* silent, still opens */ });
-      openGrimoire(parts, settings).catch(() => {}).finally(end);
+      const awake = context ? context.resume().catch(() => {}) : Promise.resolve();
+      Promise.race([Promise.all([awake, prepared]), wait(1800)])
+        .then(() => {
+          controller.signal.throwIfAborted();
+          return openGrimoire(parts, settings, controller.signal);
+        }).then(() => end(false), () => end());
     };
     function onKey(event) {
       if (event.key === "Escape") end();

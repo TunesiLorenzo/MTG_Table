@@ -11,6 +11,11 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mana-font@1.18.0/css/mana.min.css">
   <link rel="stylesheet" href="site.css">
   <script>
+    /* Start fresh on reload and on a page restored from the back/forward cache. */
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    const resetPageScroll = () => window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    resetPageScroll();
+    window.addEventListener("pageshow", resetPageScroll);
     /* The grimoire is skipped for reduced motion, and on a later load in the
        same tab when the intro is set to play once per visit (playGrimoire()
        in site.js keeps that note). Decided here so it never flashes. */

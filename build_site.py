@@ -98,8 +98,8 @@ def publish_intro():
     if not path.is_file():
         return
     intro = json.loads(path.read_text(encoding="utf-8"))
-    # The sound as it opens, the thud and the page turn.
-    for key in ("sound", "thud", "page"):
+    # Unlocking the chain, the pentacle's glow, thuds and page turns.
+    for key in ("chain", "sound", "thud", "page"):
         if intro.get(key):
             intro[key] = publish_sound(intro[key], INTRO_SOUND_DIR, "site/intro.json")
     (OUT_DIR / "intro.json").write_text(json.dumps(intro, ensure_ascii=False), encoding="utf-8")
