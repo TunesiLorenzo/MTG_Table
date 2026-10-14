@@ -17,6 +17,7 @@ const app = document.querySelector("#app");
 
 let games = [];
 let historicalWins = [];
+let rosterReady = false;
 /* Pictures and commander names, keyed the same way the statistics are. */
 const roster = { players: new Map(), decks: new Map() };
 let stats = { players: [], decks: [], playerIndex: new Map(), deckIndex: new Map() };
@@ -1168,11 +1169,78 @@ function startDeckSound() {
 
 for (const event of ["loading", "play", "pause", "ended", "error"]) deckSound.addEventListener(event, paintSoundButton);
 
-/* Start downloading on touch-down/focus, before navigation builds the deck's
-   pictures and editor. Later visits reuse the decoded recording. */
+/* Warm every sound used by a deck after the intro, so a phone doesn't have to
+   fetch and decode it at the moment the visitor opens that deck. */
+let commanderAudioWarmup = false;
+let rosterImageWarmup = false;
+function warmCommanderAudio() {
+  if (commanderAudioWarmup) return;
+  if (!rosterReady) {
+    setTimeout(warmCommanderAudio, 300);
+    return;
+  }
+  commanderAudioWarmup = true;
+  const urls = [...new Set([...roster.decks.values()].map((info) => info.sound).filter(Boolean))];
+  // Keep network and decode work off the animation and limit mobile CPU spikes.
+  let next = 0;
+  const worker = async () => {
+    while (next < urls.length) await audioBuffer(urls[next++]);
+  };
+  Promise.all([worker(), worker()]);
+}
+function warmRosterImages() {
+  if (rosterImageWarmup || !rosterReady) return;
+  rosterImageWarmup = true;
+  const urls = new Set();
+  const addPicture = (picture) => {
+    if (typeof picture === "string") urls.add(picture);
+    else if (picture && typeof picture === "object") {
+      for (const size of ["thumb", "full"]) if (picture[size]) urls.add(picture[size]);
+    }
+  };
+  for (const group of [roster.players, roster.decks]) {
+    for (const entry of group.values()) {
+      for (const key of ["portrait", "background", "art"]) addPicture(entry[key]);
+      for (const picture of entry.cards || []) addPicture(picture);
+    }
+  }
+  const images = [...urls];
+  let next = 0;
+  const loadOne = (url) => new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.fetchPriority = "low";
+    const finish = () => {
+      image.onload = image.onerror = null;
+      resolve();
+    };
+    image.onload = finish;
+    image.onerror = finish;
+    image.src = url;
+    if (image.complete) finish();
+  });
+  const worker = async () => {
+    while (next < images.length) await loadOne(images[next++]);
+  };
+  Promise.all(Array.from({ length: Math.min(4, images.length) }, worker));
+}
+function scheduleSiteAssetWarmup() {
+  const start = () => warmCommanderAudio();
+  const images = () => warmRosterImages();
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(start, { timeout: 1200 });
+    requestIdleCallback(images, { timeout: 1200 });
+  } else setTimeout(() => { start(); images(); }, 250);
+}
+
+/* These still help if a deck opens before the background warmup reaches it. */
 function prepareDeckSound(event) {
   const link = event.target.closest("a[href^='#/deck/']");
   if (!link) return;
+  prepareDeckSoundLink(link);
+}
+
+function prepareDeckSoundLink(link) {
   try {
     const info = deckInfo(decodeURIComponent(link.getAttribute("href").slice("#/deck/".length)));
     if (info.sound) audioBuffer(info.sound);
@@ -1616,13 +1684,13 @@ function introSound(kind, settings, delay = 0, level = 1, signal = null) {
       gain.gain.value = volume;
       if (kind === "chain") {
         gain.gain.setValueAtTime(volume, start);
-        gain.gain.setValueAtTime(volume, start + 1.05);
-        gain.gain.linearRampToValueAtTime(0, start + 1.3);
+        gain.gain.setValueAtTime(volume, start + 2.1);
+        gain.gain.linearRampToValueAtTime(0, start + 2.5);
       }
       introChain(source, gain);
       gain.connect(siteAudio.master);
       source.start(start);
-      if (kind === "chain") source.stop(start + Math.min(buffer.duration, 1.3));
+      if (kind === "chain") source.stop(start + Math.min(buffer.duration, 2.5));
       if (signal) {
         const stop = () => { source.stop(); };
         signal.addEventListener("abort", stop, { once: true });
@@ -1703,41 +1771,82 @@ function pentagram(cx, cy, r) {
   return `M${tips.join(" L")}`;
 }
 
-/* A page of nonsense on a 240 × 330 sheet: a red heading, lines of
-   not-quite-writing, and here and there a magic circle with notes beside it
-   or a row of runes. Different every time. */
-function gibberish() {
+/* Sketchbook studies alternate with magical diagrams. Construction lines,
+   hatching and uneven marginal notes make each page a worked manuscript. */
+function manuscriptStudy(variant) {
+  if (variant === 0) {
+    const rings = [58, 48, 33].map((radius) => `<path d="${wobblyCircle(119, 147, radius)}"/>`).join("");
+    const spokes = Array.from({ length: 12 }, (_, index) => {
+      const angle = index * Math.PI / 6;
+      return `<path class="study-construction" d="M${(119 + 34 * Math.cos(angle)).toFixed(1)} ${(147 + 34 * Math.sin(angle)).toFixed(1)} L${(119 + 63 * Math.cos(angle)).toFixed(1)} ${(147 + 63 * Math.sin(angle)).toFixed(1)}"/>`;
+    }).join("");
+    return `<g class="study-ink">${rings}${spokes}<path d="${pentagram(119, 147, 43)}"/>
+      <path class="study-construction" d="M49 147 H189 M119 77 V217 M66 94 L172 200 M66 200 L172 94"/>
+      <path class="study-red" d="M119 62 l4 10 -4 10 -4 -10 Z M119 212 l4 10 -4 10 -4 -10 Z"/>
+      <circle cx="119" cy="147" r="6"/><circle cx="119" cy="147" r="2"/></g>`;
+  }
+  if (variant === 1) {
+    const leaves = Array.from({ length: 9 }, (_, index) => {
+      const y = 90 + index * 16;
+      const side = index % 2 ? 1 : -1;
+      const x = 114 + (index - 4) * 1.6;
+      const tip = x + side * (36 + index % 3 * 8);
+      return `<path d="M${x} ${y} Q${x + side * 13} ${y - 22} ${tip} ${y - 13} Q${x + side * 34} ${y + 4} ${x} ${y} M${x} ${y} Q${x + side * 27} ${y - 10} ${tip} ${y - 13}"/>`;
+    }).join("");
+    const roots = Array.from({ length: 8 }, (_, index) => `<path class="study-construction" d="M113 234 Q${77 + index * 9} 252 ${52 + index * 17} ${270 + index % 3 * 5}"/>`).join("");
+    return `<g class="study-ink"><path d="M115 230 C97 188 127 149 111 84 Q108 69 117 55"/>${leaves}${roots}
+      <path d="M117 56 C91 53 91 30 112 37 C120 23 137 29 136 43 C150 48 141 64 123 61 Z"/>
+      <path class="study-construction" d="M108 46 Q118 53 132 45 M114 39 Q120 52 119 58"/>
+      <path class="study-red" d="M149 53 Q180 40 190 59 M141 143 Q178 133 193 147"/></g>`;
+  }
+  if (variant === 2) {
+    const ribs = Array.from({ length: 10 }, (_, index) => {
+      const x = 52 + index * 13;
+      const upper = 117 - Math.sin(index / 9 * Math.PI) * 39;
+      return `<path class="study-construction" d="M119 168 L${x} ${upper.toFixed(1)} M${x} ${upper.toFixed(1)} L${x + 4} ${(upper + 18).toFixed(1)}"/>`;
+    }).join("");
+    return `<g class="study-ink"><path d="M27 124 Q73 57 119 106 Q171 48 213 129 Q171 122 119 168 Q66 118 27 124 Z"/>
+      ${ribs}<path d="M119 106 L119 222 L142 251 L119 235 L96 251 L119 222 M103 144 Q119 136 135 144"/>
+      <path d="${wobblyCircle(119, 181, 25)}"/><path d="${wobblyCircle(119, 181, 17)}"/>
+      <path class="study-construction" d="M28 150 H211 M28 158 H211 M119 73 V276"/>
+      <path class="study-red" d="M35 64 Q119 35 203 66 M42 70 l-8 -7 M195 70 l8 -7"/></g>`;
+  }
+  const facets = [
+    "M118 71 L150 118 L136 204 L116 235 L91 204 L80 118 Z",
+    "M80 118 L118 71 L150 118 L116 142 Z M80 118 L91 204 L116 142 L136 204 L150 118",
+    "M91 204 L116 235 L136 204 M116 142 L118 71",
+  ].map((d, index) => `<path class="${index ? "study-construction" : ""}" d="${d}"/>`).join("");
+  const rays = Array.from({ length: 14 }, (_, index) => {
+    const a = index * Math.PI / 7;
+    const cx = 116 + Math.cos(a) * 82;
+    const cy = 150 + Math.sin(a) * 95;
+    return `<path class="study-construction" d="M${cx.toFixed(1)} ${cy.toFixed(1)} l${(Math.cos(a) * 10).toFixed(1)} ${(Math.sin(a) * 10).toFixed(1)}"/>`;
+  }).join("");
+  return `<g class="study-ink">${facets}${rays}<path class="study-construction" d="${wobblyCircle(116, 151, 74)}"/>
+    <path class="study-red" d="M48 149 Q116 60 187 148 M51 156 Q116 245 185 156"/></g>`;
+}
+
+function gibberish(variant = Math.floor(Math.random() * 4)) {
   const between = (low, high) => low + Math.random() * (high - low);
   const runes = (count) => Array.from({ length: count }, () => RUNES[Math.floor(Math.random() * RUNES.length)]).join("");
   const parts = [
-    '<path class="ink-rule" d="M23 24 L23 308 M27 24 L211 24"/>',
+    '<path class="ink-rule" d="M23 24 L23 308 M27 24 L211 24 M27 313 L213 313"/>',
     `<text class="ink-folio" x="194" y="320">${Math.floor(between(12, 180))}</text>`,
+    manuscriptStudy(variant),
   ];
-  let y = between(32, 40);
-  parts.push(`<path class="ink-bold ink-red" d="${scribble(28, y, between(60, 150))}"/>`);
-  y += 20;
-  while (y < 306) {
-    const roll = Math.random();
-    if (roll < 0.12 && y < 236) {
-      const r = between(20, 32);
-      const left = Math.random() < 0.5;
-      const cx = left ? 30 + r : 210 - r;
-      parts.push(`<path d="${wobblyCircle(cx, y + r, r)}"/>`, `<path d="${Math.random() < 0.6 ? pentagram(cx, y + r, r * 0.86) : wobblyCircle(cx, y + r, r * 0.6)}"/>`);
-      const notesX = left ? cx + r + 12 : 28;
-      const notesWidth = 184 - 2 * r - 12;
-      for (let line = 0; line < Math.floor(r / 6); line += 1) parts.push(`<path d="${scribble(notesX, y + 8 + line * 12, notesWidth * between(0.6, 1))}"/>`);
-      y += 2 * r + 16;
-    } else if (roll < 0.2) {
-      parts.push(`<text x="28" y="${(y + 3).toFixed(1)}">${runes(Math.floor(between(12, 24)))}</text>`);
-      y += 15;
-    } else if (roll < 0.26) {
-      y += 9;
-    } else {
-      const indent = Math.random() < 0.12 ? 14 : 0;
-      parts.push(`<path style="stroke-width:${between(0.55, 0.85).toFixed(2)};opacity:${between(0.65, 0.95).toFixed(2)}" d="${scribble(28 + indent, y, (184 - indent) * between(0.72, 1))}"/>`);
-      y += 12;
-    }
+  parts.push(`<path class="ink-bold ink-red" d="${scribble(30, 35, between(80, 147))}"/>`);
+  const notes = variant === 0 ? [[31, 72, 42], [164, 81, 44], [28, 238, 94], [119, 254, 81]]
+    : variant === 1 ? [[28, 94, 45], [157, 100, 49], [28, 203, 56], [149, 231, 54]]
+      : variant === 2 ? [[31, 83, 73], [142, 82, 58], [28, 238, 82], [139, 264, 65]]
+        : [[28, 87, 47], [155, 90, 53], [28, 254, 76], [129, 275, 76]];
+  for (const [x, y, width] of notes) {
+    const tilt = between(-7, 5).toFixed(1);
+    parts.push(`<g class="study-notes" transform="rotate(${tilt} ${x} ${y})">
+      <path d="${scribble(x, y, width * between(0.7, 1))}"/>
+      <path d="${scribble(x + between(0, 9), y + between(8, 11), width * between(0.45, 0.87))}"/>
+      ${Math.random() < 0.45 ? `<text x="${x}" y="${y + 19}">${runes(5 + Math.floor(Math.random() * 6))}</text>` : ""}</g>`);
   }
+  parts.push(`<path class="study-construction" d="M${between(23, 40).toFixed(1)} 284 Q${between(80, 130).toFixed(1)} 277 211 288 M31 298 L${between(83, 160).toFixed(1)} 301"/>`);
   return parts.join("");
 }
 
@@ -1777,7 +1886,7 @@ function grimoireCover() {
   }).join("");
   const corners = ["tl", "tr", "bl", "br"].map((corner) => `<span class="grimoire-corner" data-corner="${corner}"></span>`).join("");
   return `<div class="grimoire-cover">
-      <div class="grimoire-cover-front">${corners}${coverDamage()}
+      <div class="grimoire-cover-front">${corners}
         <div class="grimoire-emblem"><span class="grimoire-ring"></span><i class="ms ms-planeswalker grimoire-logo"></i>${mana}</div>
         <span class="grimoire-title">Commander Night</span>
         <span class="grimoire-clasp"></span>
@@ -1786,61 +1895,79 @@ function grimoireCover() {
     </div>`;
 }
 
-function coverDamage() {
-  const cracks = Array.from({ length: 28 }, (_, index) => {
-    const x = index % 2 ? 216 + Math.random() * 18 : 5 + Math.random() * 18;
-    const y = 10 + Math.random() * 300;
-    const inward = index % 2 ? -1 : 1;
-    return `<path d="M${x} ${y} l${inward * 9} 4 l${inward * 3} 8 l${inward * 12} -2 m${inward * -15} -6 l${inward * 4} -9"/>`;
-  }).join("");
-  return `<svg class="cover-damage" viewBox="0 0 240 330" preserveAspectRatio="none">
-    <g class="cover-cracks">${cracks}</g>
-    <g class="cover-scuffs"><path d="M233 13 L217 22 L229 31 M227 288 L210 308 L223 315 M14 251 L27 269 M51 15 L73 18"/>
-    <path d="M188 76 l-32 22 m10 -2 l-22 17 M49 211 l34 16 m-12 2 l19 7"/></g>
-    <path class="cover-split" d="M8 39 L13 66 L8 104 L15 141 L9 179 L14 208 L7 272"/>
-    <path class="cover-stitches" d="M5 78 l12 -4 M5 86 l12 -4 M6 94 l12 -4 M6 194 l13 3 M6 202 l13 3"/>
-  </svg>`;
-}
-
 function grimoireChains() {
-  const arms = [-144, -36, 36, 144].map((angle, arm) => {
-    const links = Array.from({ length: 10 }, (_, index) => {
-      const x = 8 + index * 14;
-      return `<ellipse cx="${x}" cy="0" rx="11" ry="${index % 2 ? 3 : 6}" class="chain-link"/><ellipse cx="${x}" cy="-1" rx="9" ry="${index % 2 ? 1.5 : 4}" class="chain-glint"/>`;
-    }).join("");
-    return `<g transform="translate(120 165) rotate(${angle})"><g class="chain-arm" style="--arm:${arm}">${links}</g></g>`;
-  }).join("");
-  return `<svg class="grimoire-chains" viewBox="0 0 240 330" aria-hidden="true">${arms}
+  const strand = (name, d) => `<g class="chain-strand" data-strand="${name}"><path class="chain-track" d="${d}"/>
+    ${Array.from({ length: 19 }, (_, index) => `<g class="chain-piece" data-link="${index}"><ellipse class="chain-link-shadow" rx="10" ry="6" cy="2"/><ellipse class="chain-link-metal" rx="10" ry="6"/><path class="chain-link-light" d="M-7 -3 Q0 -7 7 -3"/></g>`).join("")}</g>`;
+  return `<svg class="grimoire-chains" viewBox="0 0 240 330" aria-hidden="true">
+    <defs><linearGradient id="grimoire-iron" x1="0" y1="0" x2="0.35" y2="1"><stop stop-color="#d3c9ae"/><stop offset=".22" stop-color="#736e63"/><stop offset=".55" stop-color="#292b29"/><stop offset=".8" stop-color="#66645d"/><stop offset="1" stop-color="#161b19"/></linearGradient></defs>
+    ${strand("upper", "M-30 24 C42 79 80 124 120 164 C182 221 223 200 260 215 C341 227 385 345 485 590")}
+    ${strand("lower", "M-30 304 C39 269 80 207 120 164 C184 97 222 121 260 105 C344 82 393 308 490 580")}
     <g class="chain-lock"><path class="lock-shackle" d="M107 158 V145 C107 128 133 128 133 145 V158"/>
-      <path class="lock-body" d="M101 153 L138 151 L141 184 Q120 198 99 184 Z"/>
-      <path class="lock-scar" d="M104 158 L129 156 M103 180 L114 183 M134 163 L136 179"/>
+      <path class="lock-body" d="M101 153 Q120 149 138 151 L141 184 Q120 198 99 184 Z"/>
+      <path class="lock-scar" d="M104 158 Q121 155 135 158 M102 180 Q121 189 138 180"/>
       <path class="lock-keyhole" d="M123 173 a4 4 0 1 0 -6 0 l-2 9 h10 Z"/>
     </g></svg>`;
 }
 
+function placeChainLinks(chains, advance = 0) {
+  const geometry = chains._geometry ||= [...chains.querySelectorAll(".chain-strand")].map((strand) => {
+    const track = strand.querySelector(".chain-track");
+    const length = track.getTotalLength();
+    const samples = Array.from({ length: Math.ceil(length / 4) + 1 }, (_, index) =>
+      track.getPointAtLength(Math.min(length, index * 4)));
+    return { length, samples, links: [...strand.querySelectorAll(".chain-piece")] };
+  });
+  for (const { length, samples, links } of geometry) {
+    const pointAt = (distance) => {
+      const position = Math.max(0, Math.min(samples.length - 1.001, distance / 4));
+      const index = Math.floor(position);
+      const mix = position - index;
+      return { x: samples[index].x * (1 - mix) + samples[index + 1].x * mix,
+        y: samples[index].y * (1 - mix) + samples[index + 1].y * mix };
+    };
+    const start = 15;
+    const spacing = 15;
+    for (const [index, link] of links.entries()) {
+      const distance = Math.min(length - 1, start + index * spacing + advance);
+      const point = pointAt(distance);
+      const next = pointAt(Math.min(length, distance + 2));
+      const angle = Math.atan2(next.y - point.y, next.x - point.x) * 180 / Math.PI;
+      link.setAttribute("transform", `translate(${point.x.toFixed(1)} ${point.y.toFixed(1)}) rotate(${angle.toFixed(1)})`);
+      link.style.opacity = distance >= length - 2 ? "0" : "1";
+    }
+  }
+}
+
 async function unlockGrimoire(parts, settings, signal) {
   signal.throwIfAborted();
-  parts.hint.textContent = "The binding is breaking…";
+  parts.hint.textContent = "The chain is slipping away…";
   introSound("chain", settings, 0, 1, signal);
   const animations = [parts.chains.querySelector(".lock-shackle").animate([
     { transform: "translateY(0) rotate(0deg)" },
     { transform: "translateY(-12px) rotate(-20deg)" },
-  ], { duration: 300, fill: "forwards", easing: "ease-out" })];
-  for (const [index, arm] of [...parts.chains.querySelectorAll(".chain-arm")].entries()) {
-    animations.push(arm.animate([
-      { transform: "translateX(0)", opacity: 1 },
-      { transform: "translateX(-4px) rotate(3deg)", opacity: 1, offset: 0.2 },
-      { transform: `translate(110px, ${index % 2 ? 100 : -100}px) rotate(${index % 2 ? 40 : -40}deg)`, opacity: 0 },
-    ], { duration: 1000, delay: 260, fill: "forwards", easing: "cubic-bezier(.4,0,.8,.4)" }));
-  }
+  ], { duration: 260, fill: "forwards", easing: "ease-out" })];
   animations.push(parts.chains.querySelector(".chain-lock").animate([
     { transform: "none", opacity: 1 },
-    { transform: "translate(12px, 165px) rotate(35deg)", opacity: 0 },
-  ], { duration: 900, delay: 400, fill: "forwards", easing: "ease-in" }));
+    { transform: "translate(36px, 210px) rotate(28deg)", opacity: 0 },
+  ], { duration: 850, delay: 260, fill: "forwards", easing: "ease-in" }));
   const cancel = () => animations.forEach((animation) => animation.cancel());
   signal.addEventListener("abort", cancel, { once: true });
   try {
-    await Promise.all(animations.map((animation) => animation.finished));
+    await new Promise((resolve, reject) => {
+      const started = performance.now();
+      let frame = 0;
+      const stop = () => { cancelAnimationFrame(frame); reject(new DOMException("Intro skipped", "AbortError")); };
+      signal.addEventListener("abort", stop, { once: true });
+      const draw = (now) => {
+        if (signal.aborted) return stop();
+        const progress = Math.min(1, (now - started) / 2300);
+        const eased = 1 - (1 - progress) ** 2.3;
+        placeChainLinks(parts.chains, 610 * eased);
+        if (progress < 1) frame = requestAnimationFrame(draw);
+        else { signal.removeEventListener("abort", stop); resolve(); }
+      };
+      frame = requestAnimationFrame(draw);
+    });
     signal.throwIfAborted();
     parts.chains.remove();
     parts.hint.textContent = `${finePointer.matches ? "Click" : "Tap"} the grimoire to open it`;
@@ -1861,6 +1988,7 @@ function buildGrimoire(overlay) {
     <p class="grimoire-hint" aria-live="polite">${finePointer.matches ? "Click" : "Tap"} to unlock the chain</p>
     <button type="button" class="grimoire-skip">Skip intro</button>`;
   const part = (name) => overlay.querySelector(`.grimoire-${name}`);
+  placeChainLinks(part("chains"));
   return { overlay, zoom: part("zoom"), fit: part("fit"), book: part("book"), cover: part("cover"), leak: part("leak"), pentacle: part("pentacle"), dim: part("dim"), chains: part("chains"), hint: part("hint") };
 }
 
@@ -1887,7 +2015,7 @@ function rattle(parts, settings) {
       const lift = -(5 + Math.random() * 19 * strength);
       running = [
         parts.book.animate(frames, { duration }),
-        parts.cover.animate([{ transform: "translateZ(3px) rotateY(0deg)" }, { transform: `translateZ(3px) rotateY(${lift.toFixed(1)}deg)`, offset: 0.3 }, { transform: "translateZ(3px) rotateY(0deg)" }], { duration, easing: "ease-out" }),
+        parts.cover.animate([{ transform: "translateZ(16px) rotateY(0deg)" }, { transform: `translateZ(16px) rotateY(${lift.toFixed(1)}deg)`, offset: 0.3 }, { transform: "translateZ(16px) rotateY(0deg)" }], { duration, easing: "ease-out" }),
         parts.leak.animate([{ opacity: 0 }, { opacity: Math.min(1, 0.35 + strength), offset: 0.3 }, { opacity: 0 }], { duration: duration + 250, easing: "ease-out" }),
       ];
       /* A knock as it jumps, and a softer one as the cover drops back. */
@@ -1981,23 +2109,27 @@ function tornPaper() {
   points.push("99% 2%");
   const rip = 20 + Math.floor(Math.random() * 55);
   for (let y = 5; y < 98; y += 3) {
-    const bite = Math.abs(y - rip) < 3 ? 6 + Math.random() * 4 : Math.random() * 1.8;
+    const bite = Math.abs(y - rip) < 3 ? 2 + Math.random() * 2 : Math.random() * 1.1;
     points.push(`${(100 - bite).toFixed(2)}% ${y}%`);
   }
-  points.push("94% 98%", "91% 96%");
-  for (let x = 88; x > 0; x -= 8) points.push(`${x}% ${(98 + Math.random() * 2).toFixed(2)}%`);
+  points.push("98% 98%", "97% 97%");
+  for (let x = 88; x > 0; x -= 8) points.push(`${x}% ${(99 + Math.random()).toFixed(2)}%`);
   points.push("0% 100%");
   return `polygon(${points.join(",")})`;
 }
 
-function wornInk() {
+const introInkArt = [];
+function wornInk(index = 0) {
+  const variant = index % 4;
+  if (introInkArt[variant]) return `<img class="grimoire-ink" alt="" src="${introInkArt[variant]}">`;
   const spots = Array.from({ length: 12 }, () => `<ellipse cx="${25 + Math.random() * 200}" cy="${15 + Math.random() * 300}" rx="${1 + Math.random() * 6}" ry="${1 + Math.random() * 4}"/>`).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 330">
-    <style>path{fill:none;stroke:#352213;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round}.ink-red{stroke:#7c1d0e}.ink-bold{stroke-width:1.15}.ink-rule{stroke:#87452e;opacity:.3}text{fill:#352213;font:italic 8px Georgia,serif}</style>
+    <style>path,circle,ellipse{fill:none;stroke:#352213;stroke-width:.7;stroke-linecap:round;stroke-linejoin:round}.ink-red,.study-red{stroke:#7c1d0e}.ink-bold{stroke-width:1.15}.ink-rule{stroke:#87452e;opacity:.3}.study-construction{stroke-width:.43;opacity:.55}.study-ink{stroke-width:.85}.study-notes{stroke-width:.58;opacity:.8}text{fill:#352213;font:italic 8px Georgia,serif}</style>
     <g fill="#64401c" opacity=".17">${spots}</g>
     <path d="M207 0 Q218 137 195 330 M0 249 Q119 232 240 251" style="stroke:#58371b;stroke-width:2;opacity:.12"/>
-    <g opacity=".8">${gibberish()}</g></svg>`;
-  return `<img class="grimoire-ink" alt="" src="data:image/svg+xml,${encodeURIComponent(svg)}">`;
+    <g opacity=".8">${gibberish(variant)}</g></svg>`;
+  introInkArt[variant] = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  return `<img class="grimoire-ink" alt="" src="${introInkArt[variant]}">`;
 }
 
 /* Integrate the tangents across the paper. Every strip begins exactly at
@@ -2014,29 +2146,25 @@ function pageCurve(width, progress, segments = 8) {
   });
 }
 
-function bendingLeaf(width, index, count, gap) {
+function bendingLeaf(width, index, count, gap, frames) {
   const leaf = document.createElement("div");
   leaf.className = "grimoire-leaf";
   leaf.style.transform = `translateZ(${(count - index) * gap}px)`;
   const tear = tornPaper();
   leaf.style.setProperty("--paper-tear", tear);
   leaf.style.setProperty("--paper-tear-back", tear.replace(/([\d.]+)% ([\d.]+)%/g, (_, x, y) => `${100 - Number(x)}% ${y}%`));
-  const front = wornInk();
-  const back = wornInk();
-  const segments = 8;
+  const front = wornInk(index);
+  const back = wornInk(index + 2);
+  const segments = frames[0].length;
   const stripWidth = width / segments;
   leaf.innerHTML = Array.from({ length: segments }, (_, part) => `
-    <div class="leaf-strip" style="width:${stripWidth}px;transform:${pageCurve(width, 0, segments)[part]}">
+    <div class="leaf-strip" style="width:${stripWidth}px;transform:${frames[0][part]}">
       <div class="leaf-surface"><div class="leaf-face leaf-sheet" style="width:${width}px;left:${-part * stripWidth}px">${front}</div></div>
       <div class="leaf-surface leaf-strip-back"><div class="leaf-face leaf-sheet" style="width:${width}px;left:${-(segments - 1 - part) * stripWidth}px">${back}</div></div>
     </div>`).join("");
   return {
     element: leaf,
     async turn(duration, delay, signal) {
-      const frames = Array.from({ length: 25 }, (_, frame) => {
-        const t = frame / 24;
-        return pageCurve(width, t * t * (3 - 2 * t), segments);
-      });
       const timing = { duration, delay, easing: "linear", fill: "both" };
       const animations = [...leaf.querySelectorAll(".leaf-strip")].map((strip, part) => strip.animate(
         frames.map((frame) => ({ transform: frame[part] })), timing));
@@ -2061,19 +2189,41 @@ function bendingLeaf(width, index, count, gap) {
   };
 }
 
+function prepareGrimoirePages(parts, settings) {
+  if (parts.preparedPages) return parts.preparedPages;
+  const width = parts.book.offsetWidth;
+  const small = window.matchMedia?.("(max-width: 700px)").matches;
+  /* Closely spaced pages read as a blur on phones. Each curved sheet here is
+     a small bundle; the selected page count still controls the book's depth. */
+  const count = Math.min(Math.max(4, Math.ceil(settings.pages / 2)), small ? 6 : 9);
+  const gap = 0.7;
+  const segments = small ? 5 : 6;
+  const frames = Array.from({ length: 17 }, (_, frame) => {
+    const t = frame / 16;
+    return pageCurve(width, t * t * (3 - 2 * t), segments);
+  });
+  const leaves = Array.from({ length: count }, (_, index) => bendingLeaf(width, index, count, gap, frames));
+  parts.cover.before(...leaves.map((leaf) => leaf.element));
+  parts.preparedPages = { leaves, count, gap };
+  return parts.preparedPages;
+}
+
+function decodeIntroTextures() {
+  if (typeof Image === "undefined") return Promise.resolve();
+  return Promise.all(["grimoire-leather.webp", "grimoire-paper.webp", ...introInkArt].map((src) => {
+    const image = new Image();
+    image.src = src;
+    return image.decode?.().catch(() => {}) || Promise.resolve();
+  }));
+}
+
 async function openGrimoire(parts, settings, signal) {
   const { overlay, zoom, fit, book, cover, pentacle, dim } = parts;
   const width = book.offsetWidth;
   const height = book.offsetHeight;
   const viewWidth = document.documentElement.clientWidth;
   const viewHeight = window.innerHeight;
-  const count = settings.pages;
-  /* Leaves stack a hair apart, the first on top on the right, and each
-     lands on the left on top of the ones before it. Any closer and browsers
-     can draw them in the wrong order near the spine. */
-  const gap = 0.5;
-  const leaves = Array.from({ length: count }, (_, index) => bendingLeaf(width, index, count, gap));
-  cover.before(...leaves.map((leaf) => leaf.element));
+  const { leaves, count, gap } = prepareGrimoirePages(parts, settings);
 
   /* The cover swings over to the left, landing with a thud, while the book
      slides right and, where the window is narrow, shrinks until both pages fit. */
@@ -2081,7 +2231,7 @@ async function openGrimoire(parts, settings, signal) {
   const fitScale = Math.min(1, (viewWidth * 0.96) / (width * 2), (viewHeight * 0.92) / height);
   fit.animate([{ transform: "none" }, { transform: `scale(${fitScale}) translateX(50%)` }], { duration: 900, easing: "cubic-bezier(.55, 0, .25, 1)", fill: "forwards" });
   cover.animate([
-    { transform: `translateZ(${(count + 2) * gap + 3}px) rotateY(0deg)` },
+    { transform: `translateZ(16px) rotateY(0deg)` },
     { transform: "translateZ(-0.5px) rotateY(-180deg)" },
   ], { duration: 850, easing: "cubic-bezier(.5, 0, .3, 1)", fill: "forwards" });
   await wait(380);
@@ -2092,7 +2242,7 @@ async function openGrimoire(parts, settings, signal) {
   /* The pages riffle over, one after another, all within shuffle_seconds,
      each rustling as it passes upright. */
   const shuffle = settings.shuffle_seconds * 1000;
-  const flip = Math.min(850, shuffle * 0.65);
+  const flip = Math.min(760, shuffle * 0.6);
   const step = count > 1 ? (shuffle - flip) / (count - 1) : 0;
   const flips = leaves.map((leaf, index) => {
     introSound("page", settings, (index * step + flip * 0.45) / 1000, 0.7 + Math.random() * 0.3, signal);
@@ -2154,6 +2304,7 @@ function playGrimoire(preview = null) {
   }
   if (!overlay || document.documentElement.classList.contains("no-grimoire")) {
     overlay?.remove();
+    scheduleSiteAssetWarmup();
     return Promise.resolve();
   }
   const parts = buildGrimoire(overlay);
@@ -2171,8 +2322,14 @@ function playGrimoire(preview = null) {
       } catch (error) { /* plays every time */ }
     }
     /* Fetched now, so the tap does not wait for them. */
-    return Promise.all(["chain", "sound", "thud", "page"].map((kind) => introBuffer(saved[kind])));
+    for (const kind of ["chain", "sound", "thud", "page"]) introBuffer(saved[kind]);
+    return saved;
   });
+  const pagesReady = prepared.then((saved) => new Promise((resolve) => {
+    const build = () => { prepareGrimoirePages(parts, saved); resolve(decodeIntroTextures()); };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(build, { timeout: 350 });
+    else setTimeout(build, 0);
+  }));
   let stopRattle = () => {};
 
   return new Promise((resolve) => {
@@ -2191,6 +2348,7 @@ function playGrimoire(preview = null) {
         overlay.remove();
         for (const animation of overlay.getAnimations({ subtree: true })) animation.cancel();
         startDeckSound();
+        scheduleSiteAssetWarmup();
       }, 450);
       resolve();
     };
@@ -2203,7 +2361,7 @@ function playGrimoire(preview = null) {
         parts.hint.textContent = "Unlocking…";
         const context = introContext();
         const awake = context ? context.resume().catch(() => {}) : Promise.resolve();
-        Promise.race([Promise.all([awake, prepared]), wait(1800)]).then(async () => {
+        Promise.all([awake, prepared]).then(async () => {
           controller.signal.throwIfAborted();
           await unlockGrimoire(parts, settings, controller.signal);
           controller.signal.throwIfAborted();
@@ -2222,7 +2380,7 @@ function playGrimoire(preview = null) {
          for activation before scheduling effects, with a silent fallback. */
       const context = introContext();
       const awake = context ? context.resume().catch(() => {}) : Promise.resolve();
-      Promise.race([Promise.all([awake, prepared]), wait(1800)])
+      Promise.all([awake, pagesReady])
         .then(() => {
           controller.signal.throwIfAborted();
           return openGrimoire(parts, settings, controller.signal);
@@ -2253,9 +2411,12 @@ async function start() {
       roster[group].clear();
       for (const [name, entry] of Object.entries(pictures[group] || {})) roster[group].set(keyOf(name), { ...entry, name });
     }
+    rosterReady = true;
     stats = aggregate();
     route();
+    if (!document.querySelector(".grimoire")) scheduleSiteAssetWarmup();
   } catch (error) {
+    rosterReady = true;
     app.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   }
   markPageReady();

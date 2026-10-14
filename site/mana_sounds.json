@@ -5,7 +5,7 @@
   },
   "U": {
     "sound": "Island.wav",
-    "volume": 85
+    "volume": 100
   },
   "B": {
     "sound": "Swamp.mp3",
@@ -17,7 +17,7 @@
   },
   "G": {
     "sound": "Forest.mp3",
-    "volume": 60
+    "volume": 40
   },
   "C": {
     "sound": "",

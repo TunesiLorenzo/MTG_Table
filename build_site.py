@@ -32,7 +32,7 @@ MANA_SOUND_DIR = BASE_DIR / "sound" / "Mana"
 OUT_DIR = BASE_DIR / "_site"
 
 # click.mp3 is the life tracker's own button click (sound/click.mp3), for the site's buttons.
-PAGE_FILES = ("index.html", "site.css", "site.js", "click.mp3")
+PAGE_FILES = ("index.html", "site.css", "site.js", "click.mp3", "grimoire-leather.webp", "grimoire-paper.webp")
 # index.html's own stylesheet and script. Pages caches every file for ten
 # minutes and a browser reloading the page asks again only for the page itself,
 # so each gets a ?v= of its contents: a new deploy is a new URL, never a stale
