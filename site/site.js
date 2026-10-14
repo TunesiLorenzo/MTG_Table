@@ -56,17 +56,21 @@ function aggregate() {
     if (!players.has(key)) players.set(key, { name, games: 0, detailedWins: 0, historicalWins: 0, wins: 0, topTwos: 0, rankTotal: 0, finishes: [0, 0, 0, 0], decks: new Map(), results: [] });
     return players.get(key);
   };
+  const deckFor = (name) => {
+    const key = keyOf(name);
+    if (!decks.has(key)) decks.set(key, { name, games: 0, wins: 0, rankTotal: 0, finishes: [0, 0, 0, 0], players: new Map(), owners: new Set(), results: [] });
+    return decks.get(key);
+  };
   for (const game of games) {
     const isDraw = game.outcome === "draw";
     for (const result of game.players) {
       const deckKey = keyOf(result.deck);
-      if (!decks.has(deckKey)) decks.set(deckKey, { name: result.deck, games: 0, wins: 0, rankTotal: 0, finishes: [0, 0, 0, 0], pilots: new Map(), results: [] });
       const player = playerFor(result.name);
-      const deck = decks.get(deckKey);
+      const deck = deckFor(result.deck);
       const won = !isDraw && result.rank === 1;
       if (!player.decks.has(deckKey)) player.decks.set(deckKey, { name: result.deck, games: 0, wins: 0, rankTotal: 0 });
-      if (!deck.pilots.has(keyOf(result.name))) deck.pilots.set(keyOf(result.name), { name: result.name, games: 0, wins: 0, rankTotal: 0 });
-      for (const entry of [player, deck, player.decks.get(deckKey), deck.pilots.get(keyOf(result.name))]) {
+      if (!deck.players.has(keyOf(result.name))) deck.players.set(keyOf(result.name), { name: result.name, games: 0, wins: 0, rankTotal: 0 });
+      for (const entry of [player, deck, player.decks.get(deckKey), deck.players.get(keyOf(result.name))]) {
         entry.games += 1; entry.rankTotal += result.rank;
         if (won) entry.wins += 1;
       }
@@ -85,14 +89,28 @@ function aggregate() {
     player.historicalWins += legacy.wins;
     player.wins += legacy.wins;
   }
+  /* Decks added by hand: any deck the roster describes, and each player's own
+     list. One not played yet joins with no games, so it still has a page and
+     still shows among its owner's decks. */
+  for (const entry of roster.decks.values()) deckFor(entry.name);
+  for (const entry of roster.players.values()) {
+    if (!Array.isArray(entry.decks) || !entry.decks.length) continue;
+    const player = playerFor(entry.name);
+    for (const deckName of entry.decks) {
+      const deck = deckFor(String(deckName));
+      deck.owners.add(player.name);
+      if (!player.decks.has(keyOf(deck.name))) player.decks.set(keyOf(deck.name), { name: deck.name, games: 0, wins: 0, rankTotal: 0 });
+    }
+  }
   const finish = (entry) => entry.games ? entry.rankTotal / entry.games : Number.POSITIVE_INFINITY;
   const rate = (entry) => entry.games ? entry.wins / entry.games : 0;
-  const playerList = [...players.values()].sort((a, b) => b.wins - a.wins || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
+  /* Standings go by recorded wins; wins from before recording only break ties. */
+  const playerList = [...players.values()].sort((a, b) => b.detailedWins - a.detailedWins || b.historicalWins - a.historicalWins || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
   const deckList = [...decks.values()].sort((a, b) => b.wins - a.wins || rate(b) - rate(a) || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
   return { players: playerList, decks: deckList, playerIndex: players, deckIndex: decks };
 }
 
-/* A player's or pilot's sub-entries, most played first. */
+/* A player's decks or a deck's players, most played first. */
 const byPlay = (entries) => [...entries.values()].sort((a, b) => b.games - a.games || b.wins - a.wins || a.name.localeCompare(b.name));
 
 /* ------------------------------------------------------------- pictures -- */
@@ -100,16 +118,26 @@ const byPlay = (entries) => [...entries.values()].sort((a, b) => b.games - a.gam
 const deckInfo = (name) => roster.decks.get(keyOf(name)) || {};
 const playerInfo = (name) => roster.players.get(keyOf(name)) || {};
 
-/* A player with no background of their own borrows the art of the deck they
-   have played most. */
-function playerBackdrop(player) {
+/* A player's banner: their own picture when one is set, otherwise the art of
+   each of their decks in turn, most played first. */
+function playerBanner(player) {
   const own = playerInfo(player.name).background;
-  if (own) return own;
-  for (const deck of byPlay(player.decks)) {
-    if (deckInfo(deck.name).art) return deckInfo(deck.name).art;
-  }
-  return null;
+  if (own) return [{ picture: own, focus: playerInfo(player.name).background_focus, label: "" }];
+  const seen = new Set();
+  return byPlay(player.decks)
+    .map((deck) => ({ picture: deckInfo(deck.name).art, focus: deckInfo(deck.name).art_focus, label: deck.name }))
+    .filter(({ picture }) => picture && !seen.has(picture.full) && seen.add(picture.full));
 }
+
+/* Who a deck belongs to: those who have played it, else those who own it. */
+function deckPeople(deck) {
+  const played = byPlay(deck.players).map((player) => player.name);
+  return played.length ? played : [...deck.owners];
+}
+const deckCaption = (deck) => deck.games
+  ? `Played by ${deckPeople(deck).join(", ")}`
+  : `${deckPeople(deck).length ? `Owned by ${deckPeople(deck).join(", ")} · ` : ""}Not played yet`;
+const playedDecks = (player) => [...player.decks.values()].filter((deck) => deck.games).length;
 
 function avatar(name, extraClass = "") {
   const portrait = playerInfo(name).portrait;
@@ -125,6 +153,9 @@ const styleAttr = (...declarations) => {
 };
 const artVar = (picture, size = "full") => picture ? `--art:url('${escapeHtml(picture[size])}');` : "";
 const artStyle = (picture, size = "full") => styleAttr(artVar(picture, size));
+/* The point a picture is cropped around, chosen in the editor; the default is
+   in site.css. Anything not shaped like "50% 25%" is ignored. */
+const focusVar = (value) => /^\d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/.test(value || "") ? `--focus:${value};` : "";
 
 /* ----------------------------------------------------------------- mana -- */
 
@@ -202,9 +233,9 @@ function deckCard(deck, caption) {
   const info = deckInfo(deck.name);
   const colors = deckColors(deck.name);
   const cards = (info.cards || []).slice(0, 2);
-  return `<a class="deck-card${info.art ? " has-art" : ""}${colors.length ? " has-mana" : ""}" href="${deckHref(deck.name)}"${styleAttr(artVar(info.art, "thumb"), manaVar(colors))}>
+  return `<a class="deck-card${info.art ? " has-art" : ""}${colors.length ? " has-mana" : ""}" href="${deckHref(deck.name)}"${styleAttr(artVar(info.art, "thumb"), focusVar(info.art_focus), manaVar(colors))}>
     <span class="deck-card-body"><span class="deck-card-name"><strong>${escapeHtml(deck.name)}</strong>${pips(colors)}</span><small>${escapeHtml(caption)}</small>
-    <span class="deck-card-stats">${deck.wins}W · ${plural(deck.games, "game")} · ${percent(deck.wins, deck.games)}</span></span>
+    ${deck.games ? `<span class="deck-card-stats">${deck.wins}W · ${plural(deck.games, "game")} · ${percent(deck.wins, deck.games)}</span>` : '<span class="deck-card-stats is-new">NOT PLAYED YET</span>'}</span>
     ${cards.length ? `<span class="deck-card-reveal" aria-hidden="true">${cards.map((card) => `<img src="${escapeHtml(card.thumb)}" alt="" loading="lazy">`).join("")}</span>` : ""}
   </a>`;
 }
@@ -246,13 +277,13 @@ function colorPie() {
 /* The most played deck, laid out in its zone with the commander card. */
 function commanderZone(player) {
   const deck = byPlay(player.decks)[0];
-  if (!deck) return "";
+  if (!deck || !deck.games) return "";
   const info = deckInfo(deck.name);
   const colors = deckColors(deck.name);
   const card = (info.cards || [])[0];
   const picture = card
     ? `<img src="${escapeHtml(card.thumb)}" alt="${escapeHtml(info.commander || deck.name)}">`
-    : info.art ? `<span class="zone-art"${artStyle(info.art, "thumb")}></span>` : "";
+    : info.art ? `<span class="zone-art"${styleAttr(artVar(info.art, "thumb"), focusVar(info.art_focus))}></span>` : "";
   return `<section class="card commander-zone"${styleAttr(manaVar(colors))}>
     ${picture ? `<a class="zone-slot" href="${deckHref(deck.name)}">${picture}</a>` : ""}
     <div class="zone-body"><span class="eyebrow">COMMANDER ZONE · MOST PLAYED</span>
@@ -293,40 +324,40 @@ function homeView() {
   const champion = stats.players[0];
   const strongest = stats.decks[0];
   const mostPlayed = [...stats.decks].sort((a, b) => b.games - a.games || b.wins - a.wins)[0];
-  const pilots = (deck) => byPlay(deck.pilots).map((pilot) => pilot.name).join(", ");
+  const players = (deck) => byPlay(deck.players).map((player) => player.name).join(", ");
   const standings = stats.players.length
     ? stats.players.map((player, index) => `<tr class="rarity-${rarity(index + 1)}">
         <td>${rankGem(index + 1)}</td>
-        <td><a class="player-cell" href="${playerHref(player.name)}">${avatar(player.name)}<span><strong>${escapeHtml(player.name)}${pips(playerColors(player))}</strong><small>${plural(player.decks.size, "recorded deck")}${player.historicalWins ? ` · <span class="legacy-note">${plural(player.historicalWins, "historical win")}</span>` : ""}</small></span></a></td>
-        <td>${player.games || "—"}</td><td>${loyalty(player.wins, player.historicalWins ? `${player.detailedWins} recorded · ${player.historicalWins} historical` : "Total wins")}</td><td>${percent(player.detailedWins, player.games)}</td>
+        <td><a class="player-cell" href="${playerHref(player.name)}">${avatar(player.name)}<span><strong>${escapeHtml(player.name)}${pips(playerColors(player))}</strong><small>${plural(playedDecks(player), "recorded deck")}</small></span></a></td>
+        <td>${player.games || "—"}</td><td>${loyalty(player.detailedWins, "Recorded wins")}</td><td class="legacy-cell">${player.historicalWins || "—"}</td><td>${percent(player.detailedWins, player.games)}</td>
         <td>${player.games ? player.topTwos : "—"}</td><td>${average(player)}</td>
       </tr>`).join("")
-    : '<tr><td colspan="7"><div class="empty">Standings appear after the first recorded game.</div></td></tr>';
+    : '<tr><td colspan="8"><div class="empty">Standings appear after the first recorded game.</div></td></tr>';
   document.title = "MTG Leaderboard";
   return `
     <header class="page-header"><div><span class="eyebrow">COMMANDER NIGHT</span><h1>Leaderboard</h1></div></header>
     ${tiles([
       ["GAMES RECORDED", games.length, games.length === 1 ? "match in the archive" : "matches in the archive"],
-      ["MOST WINS", champion ? champion.name : "—", champion ? `${plural(champion.wins, "total win")}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
-      ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${pilots(strongest)} · ${plural(strongest.wins, "win")} · ${percent(strongest.wins, strongest.games)} rate` : "No results yet"],
-      ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${pilots(mostPlayed)} · ${plural(mostPlayed.games, "appearance")}` : "No results yet"],
+      ["MOST WINS", champion ? champion.name : "—", champion ? `${plural(champion.detailedWins, "recorded win")}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
+      ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${players(strongest)} · ${plural(strongest.wins, "win")} · ${percent(strongest.wins, strongest.games)} rate` : "No results yet"],
+      ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${players(mostPlayed)} · ${plural(mostPlayed.games, "appearance")}` : "No results yet"],
     ])}
     <section class="card">
-      ${heading("ALL-TIME TABLE", "Player standings", "Sorted by wins, then average finish")}
+      ${heading("ALL-TIME TABLE", "Player standings", "Sorted by recorded wins, then historical wins")}
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Player</th><th>Recorded games</th><th>Total wins</th><th>Recorded win rate</th><th>Top 2</th><th>Avg. finish</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Recorded games</th><th>Recorded wins</th><th>Historical wins</th><th>Recorded win rate</th><th>Top 2</th><th>Avg. finish</th></tr></thead>
         <tbody>${standings}</tbody>
       </table></div>
     </section>
     <section class="card">
       ${heading("ALL-TIME WINS", "Player win histogram")}
-      ${stats.players.length ? bars(stats.players.map((player) => [escapeHtml(player.name), player.name, player.wins, `${plural(player.wins, "win")}${player.historicalWins ? ` · ${player.historicalWins} historical` : ""}`, playerColors(player)])) : '<div class="empty">No results yet.</div>'}
+      ${stats.players.length ? bars([...stats.players].sort((a, b) => b.wins - a.wins).map((player) => [escapeHtml(player.name), player.name, player.wins, `${plural(player.wins, "win")}${player.historicalWins ? ` · ${player.historicalWins} historical` : ""}`, playerColors(player)])) : '<div class="empty">No results yet.</div>'}
       <p class="chart-note">Each bar wears the colours of that player's most played deck.</p>
     </section>
     ${colorPie()}
     <section>
       ${heading("DECK PERFORMANCE", "Decks", "Sorted by wins, then win rate")}
-      ${stats.decks.length ? `<div class="deck-grid">${stats.decks.map((deck) => deckCard(deck, pilots(deck))).join("")}</div>` : '<div class="empty">Decks appear after the first recorded game.</div>'}
+      ${stats.decks.length ? `<div class="deck-grid">${stats.decks.map((deck) => deckCard(deck, deckCaption(deck))).join("")}</div>` : '<div class="empty">Decks appear after the first recorded game.</div>'}
     </section>
     <section>
       ${heading("ARCHIVE", "Game history", plural(games.length, "game"))}
@@ -337,16 +368,18 @@ function homeView() {
 function playerView(name) {
   const player = stats.playerIndex.get(keyOf(name));
   if (!player) return missingView(`No player called “${name}” has a recorded result.`);
-  const backdrop = playerBackdrop(player);
+  const slides = playerBanner(player);
   const position = stats.players.indexOf(player) + 1;
   const decks = byPlay(player.decks);
   document.title = `${player.name} · MTG Leaderboard`;
   return `
     ${backLink}
-    <section class="hero${backdrop ? " has-art" : ""}"${styleAttr(artVar(backdrop), manaVar(playerColors(player)))}>
+    <section class="hero${slides.length ? " has-art" : ""}"${styleAttr(manaVar(playerColors(player)))}>
+      ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
+      ${slides.length > 1 ? `<span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
       <span class="hero-portrait">${avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
       <div><span class="eyebrow">PLAYER · #${position} IN THE STANDINGS</span><h1>${escapeHtml(player.name)}</h1>
-      <p>${plural(player.games, "recorded game")} with ${plural(decks.length, "deck")}${player.historicalWins ? `, plus ${plural(player.historicalWins, "win")} from before games were recorded` : ""}.</p></div>
+      <p>${plural(player.games, "recorded game")} with ${plural(playedDecks(player), "deck")}${player.historicalWins ? `, plus ${plural(player.historicalWins, "win")} from before games were recorded` : ""}.</p></div>
     </section>
     ${tiles([
       ["TOTAL WINS", player.wins, player.historicalWins ? `${player.detailedWins} recorded · ${player.historicalWins} historical` : "all from recorded games"],
@@ -357,7 +390,7 @@ function playerView(name) {
     ${commanderZone(player)}
     <section>
       ${heading("DECKS", `${player.name}'s decks`, "Most played first")}
-      ${decks.length ? `<div class="deck-grid">${decks.map((deck) => deckCard(deck, deckInfo(deck.name).commander || `Avg. finish ${average(deck)}`)).join("")}</div>` : '<div class="empty">No deck has been recorded for this player yet.</div>'}
+      ${decks.length ? `<div class="deck-grid">${decks.map((deck) => deckCard(deck, deckInfo(deck.name).commander || (deck.games ? `Avg. finish ${average(deck)}` : "New deck"))).join("")}</div>` : '<div class="empty">No deck has been recorded or added for this player yet.</div>'}
     </section>
     ${player.games ? `<section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(player, playerColors(player))}</section>` : ""}
     <section>
@@ -368,9 +401,9 @@ function playerView(name) {
 
 function deckView(name) {
   const deck = stats.deckIndex.get(keyOf(name));
-  if (!deck) return missingView(`No deck called “${name}” has a recorded result.`);
+  if (!deck) return missingView(`No deck called “${name}” has been played or added.`);
   const info = deckInfo(deck.name);
-  const pilots = byPlay(deck.pilots);
+  const players = byPlay(deck.players);
   const position = stats.decks.indexOf(deck) + 1;
   const colors = deckColors(deck.name);
   const pictures = [
@@ -380,19 +413,19 @@ function deckView(name) {
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
     ${backLink}
-    <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), manaVar(colors))}>
-      <div><span class="eyebrow">DECK · #${position} BY WINS</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
-      <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}Piloted by ${pilots.map((pilot) => playerLink(pilot.name)).join(", ")}.</p></div>
+    <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
+      <div><span class="eyebrow">DECK · ${deck.games ? `#${position} BY WINS` : "NOT PLAYED YET"}</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
+      <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}${deck.games ? `Played by ${deckPeople(deck).map(playerLink).join(", ")}` : deck.owners.size ? `Owned by ${deckPeople(deck).map(playerLink).join(", ")}, not played yet` : "Not played yet"}.</p></div>
     </section>
     ${tiles([
       ["GAMES", deck.games, deck.games === 1 ? "recorded appearance" : "recorded appearances"],
       ["WINS", deck.wins, `${percent(deck.wins, deck.games)} win rate`],
       ["AVG. FINISH", average(deck), "1 is a win, 4 is last"],
-      ["BEST PILOT", pilots.length ? [...pilots].sort((a, b) => b.wins - a.wins || b.games - a.games)[0].name : "—", plural(pilots.length, "pilot")],
+      ["BEST PLAYER", players.length ? [...players].sort((a, b) => b.wins - a.wins || b.games - a.games)[0].name : "—", plural(players.length, "player")],
     ])}
     ${pictures.length ? `<section class="deck-gallery">${pictures.join("")}</section>` : ""}
-    <section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(deck, colors)}</section>
-    ${pilots.length > 1 ? `<section class="card">${heading("PILOTS", "Who has played it")}${bars(pilots.map((pilot) => [playerLink(pilot.name), pilot.name, pilot.games, `${pilot.wins}W · ${plural(pilot.games, "game")}`, colors]))}</section>` : ""}
+    ${deck.games ? `<section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(deck, colors)}</section>` : ""}
+    ${players.length > 1 ? `<section class="card">${heading("PLAYED BY", "Who has played it")}${bars(players.map((player) => [playerLink(player.name), player.name, player.games, `${player.wins}W · ${plural(player.games, "game")}`, colors]))}</section>` : ""}
     <section>
       ${heading("ARCHIVE", `Games with ${deck.name}`, plural(deck.games, "game"))}
       ${gameCards(deck.results.map((entry) => entry.game), "No recorded games yet.")}
@@ -404,6 +437,31 @@ function missingView(message) {
   return `${backLink}<div class="empty">${escapeHtml(message)}</div>`;
 }
 
+/* ------------------------------------------------------------ slideshow -- */
+
+/* The player banner moves between their decks: each picture fades in and
+   slowly settles from a slight zoom. Every redraw starts it afresh. With
+   reduced motion the pictures still change, without the zoom. */
+const SLIDE_SECONDS = 7;
+let slideTimer = 0;
+
+function startSlides() {
+  clearInterval(slideTimer);
+  const slides = [...app.querySelectorAll(".hero-slide")];
+  const label = app.querySelector(".hero-showing");
+  if (!slides.length) return;
+  let current = 0;
+  /* Two frames, so the first picture's zoom runs as a transition too. */
+  requestAnimationFrame(() => requestAnimationFrame(() => slides[0].classList.add("is-active")));
+  if (slides.length < 2) return;
+  slideTimer = setInterval(() => {
+    slides[current].classList.remove("is-active");
+    current = (current + 1) % slides.length;
+    slides[current].classList.add("is-active");
+    if (label) label.textContent = slides[current].dataset.label;
+  }, SLIDE_SECONDS * 1000);
+}
+
 /* --------------------------------------------------------------- router -- */
 
 function route() {
@@ -413,6 +471,7 @@ function route() {
   if (kind === "player" && name) app.innerHTML = playerView(name);
   else if (kind === "deck" && name) app.innerHTML = deckView(name);
   else app.innerHTML = homeView();
+  startSlides();
   afterRender();
 }
 
@@ -431,7 +490,7 @@ async function start() {
     historicalWins = Array.isArray(history.historical_wins) ? history.historical_wins : [];
     for (const group of ["players", "decks"]) {
       roster[group].clear();
-      for (const [name, entry] of Object.entries(pictures[group] || {})) roster[group].set(keyOf(name), entry);
+      for (const [name, entry] of Object.entries(pictures[group] || {})) roster[group].set(keyOf(name), { ...entry, name });
     }
     stats = aggregate();
     route();

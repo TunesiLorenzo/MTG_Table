@@ -135,6 +135,34 @@
           "rank": 4
         }
       ]
+    },
+    {
+      "id": "7556e338919541f190c38d83b004559a",
+      "date": "2026-10-08",
+      "created_at": "2026-10-14T16:21:15+02:00",
+      "outcome": "win",
+      "players": [
+        {
+          "name": "Borgo",
+          "deck": "Commodoro",
+          "rank": 1
+        },
+        {
+          "name": "Milli",
+          "deck": "Lumra",
+          "rank": 3
+        },
+        {
+          "name": "Coach",
+          "deck": "Arcades",
+          "rank": 3
+        },
+        {
+          "name": "Ny",
+          "deck": "Niv-Mizzet",
+          "rank": 3
+        }
+      ]
     }
   ],
   "historical_wins": [

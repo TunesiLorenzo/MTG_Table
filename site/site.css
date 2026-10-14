@@ -77,8 +77,13 @@ h2 { margin: 3px 0 0; font: 700 1.22rem/1.2 var(--display); letter-spacing: .01e
   background: linear-gradient(135deg, #33271b, #1d1712 58%, #14110d) padding-box, linear-gradient(135deg, var(--mana, #5a4630, #5a4630)) border-box;
 }
 .hero.has-art { min-height: 340px; }
-.hero.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 25% / cover no-repeat; }
+.hero.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) var(--focus, 50% 25%) / cover no-repeat; }
 .hero.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0f0d0af2 4%, #0f0d0a99 42%, #0f0d0a26); }
+/* A player's banner cycles through their decks' art; see startSlides(). */
+.hero-slides { position: absolute; z-index: -2; inset: 0; }
+.hero-slide { position: absolute; inset: 0; background: var(--art) var(--focus, 50% 25%) / cover no-repeat; opacity: 0; transform: scale(1.08); transition: opacity 1.6s ease, transform 8s linear; }
+.hero-slide.is-active { opacity: 1; transform: scale(1); }
+.hero-showing { position: absolute; top: 18px; right: 20px; max-width: 45%; overflow: hidden; padding: 6px 12px; border: 1px solid #5a4630; border-radius: 999px; background: #0f0d0acc; color: var(--bronze-light); font: 700 .8rem var(--display); text-overflow: ellipsis; white-space: nowrap; }
 .hero h1 { font-size: clamp(2rem, 7vw, 3.6rem); line-height: 1; text-shadow: 0 2px 18px #000a; }
 .hero .pips { margin: 10px 0 0; font-size: 1.35rem; }
 .hero p { max-width: 660px; margin: 10px 0 0; color: #e0d6c6; font: 1.12rem/1.45 var(--serif); }
@@ -111,7 +116,7 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 .player-cell strong, .player-cell small { display: block; }
 .player-cell strong { font: 700 .98rem var(--display); }
 .player-cell small { color: var(--muted); }
-.legacy-note { color: var(--gold); font-size: .67rem; font-weight: 700; }
+.legacy-cell { color: var(--muted); }
 
 /* ----------------------------------------------------------------- bars -- */
 .bar-chart { display: grid; gap: 13px; }
@@ -140,13 +145,14 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 }
 .deck-card:hover, .deck-card:focus-visible { color: inherit; transform: translateY(-3px); box-shadow: 0 14px 30px #000a; }
 .deck-card:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 3px; }
-.deck-card.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) center 22% / cover no-repeat; }
+.deck-card.has-art::before { content: ""; position: absolute; z-index: -2; inset: 0; background: var(--art) var(--focus, 50% 25%) / cover no-repeat; }
 .deck-card.has-art::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(to top, #0f0d0af5 8%, #0f0d0aa6 48%, #0f0d0a14); }
 .deck-card-body { min-width: 0; padding: 13px 15px; }
 .deck-card-name { display: flex; align-items: center; min-width: 0; }
 .deck-card-name strong { min-width: 0; overflow: hidden; font: 700 1.08rem var(--display); text-overflow: ellipsis; white-space: nowrap; }
 .deck-card-body small { display: block; margin-top: 2px; overflow: hidden; color: #ddd2c0; font: italic .92rem var(--serif); text-overflow: ellipsis; white-space: nowrap; }
 .deck-card-stats { display: block; margin-top: 7px; color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+.deck-card-stats.is-new { color: var(--muted); letter-spacing: .1em; }
 .deck-card-reveal { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; background: radial-gradient(circle, #1d1712e6, #0b0907f7); opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
 .deck-card-reveal img { height: 100%; max-width: 48%; object-fit: contain; border-radius: 4.7% / 3.4%; box-shadow: 0 8px 20px #000c; transform: translateY(8px) scale(.95); transition: transform 240ms ease; }
 .deck-card:hover .deck-card-reveal, .deck-card:focus-visible .deck-card-reveal { opacity: 1; }
@@ -162,7 +168,7 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 .zone-slot { display: block; transform: rotate(-2deg); transition: transform 200ms ease; }
 .zone-slot:hover { transform: rotate(0) scale(1.03); }
 .zone-slot img, .zone-art { display: block; width: 100%; border-radius: 4.7% / 3.4%; box-shadow: 0 14px 30px #000c; }
-.zone-art { aspect-ratio: 63 / 88; background: var(--art) center / cover no-repeat; }
+.zone-art { aspect-ratio: 63 / 88; background: var(--art) var(--focus, 50% 25%) / cover no-repeat; }
 .zone-body { min-width: 0; }
 .zone-body h2 { font-size: clamp(1.25rem, 3vw, 1.7rem); }
 .zone-body .pips { margin: 8px 0 0; font-size: 1.1rem; }
@@ -221,5 +227,6 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 
 @media (prefers-reduced-motion: reduce) {
   .deck-card, .deck-card-reveal, .deck-card-reveal img, .zone-slot { transition: none; }
+  .hero-slide { transform: none; transition: opacity 1.6s ease; }
   .deck-card:hover, .deck-card:focus-visible { transform: none; }
 }

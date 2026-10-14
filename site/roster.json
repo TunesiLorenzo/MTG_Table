@@ -4,22 +4,50 @@
       "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif"
     },
     "Curti": {
-      "portrait": "Backgrounds/Players/VoltiBase/curti.jpg"
+      "portrait": "Backgrounds/Players/VoltiBase/curti.jpg",
+      "decks": [
+        "Dina"
+      ]
     },
     "Coach": {
       "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg"
+    },
+    "Ny": {
+      "portrait": "Backgrounds/Players/VoltiBase/ny.JPG"
+    },
+    "Milli": {
+      "portrait": "Backgrounds/Players/VoltiBase/Milli.jfif"
+    },
+    "Dadda": {
+      "portrait": "Backgrounds/Players/VoltiBase/Dadda.jfif"
+    },
+    "Dave": {
+      "portrait": "Backgrounds/Players/VoltiBase/Dave.jfif"
+    },
+    "Tune": {
+      "portrait": "Backgrounds/Players/VoltiBase/Tune.jfif"
+    },
+    "Dani": {
+      "portrait": "Backgrounds/Players/VoltiBase/dani.JPG"
     }
   },
   "decks": {
     "Arcades": {
       "commander": "Arcades, the Strategist",
-      "art": "Backgrounds/Players/Arcades.jpg",
-      "colors": "WUG"
+      "colors": "WUG",
+      "art": "Backgrounds/Players/Arcades.png",
+      "art_focus": "51.8% 7.5%",
+      "cards": [
+        "Backgrounds/Commander/arcades_strategist.webp"
+      ]
     },
     "Azlask": {
       "commander": "Azlask, the Swelling Scourge",
+      "colors": "WUBRG",
       "art": "Backgrounds/Players/AzlaskBorgo.png",
-      "colors": "WUBRG"
+      "cards": [
+        "Backgrounds/Commander/Azlask.jpg"
+      ]
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
@@ -31,19 +59,21 @@
     },
     "Commodoro": {
       "commander": "Commodore Guff",
+      "colors": "WUR",
       "art": "Backgrounds/Players/CommodorGuff.png",
+      "art_focus": "61.1% 0%",
       "cards": [
         "Backgrounds/Commander/CommodorGuff.webp"
-      ],
-      "colors": "WUR"
+      ]
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
+      "colors": "WUBRG",
       "art": "Backgrounds/Players/Scarecrow.png",
+      "art_focus": "52.8% 13.7%",
       "cards": [
         "Backgrounds/Commander/Dwight_O_lantern.webp"
-      ],
-      "colors": "WUBRG"
+      ]
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
@@ -62,12 +92,20 @@
       "colors": "WUR"
     },
     "Niv-Mizzet": {
-      "art": "Backgrounds/Players/NivMizzet.jpg"
+      "commander": "niv-mizzet parun",
+      "colors": "UR",
+      "art": "Backgrounds/Players/NivMizzet.jpg",
+      "cards": [
+        "Backgrounds/Commander/Niv-Mizzet.jpg"
+      ]
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
+      "colors": "WUB",
       "art": "Backgrounds/Players/Oloro.jpg",
-      "colors": "WUB"
+      "cards": [
+        "Backgrounds/Commander/Oloro.png"
+      ]
     },
     "Urza": {
       "commander": "Urza, Lord High Artificer",
@@ -87,11 +125,44 @@
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
+      "colors": "C",
       "art": "Backgrounds/Players/Zulhodok.png",
+      "art_focus": "52.6% 0.4%",
       "cards": [
         "Backgrounds/Commander/Zhulodok.jpg"
-      ],
-      "colors": "C"
+      ]
+    },
+    "Vaevictis": {
+      "commander": "Vaevictis asmadi, the Dire",
+      "colors": "BRG",
+      "cards": [
+        "Backgrounds/Commander/Vaevictis.jpg"
+      ]
+    },
+    "Lumra": {
+      "commander": "Lumra, Bellows of the beast",
+      "colors": "G",
+      "cards": [
+        "Backgrounds/Commander/Lumra.jpg"
+      ]
+    },
+    "Dina": {
+      "commander": "Dina, Essence Brewer",
+      "colors": "BG",
+      "art": "Backgrounds/Players/Dina.png",
+      "art_focus": "57.8% 8.6%",
+      "cards": [
+        "Backgrounds/Commander/DinaEssenceBrewer.webp"
+      ]
+    },
+    "Obeka": {
+      "commander": "Obeka, Splitter of Seconds",
+      "colors": "UBR",
+      "art": "Backgrounds/Players/Obeka.png",
+      "art_focus": "57.2% 13.4%",
+      "cards": [
+        "Backgrounds/Commander/Obeka.jpg"
+      ]
     }
   }
 }
