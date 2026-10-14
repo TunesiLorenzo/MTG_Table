@@ -435,7 +435,7 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 @keyframes core-breathe { 50% { opacity: .5; scale: 1.15; } }
 @keyframes symbol-beat { 0%, 60%, 100% { opacity: .9; scale: 1; } 20% { opacity: 1; scale: 1.24; text-shadow: 0 0 18px var(--mana), 0 0 48px var(--mana); } }
 @keyframes ring-beat { 0%, 60%, 100% { stroke-width: 1; } 20% { stroke-width: 2.1; } }
-@keyframes link-beat { 0%, 60%, 100% { opacity: .7; } 20% { opacity: 1; stroke-width: 3.4; } }
+@keyframes link-beat { 0%, 60%, 100% { opacity: .7; } 20% { opacity: 1; stroke-width: var(--link-beat, 3.4); } }
 @keyframes core-beat { 0%, 60%, 100% { opacity: .38; scale: 1; } 20% { opacity: .7; scale: 1.3; } }
 @keyframes title-shine { 0%, 55% { background-position: 120% 0; } 100% { background-position: -20% 0; } }
 @keyframes crown-glow { 50% { filter: drop-shadow(0 0 5px #e2b862); } }
@@ -531,6 +531,20 @@ html[data-theme-a="eldrazi"] .hero h1::after { content: ""; display: block; widt
 html[data-theme-a] .hero h1 { text-shadow: 0 2px 18px #000a, 0 0 30px color-mix(in srgb, var(--bronze) 45%, transparent); }
 html[data-theme-a] .hero { box-shadow: 0 22px 60px #05030a88, 0 0 60px color-mix(in srgb, var(--bronze) 18%, transparent); }
 html[data-theme-a="w"] body::before { mask-image: linear-gradient(to bottom, #000, transparent 70%); }
+/* On a phone the panels cover nearly the whole width, hiding the wheel and
+   the theme's light behind them. There a deck's page brings its wheel further
+   in and larger, draws the lines and symbols heavier, brightens the drifting
+   glows, and lets the panels show more of what is behind them. */
+@media (max-width: 560px) {
+  .sigil.has-focus { width: 520px; top: calc(58vh - 260px); right: -150px; }
+  .sigil.has-focus .sigil-link { stroke-width: 2.4; }
+  .sigil.has-focus .sigil-link--enemy { stroke-width: 2; }
+  .sigil.has-focus .sigil-link.is-lit { --link-beat: 4.4; stroke-width: 3.2; }
+  .sigil.has-focus .sigil-node circle:not(.sigil-node-inner) { stroke-width: 3.2; }
+  .sigil.has-focus .sigil-symbol { font-size: 34px; }
+  html[data-theme-a] .ambient span { opacity: .85; }
+  html[data-theme-a] :is(.card, .summary) { background: color-mix(in srgb, var(--card) 76%, transparent); }
+}
 
 /* ----------------------------------------------------------- mana burst -- */
 /* One colour's symbol flaring behind the page; the sparks and the ring are
