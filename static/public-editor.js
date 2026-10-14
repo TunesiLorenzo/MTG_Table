@@ -5,7 +5,9 @@
  * file's top-level bindings (app, stats, keyOf, escapeHtml, start), then hooks
  * its afterRender to put an edit form at the foot of every player and deck
  * page. What it edits is site/roster.json: which commander, art, cards,
- * portrait and background belong to which name.
+ * portrait and background belong to which name. The home page gets one for
+ * the intro and the mana burst sounds instead, which edit site/intro.json and
+ * site/mana_sounds.json.
  *
  * The bar along the bottom commits and pushes, which is what republishes the
  * real site. */
@@ -15,7 +17,7 @@
   let pictures = [];
   /* The commander recordings in sound/Commander, as { file, label }. */
   let sounds = [];
-  const soundPreview = new Audio();
+  const soundPreview = createClipPlayer();
   let publish = { changed: [], unpushed: 0 };
   /* No form until the roster's sources are here: one drawn from an empty
      roster would save over the real entry. */
@@ -66,6 +68,38 @@
     }
   });
 
+  /* ---------------------------------------------------------- site volume -- */
+
+  /* The site's own volume joins the speaker's panel here, above the visitor's
+     slider. It is saved to site/settings.json and published for everyone;
+     every visitor's slider tops out at it. */
+  settingsPanel.querySelector(".eyebrow").insertAdjacentHTML("afterend", `${volumeRow("Site", percentToDb(siteVolume), "data-site-volume")}
+    <p data-site-volume-note>Published for everyone. A visitor's slider goes up to this.</p>`);
+  const siteSlider = settingsPanel.querySelector("[data-site-volume]");
+  const siteNote = settingsPanel.querySelector("[data-site-volume-note]");
+  volumeSlider.previousElementSibling.textContent = "Yours";
+  function showSiteVolume(volume) {
+    siteVolume = volume;
+    siteSlider.value = Math.round(percentToDb(volume));
+    paintSlider(siteSlider);
+    applySiteVolume();
+  }
+  showSiteVolume(siteVolume);
+  siteSlider.addEventListener("input", () => showSiteVolume(dbToGain(Number(siteSlider.value)) * 100));
+  siteSlider.addEventListener("change", async () => {
+    try {
+      const result = await call("/api/public/settings", { volume: siteVolume });
+      publish = result.publish;
+      showPublishState();
+      siteNote.textContent = `Site volume set to ${volumeLabel(Number(siteSlider.value))}. Commit & push to publish it.`;
+      siteNote.className = "";
+      thud();
+    } catch (error) {
+      siteNote.textContent = error.message;
+      siteNote.className = "error";
+    }
+  });
+
   /* ---------------------------------------------------------------- forms -- */
 
   const sourceEntry = (group, name) => {
@@ -103,13 +137,16 @@
     const button = editorPart("[data-preview-sound]");
     if (!button) return;
     const sound = editorPart("[data-sound]").value;
-    button.textContent = soundPreview.paused ? "Play" : "Stop";
+    soundPreview.src = sound ? `/sound/Commander/${encodeURIComponent(sound)}` : "";
+    button.textContent = soundPreview.loading ? "Cancel loading" : soundPreview.paused ? "Play" : "Stop";
     button.disabled = !sound;
     editorPart("[data-volume-field]").hidden = !sound;
     editorPart("[data-volume-label]").textContent = `${chosenVolume()}%`;
+    /* The shared master applies visitor/site volume and mute exactly once. */
     soundPreview.volume = chosenVolume() / 100;
   }
-  for (const event of ["play", "pause", "ended"]) soundPreview.addEventListener(event, paintPreview);
+  for (const event of ["loading", "play", "pause", "ended", "error"]) soundPreview.addEventListener(event, paintPreview);
+  document.addEventListener("sitevolumechange", paintPreview);
 
   /* The crop of a picture that banners and tiles show: click or drag on the
      whole picture, and a banner-shaped preview shows the result. Stored as
@@ -187,7 +224,7 @@
     form.dataset.cardColors = entry.card_colors || "";
     form.dataset.typeLine = entry.type_line || "";
     form.dataset.cardColorsFor = entry.commander || "";
-    form.querySelector("[data-theme]")?.addEventListener("change", (event) => applyTheme(deckTheme(subject.name, event.target.value), deckColors(subject.name)));
+    form.querySelector("[data-theme]")?.addEventListener("change", () => previewColors());
     form.querySelector("[data-volume]")?.addEventListener("input", paintPreview);
 
     /* Shows the crop control only while its picture is chosen, and draws the
@@ -225,10 +262,17 @@
       source.addEventListener("pointerup", () => source.removeEventListener("pointermove", move), { once: true });
     });
     const colorBoxes = () => [...form.querySelectorAll("[data-colors] input")];
+    /* The wheel, the embers and the bursts follow the colours as they are
+       toggled, before anything is saved. */
+    const previewColors = () => applyTheme(deckTheme(subject.name, form.querySelector("[data-theme]")?.value),
+      colorBoxes().filter((box) => box.checked).map((box) => box.value));
     form.addEventListener("change", (event) => {
-      if (event.target.matches("[data-colors] input") && event.target.checked) {
-        const colourless = event.target.value === "C";
-        for (const box of colorBoxes()) if (box !== event.target && (colourless || box.value === "C")) box.checked = false;
+      if (event.target.matches("[data-colors] input")) {
+        if (event.target.checked) {
+          const colourless = event.target.value === "C";
+          for (const box of colorBoxes()) if (box !== event.target && (colourless || box.value === "C")) box.checked = false;
+        }
+        previewColors();
         return;
       }
       if (event.target.matches("[data-sound-upload]")) {
@@ -363,6 +407,7 @@
         call(`/api/public/color-identity?commander=${encodeURIComponent(form.elements.commander.value)}`)
           .then((result) => {
             for (const box of colorBoxes()) box.checked = result.colors.includes(box.value);
+            previewColors();
             form.dataset.cardColors = result.card_colors;
             form.dataset.typeLine = result.type_line;
             form.dataset.cardColorsFor = form.elements.commander.value;
@@ -404,12 +449,282 @@
     paintPreview();
   }
 
+  /* ---------------------------------------------------------------- intro -- */
+
+  /* The opening's settings, at the foot of the home page: its sound and how
+     the grimoire moves. Saved to site/intro.json. Preview plays the intro
+     with what is set now, saved or not (playGrimoire() in site.js). */
+  let intro = null;
+  /* The sounds in sound/Intro, as { file, label }, and each number's
+     [lowest, highest, default] from INTRO_NUMBERS in web.py. */
+  let introSounds = [];
+  let introNumbers = {};
+  const introPreview = new Audio();
+  /* Repaints the form on the page now; each mount replaces it. */
+  let paintIntro = () => {};
+  for (const event of ["play", "pause", "ended"]) introPreview.addEventListener(event, () => paintIntro());
+  const INTRO_SLIDERS = [
+    ["volume", "Volume", "%", 1],
+    ["rattle", "Rattle strength", "%", 1],
+    ["rattle_every", "Pause between rattles", " s", 0.1],
+    ["pages", "Pages to riffle", "", 1],
+    ["shuffle_seconds", "Riffle time", " s", 0.1],
+    ["glow_seconds", "Glow time", " s", 0.1],
+    ["flight_seconds", "Flight time", " s", 0.1],
+    ["rotation_speed", "Rotation speed", "×", 0.1],
+  ];
+  /* Each sound's row: its key in intro.json, its label, and its blank choice. */
+  const INTRO_SOUND_ROWS = [["chain", "Chain unlock", "Built-in chain rattle"], ["sound", "Opening sound", "No sound"], ["thud", "Thud", "Built-in thud"], ["page", "Page turn", "Built-in rustle"]];
+
+  function mountIntroEditor() {
+    const [, kind] = window.location.hash.replace(/^#/, "").split("/");
+    if (!loaded || !intro || kind === "player" || kind === "deck" || app.querySelector(".intro-editor")) return;
+    /* Each sound: a file from sound/Intro, or for the thud and the page turn
+       the ones site.js makes itself. */
+    const fileOptions = (value) => introSounds.map((sound) => `<option value="${escapeHtml(sound.file)}"${sound.file === value ? " selected" : ""}>${escapeHtml(sound.label)}</option>`).join("");
+    const soundRows = INTRO_SOUND_ROWS.map(([key, label, blank]) => `<div class="editor-field"><span>${label}</span>
+        <div class="editor-sound"><select data-intro-file="${key}"><option value="">${blank}</option>${fileOptions(intro[key])}</select>
+        <button type="button" class="editor-add" data-intro-play="${key}">Play</button>
+        <label class="editor-upload" title="Upload a sound from this computer into sound/Intro">Upload<input type="file" data-intro-upload="${key}" accept=".mp3,.wav,.ogg,.m4a,audio/*" hidden></label></div></div>`).join("");
+    const sliders = INTRO_SLIDERS.map(([key, label, unit, step]) => {
+      const [lowest, highest, fallback] = introNumbers[key] || [0.5, 8, 2];
+      return `<label class="editor-field"><span>${label}</span><div class="editor-volume"><input type="range" data-intro="${key}" min="${lowest}" max="${highest}" step="${step}" value="${intro[key] ?? fallback}"><output data-intro-label="${key}" data-unit="${unit}"></output></div></label>`;
+    }).join("");
+    const form = document.createElement("form");
+    form.className = "card editor-card intro-editor";
+    form.innerHTML = `<div class="section-heading"><div><span class="eyebrow">LOCAL EDITOR</span><h2>Intro</h2></div><span class="muted">Saved to site/intro.json</span></div>
+      ${soundRows}
+      <p class="editor-hint">The first tap releases the chain and plays Chain unlock for up to 2.5 seconds, then the book starts thudding. Tap again to open it. The opening sound starts when the pentacle glows, with a rustle for each turning page.</p>
+      <label class="editor-field"><span>Plays</span><select data-intro-repeat>
+        <option value="always"${intro.repeat === "always" ? " selected" : ""}>Every time the site loads</option>
+        <option value="visit"${intro.repeat === "visit" ? " selected" : ""}>Once per visit (per browser tab)</option></select></label>
+      ${sliders}
+      <p class="editor-hint">The wheel glows and begins rotating over the page for Glow time, then keeps rotating as it flies to the corner over Flight time. Rotation speed also controls the corner wheel; 2× is the current speed. Visitors who have asked their device for reduced motion never see the intro.</p>
+      <div class="editor-actions"><button type="submit">Save</button><button type="button" class="editor-add" data-intro-preview>Preview intro</button><span class="editor-status" role="status"></span></div>`;
+    const status = form.querySelector(".editor-status");
+    const say = (message, kind = "") => {
+      status.textContent = message;
+      status.className = `editor-status ${kind}`;
+    };
+    const chosenFile = (key) => form.querySelector(`[data-intro-file="${key}"]`).value;
+    /* As saved: file names. */
+    const values = () => {
+      const chosen = { repeat: form.querySelector("[data-intro-repeat]").value };
+      for (const [key] of INTRO_SOUND_ROWS) chosen[key] = chosenFile(key);
+      for (const input of form.querySelectorAll("[data-intro]")) chosen[input.dataset.intro] = Number(input.value);
+      return chosen;
+    };
+    /* As site.js plays them: addresses. */
+    const soundUrl = (file) => (file ? `/sound/Intro/${encodeURIComponent(file)}` : "");
+    const playable = () => {
+      const chosen = values();
+      for (const [key] of INTRO_SOUND_ROWS) chosen[key] = soundUrl(chosen[key]);
+      return chosen;
+    };
+
+    function paint() {
+      for (const label of form.querySelectorAll("[data-intro-label]")) {
+        label.textContent = `${form.querySelector(`[data-intro="${label.dataset.introLabel}"]`).value}${label.dataset.unit}`;
+      }
+      const play = form.querySelector('[data-intro-play="sound"]');
+      play.textContent = introPreview.paused ? "Play" : "Stop";
+      play.disabled = !chosenFile("sound");
+      introPreview.volume = values().volume / 100;
+    }
+    paintIntro = paint;
+
+    form.addEventListener("input", paint);
+    form.addEventListener("change", async (event) => {
+      if (event.target.matches('[data-intro-file="sound"]')) {
+        introPreview.pause();
+        paint();
+      }
+      const key = event.target.dataset.introUpload;
+      if (!key) return;
+      const file = event.target.files[0];
+      if (!file) return;
+      const body = new FormData();
+      body.append("sound", file);
+      body.append("folder", "intro");
+      say(`Uploading ${file.name}…`);
+      try {
+        const response = await fetch("/api/public/sounds", { method: "POST", body });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || "Upload failed");
+        introSounds = result.sounds;
+        publish = result.publish;
+        showPublishState();
+        /* Every list gains the file; the row it was uploaded from picks it. */
+        for (const [row, , blank] of INTRO_SOUND_ROWS) {
+          const select = form.querySelector(`[data-intro-file="${row}"]`);
+          select.innerHTML = `<option value="">${blank}</option>${fileOptions(row === key ? result.file : select.value)}`;
+        }
+        introPreview.pause();
+        paint();
+        say(`${result.message}. Save to use it.`);
+      } catch (error) {
+        say(error.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
+    form.addEventListener("click", (event) => {
+      const play = event.target.closest("[data-intro-play]");
+      if (play?.dataset.introPlay === "sound") {
+        if (!introPreview.paused) {
+          introPreview.pause();
+          return;
+        }
+        introPreview.src = soundUrl(chosenFile("sound"));
+        introPreview.currentTime = 0;
+        introPreview.play().catch((error) => say(`Could not play that sound: ${error.message}`, "error"));
+      } else if (play) {
+        /* Through site.js, as the intro plays it: one thud, or a short riffle. */
+        const kind = play.dataset.introPlay;
+        const chosen = playable();
+        const awake = introContext()?.resume();
+        Promise.all([awake, introBuffer(chosen[kind])]).then(() => {
+          for (let turn = 0; turn < (kind === "page" ? 6 : 1); turn += 1) introSound(kind, chosen, turn * 0.09);
+        });
+      }
+      if (event.target.closest("[data-intro-preview]")) {
+        introPreview.pause();
+        playGrimoire(playable());
+      }
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      introPreview.pause();
+      const submitted = values();
+      try {
+        if (!introNumbers.rotation_speed) throw new Error("Restart web.py, then reload the editor before saving rotation speed.");
+        const result = await call("/api/public/intro", { intro: submitted });
+        if (result.intro.chain !== submitted.chain) throw new Error("The chain sound was not saved. Reload the editor and try again.");
+        if (result.intro.rotation_speed !== submitted.rotation_speed) throw new Error("Rotation speed was not saved. Restart web.py, then reload the editor and save again.");
+        intro = result.intro;
+        applyIntroRotationSpeed(intro.rotation_speed);
+        publish = result.publish;
+        showPublishState();
+        say(`${result.message}${intro.chain ? `: ${intro.chain} selected for Chain unlock` : ": built-in chain rattle selected"}. Commit & push to publish it.`);
+      } catch (error) {
+        say(error.message, "error");
+      }
+    });
+    app.append(form);
+    introPreview.pause();
+    paint();
+  }
+
+  /* ----------------------------------------------------------- mana sounds -- */
+
+  /* The sound each colour's burst makes, on the home page under the intro:
+     built in, none, or a file from sound/Mana, at its own volume. Changes
+     reach the page's bursts as they are made (manaSounds in site.js); Test
+     sets one off, and Save writes site/mana_sounds.json. */
+  let manaSettings = null;
+  let manaFiles = [];
+  const MANA_ROWS = [["W", "White"], ["U", "Blue"], ["B", "Black"], ["R", "Red"], ["G", "Green"], ["C", "Colourless"]];
+  const manaUrl = (sound) => (sound && sound !== "none" ? `/sound/Mana/${encodeURIComponent(sound)}` : sound);
+
+  function mountManaEditor() {
+    const [, kind] = window.location.hash.replace(/^#/, "").split("/");
+    if (!loaded || !manaSettings || kind === "player" || kind === "deck" || app.querySelector(".mana-editor")) return;
+    const options = (value) => `<option value=""${value === "" ? " selected" : ""}>Built in</option><option value="none"${value === "none" ? " selected" : ""}>None</option>`
+      + manaFiles.map((sound) => `<option value="${escapeHtml(sound.file)}"${sound.file === value ? " selected" : ""}>${escapeHtml(sound.label)}</option>`).join("");
+    const form = document.createElement("form");
+    form.className = "card editor-card mana-editor";
+    form.innerHTML = `<div class="section-heading"><div><span class="eyebrow">LOCAL EDITOR</span><h2>Mana sounds</h2></div><span class="muted">Saved to site/mana_sounds.json</span></div>
+      ${MANA_ROWS.map(([color, label]) => `<div class="editor-field mana-sound-row" data-mana="${color}"><span><i class="ms ms-${color.toLowerCase()} ms-cost ms-shadow" aria-hidden="true"></i> ${label}</span>
+        <div class="editor-sound"><select data-mana-sound>${options(manaSettings[color].sound)}</select>
+        <div class="editor-volume"><input type="range" data-mana-volume min="0" max="100" step="5" value="${manaSettings[color].volume}"><output></output></div>
+        <button type="button" class="editor-add" data-mana-test>Test</button></div></div>`).join("")}
+      <p class="editor-hint">A burst a visitor sets off with a click or a touch plays its colour's sound; the ones that appear on their own stay silent. "Built in" is made by the site itself; other choices are the files in sound/Mana.
+        <label class="editor-upload" title="Upload a sound from this computer into sound/Mana">Upload a sound<input type="file" data-mana-upload accept=".mp3,.wav,.ogg,.m4a,audio/*" hidden></label></p>
+      <div class="editor-actions"><button type="submit">Save</button><span class="editor-status" role="status"></span></div>`;
+    const status = form.querySelector(".editor-status");
+    const say = (message, tone = "") => {
+      status.textContent = message;
+      status.className = `editor-status ${tone}`;
+    };
+    const values = () => Object.fromEntries([...form.querySelectorAll("[data-mana]")].map((row) => [row.dataset.mana, {
+      sound: row.querySelector("[data-mana-sound]").value,
+      volume: Number(row.querySelector("[data-mana-volume]").value),
+    }]));
+    /* The page's bursts follow the form as it changes. */
+    const apply = () => {
+      for (const [color, entry] of Object.entries(values())) {
+        manaSounds[color] = { sound: manaUrl(entry.sound), volume: entry.volume };
+        if (entry.sound && entry.sound !== "none") audioBuffer(manaSounds[color].sound);
+      }
+      for (const output of form.querySelectorAll(".mana-editor output")) output.textContent = `${output.previousElementSibling.value}%`;
+    };
+    form.addEventListener("input", apply);
+    form.addEventListener("change", async (event) => {
+      apply();
+      if (!event.target.matches("[data-mana-upload]")) return;
+      const file = event.target.files[0];
+      if (!file) return;
+      const body = new FormData();
+      body.append("sound", file);
+      body.append("folder", "mana");
+      say(`Uploading ${file.name}…`);
+      try {
+        const response = await fetch("/api/public/sounds", { method: "POST", body });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || "Upload failed");
+        manaFiles = result.sounds;
+        publish = result.publish;
+        showPublishState();
+        for (const select of form.querySelectorAll("[data-mana-sound]")) {
+          const chosen = select.value;
+          select.innerHTML = options(chosen);
+        }
+        say(`${result.message}. Pick it for a colour, then Save.`);
+      } catch (error) {
+        say(error.message, "error");
+      } finally {
+        event.target.value = "";
+      }
+    });
+    form.addEventListener("click", (event) => {
+      const test = event.target.closest("[data-mana-test]");
+      if (!test) return;
+      const color = test.closest("[data-mana]").dataset.mana;
+      apply();
+      const box = test.getBoundingClientRect();
+      /* A burst where the button is, which plays the sound itself; without
+         the embers (reduced motion), just the sound. */
+      if (reducedMotion.matches) playManaSound(color);
+      else embers.burst(box.left + box.width / 2, box.top + box.height / 2, color, true);
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const result = await call("/api/public/mana-sounds", { sounds: values() });
+        manaSettings = result.sounds;
+        publish = result.publish;
+        showPublishState();
+        say(`${result.message}. Commit & push to publish them.`);
+      } catch (error) {
+        say(error.message, "error");
+      }
+    });
+    app.append(form);
+    apply();
+  }
+
   async function refresh() {
     try {
       const result = await call("/api/public/roster");
       source = result.roster;
       pictures = result.pictures;
       sounds = result.sounds;
+      intro = result.intro;
+      introSounds = result.intro_sounds;
+      introNumbers = result.intro_numbers;
+      manaSettings = result.mana_sounds;
+      manaFiles = result.mana_sound_files;
+      showSiteVolume(result.settings.volume);
       publish = result.publish;
       loaded = true;
       showPublishState();
@@ -418,9 +733,20 @@
     }
   }
 
-  afterRender = mountEditor;
+  /* Each panel on its own, so one that fails to draw leaves the others. */
+  afterRender = () => {
+    // Cancel pending previews even when the next page has no deck editor.
+    soundPreview.pause();
+    for (const mount of [mountEditor, mountIntroEditor, mountManaEditor]) {
+      try {
+        mount();
+      } catch (error) {
+        console.error(`The ${mount.name} panel could not be drawn`, error);
+      }
+    }
+  };
   /* The first view is usually drawn before this returns. */
-  refresh().then(mountEditor);
+  refresh().then(afterRender);
   /* Results recorded from the table show up as unpublished without a reload. */
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) call("/api/public/roster").then((result) => { publish = result.publish; showPublishState(); }).catch(() => {});

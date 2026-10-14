@@ -16,6 +16,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
@@ -104,9 +105,39 @@ MANA_COLORS = "WUBRG"
 DECK_THEMES = {"w", "u", "b", "r", "g", "c", "gold", "wu", "ub", "br", "rg", "gw", "wb", "ur", "bg", "rw", "gu",
                "wgu", "uwb", "bur", "rbg", "grw", "wbg", "urw", "bgu", "rwb", "gur", "eldrazi"}
 SCRYFALL_NAMED_URL = "https://api.scryfall.com/cards/named"
+# The public site's opening: its sound, from its own folder, and its timings,
+# set from the editor on /public and published as site/intro.json.
+INTRO_FILE = SITE_DIR / "intro.json"
+# The sound each mana burst on the public site makes, one per colour and one
+# for colourless: "" is the site's own built-in sound, "none" is silence, and
+# anything else a file in sound/Mana. Volume is a percentage.
+MANA_SOUNDS_FILE = SITE_DIR / "mana_sounds.json"
+MANA_SOUND_DIR = BASE_DIR / "sound" / "Mana"
+MANA_SOUND_KEYS = ("W", "U", "B", "R", "G", "C")
+MANA_SOUND_VOLUME_DEFAULT = 60
+INTRO_SOUND_DIR = BASE_DIR / "sound" / "Intro"
+# "always" plays it on every load, "visit" once per browser tab.
+INTRO_REPEATS = ("always", "visit")
+# Its sounds, each a file in sound/Intro: "chain" on unlocking, "sound" as the
+# pentacle glows, "thud" as the book knocks about and "page" as each page turns.
+# Without a file the chain, thud and page turn are made by the site itself.
+INTRO_SOUNDS = ("chain", "sound", "thud", "page")
+# Each number as (lowest, highest, default). Mirrors INTRO_DEFAULTS in site/site.js.
+INTRO_NUMBERS = {"volume": (1, 100, 80), "rattle": (0, 100, 90), "rattle_every": (0.4, 8, 0.7),
+                 "pages": (4, 40, 18), "shuffle_seconds": (0.5, 6, 1.8), "glow_seconds": (1, 8, 2.5),
+                 "flight_seconds": (0.6, 5, 1.6), "rotation_speed": (0.5, 8, 2)}
+INTRO_WHOLE_NUMBERS = {"volume", "rattle", "pages"}
+# The public site's overall volume in percent, set from the editor on /public
+# and published as site/settings.json. Every sound on the site is scaled by it,
+# and a visitor's own slider only goes up to it. Mirrors SITE_VOLUME_DEFAULT
+# in site/site.js.
+SITE_SETTINGS_FILE = SITE_DIR / "settings.json"
+SITE_VOLUME_DEFAULT = 100
 # Everything the public site is built from, and so everything a publish
-# commits. Code and the rest of the working tree are left for a normal commit.
-PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds", "sound/Commander")
+# commits: the files it shows, and the build script and workflow that make it.
+# Other code and the rest of the working tree are left for a normal commit.
+PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds", "sound/Commander", "sound/Intro", "sound/Mana",
+                 "build_site.py", ".github/workflows/pages.yml")
 PUBLISH_BRANCH = "main"
 roster_lock = threading.Lock()
 publish_lock = threading.Lock()
@@ -557,6 +588,98 @@ def validate_announcer_sound(value):
     if filename not in available:
         raise ValueError("Choose an announcer sound from sound/Announcer/Players")
     return filename
+
+
+def list_intro_sounds():
+    """Selectable sounds for the public site's opening, in sound/Intro."""
+    try:
+        files = [item for item in INTRO_SOUND_DIR.iterdir()
+                 if item.is_file() and item.suffix.casefold() in ANNOUNCER_EXTENSIONS]
+    except OSError:
+        return []
+    return [{"file": item.name, "label": item.stem.replace("_", " ")}
+            for item in sorted(files, key=lambda item: item.stem.casefold())]
+
+
+def list_mana_sounds():
+    """Selectable sounds for the public site's mana bursts, in sound/Mana."""
+    try:
+        files = [item for item in MANA_SOUND_DIR.iterdir()
+                 if item.is_file() and item.suffix.casefold() in ANNOUNCER_EXTENSIONS]
+    except OSError:
+        return []
+    return [{"file": item.name, "label": item.stem.replace("_", " ")}
+            for item in sorted(files, key=lambda item: item.stem.casefold())]
+
+
+def clean_mana_sounds(payload, strict=True):
+    """Every colour's burst sound and volume; a missing or, when not strict,
+    unusable one takes the built-in sound at the default volume."""
+    available = {item["file"] for item in list_mana_sounds()}
+    cleaned = {}
+    for key in MANA_SOUND_KEYS:
+        entry = payload.get(key) if isinstance(payload.get(key), dict) else {}
+        sound = str(entry.get("sound") or "").strip()
+        if sound and sound != "none" and sound not in available:
+            if strict:
+                raise ValueError(f"Choose a mana sound from sound/Mana, not {sound}")
+            sound = ""
+        volume = entry.get("volume", MANA_SOUND_VOLUME_DEFAULT)
+        if not isinstance(volume, (int, float)) or isinstance(volume, bool) or not 0 <= volume <= 100:
+            if strict:
+                raise ValueError("A mana sound's volume is a percentage from 0 to 100")
+            volume = MANA_SOUND_VOLUME_DEFAULT
+        cleaned[key] = {"sound": sound, "volume": round(volume)}
+    return cleaned
+
+
+def load_mana_sounds():
+    try:
+        saved = json.loads(MANA_SOUNDS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    return clean_mana_sounds(saved if isinstance(saved, dict) else {}, strict=False)
+
+
+def clean_intro(payload, strict=True):
+    """The intro's settings, every one present; a missing one takes its default.
+
+    Saving is strict. Reading the saved file is not: a value out of range there,
+    or a sound since deleted, quietly becomes the default.
+    """
+    def refuse(message, fallback):
+        if strict:
+            raise ValueError(message)
+        return fallback
+
+    intro = {}
+    available = {item["file"] for item in list_intro_sounds()}
+    for key in INTRO_SOUNDS:
+        sound = str(payload.get(key) or "").strip()
+        if sound and sound not in available:
+            sound = refuse("Choose the intro's sounds from sound/Intro", "")
+        intro[key] = sound
+    repeat = payload.get("repeat") or "always"
+    intro["repeat"] = repeat if repeat in INTRO_REPEATS else refuse("Choose when the intro plays", "always")
+    for key, (lowest, highest, default) in INTRO_NUMBERS.items():
+        value = payload.get(key)
+        try:
+            number = default if value in (None, "") else float(value)
+        except (TypeError, ValueError):
+            number = None
+        # NaN fails this comparison too.
+        if number is None or not lowest <= number <= highest:
+            number = refuse(f"Intro {key.replace('_', ' ')} must be between {lowest} and {highest}", default)
+        intro[key] = round(number) if key in INTRO_WHOLE_NUMBERS else round(number, 1)
+    return intro
+
+
+def load_intro():
+    try:
+        saved = json.loads(INTRO_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    return clean_intro(saved if isinstance(saved, dict) else {}, strict=False)
 
 
 def list_commander_sounds():
@@ -1163,6 +1286,26 @@ def public_site_roster():
     return jsonify(roster)
 
 
+@app.get("/public/mana_sounds.json")
+def public_site_mana_sounds():
+    """The mana burst sounds in the shape build_site.py publishes them."""
+    sounds = load_mana_sounds()
+    for entry in sounds.values():
+        if entry["sound"] and entry["sound"] != "none":
+            entry["sound"] = "/sound/Mana/" + quote(entry["sound"])
+    return jsonify(sounds)
+
+
+@app.get("/public/intro.json")
+def public_site_intro():
+    """The intro's settings in the shape build_site.py publishes them."""
+    intro = load_intro()
+    for key in INTRO_SOUNDS:
+        if intro[key]:
+            intro[key] = "/sound/Intro/" + quote(intro[key])
+    return jsonify(intro)
+
+
 @app.get("/public/<path:filename>")
 def public_site_asset(filename):
     return send_from_directory(SITE_DIR, filename)
@@ -1171,7 +1314,58 @@ def public_site_asset(filename):
 @app.get("/api/public/roster")
 def get_public_roster():
     return jsonify({"ok": True, "roster": load_roster(), "pictures": list_roster_pictures(),
-                    "sounds": list_commander_sounds(), "publish": publish_state()})
+                    "sounds": list_commander_sounds(), "intro": load_intro(), "intro_sounds": list_intro_sounds(),
+                    "intro_numbers": INTRO_NUMBERS, "settings": load_site_settings(),
+                    "mana_sounds": load_mana_sounds(), "mana_sound_files": list_mana_sounds(), "publish": publish_state()})
+
+
+@app.post("/api/public/mana-sounds")
+def set_public_mana_sounds():
+    """The sound and volume of each colour's mana burst on the public site."""
+    payload = request.get_json(force=True, silent=True) or {}
+    sounds = clean_mana_sounds(payload.get("sounds") or {})
+    with roster_lock:
+        write_json_file(MANA_SOUNDS_FILE, sounds)
+    return ok("Saved the mana sounds", sounds=sounds, publish=publish_state())
+
+
+@app.post("/api/public/intro")
+def set_public_intro():
+    payload = request.get_json(force=True, silent=True) or {}
+    submitted = payload.get("intro") or {}
+    # Older open editor tabs may predate these controls. Preserve saved values
+    # instead of silently resetting them when an old tab saves another field.
+    if isinstance(submitted, dict) and ("chain" not in submitted or "rotation_speed" not in submitted):
+        saved = load_intro()
+        submitted = {**{"chain": saved["chain"], "rotation_speed": saved["rotation_speed"]}, **submitted}
+    intro = clean_intro(submitted)
+    with roster_lock:
+        write_json_file(INTRO_FILE, intro)
+    return ok("Saved the intro", intro=intro, publish=publish_state())
+
+
+def load_site_settings():
+    try:
+        saved = json.loads(SITE_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        saved = {}
+    volume = saved.get("volume") if isinstance(saved, dict) else None
+    valid = isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0 <= volume <= 100
+    # Keep quiet dB slider values instead of rounding them down to silence.
+    return {"volume": round(volume, 4) if valid else SITE_VOLUME_DEFAULT}
+
+
+@app.post("/api/public/settings")
+def set_public_site_settings():
+    """The site's overall volume, which every visitor's slider tops out at."""
+    payload = request.get_json(force=True, silent=True) or {}
+    volume = payload.get("volume")
+    if not isinstance(volume, (int, float)) or isinstance(volume, bool) or not 0 <= volume <= 100:
+        raise ValueError("The site volume is a percentage from 0 to 100")
+    settings = {"volume": round(volume, 4)}
+    with roster_lock:
+        write_json_file(SITE_SETTINGS_FILE, settings)
+    return ok(f"Site volume set to {settings['volume']}%", settings=settings, publish=publish_state())
 
 
 @app.post("/api/public/pictures")
@@ -1214,11 +1408,16 @@ def upload_roster_picture():
 
 @app.post("/api/public/sounds")
 def upload_roster_sound():
-    """Save a sound sent from the roster editor into sound/Commander.
+    """Save a sound sent from the roster editor into sound/Commander, or into
+    sound/Intro or sound/Mana when the form says folder=intro or folder=mana.
 
-    The table's commander picker lists it straight away. Like a picture, it
-    reaches the public site once a deck names it and the site is published.
+    The table's commander picker lists a commander sound straight away. Like a
+    picture, a sound reaches the public site once a deck or the intro names it
+    and the site is published.
     """
+    folder, listing = {"intro": (INTRO_SOUND_DIR, list_intro_sounds),
+                       "mana": (MANA_SOUND_DIR, list_mana_sounds)}.get(request.form.get("folder"),
+                                                                       (COMMANDER_SOUND_DIR, list_commander_sounds))
     upload = request.files.get("sound")
     if not upload or not upload.filename:
         raise ValueError("Choose a sound to upload")
@@ -1230,12 +1429,12 @@ def upload_roster_sound():
         raise ValueError(f"Sounds must be at most {ROSTER_SOUND_UPLOAD_MAX // (1024 * 1024)} MB")
     stem = re.sub(r"[^A-Za-z0-9]+", "_", Path(upload.filename).stem).strip("_")[:60] or "sound"
     with roster_lock:
-        COMMANDER_SOUND_DIR.mkdir(parents=True, exist_ok=True)
-        target, copy_number = COMMANDER_SOUND_DIR / f"{stem}{suffix}", 2
+        folder.mkdir(parents=True, exist_ok=True)
+        target, copy_number = folder / f"{stem}{suffix}", 2
         while target.exists():
-            target, copy_number = COMMANDER_SOUND_DIR / f"{stem}_{copy_number}{suffix}", copy_number + 1
+            target, copy_number = folder / f"{stem}_{copy_number}{suffix}", copy_number + 1
         target.write_bytes(data)
-    return ok(f"Uploaded {target.name}", file=target.name, sounds=list_commander_sounds(), publish=publish_state())
+    return ok(f"Uploaded {target.name}", file=target.name, sounds=listing(), publish=publish_state())
 
 
 @app.get("/api/public/color-identity")
@@ -1293,8 +1492,19 @@ def publish_public_site():
         if not state["changed"] and not state["unpushed"]:
             return ok("Nothing to publish: GitHub already has everything", publish=state)
         if state["changed"]:
-            run_git("add", "--", *PUBLISH_PATHS)
-            run_git("commit", "-m", f"Update leaderboard ({datetime.now():%Y-%m-%d})", "--", *PUBLISH_PATHS)
+            # GitHub runs the same build after the push. A roster naming a
+            # missing picture fails it there, silently, leaving the old site
+            # up; here it stops the publish and says why.
+            build = subprocess.run([sys.executable, "build_site.py"], cwd=BASE_DIR, capture_output=True,
+                                   text=True, encoding="utf-8", errors="replace", timeout=300)
+            if build.returncode:
+                lines = (build.stderr or build.stdout).strip().splitlines()
+                raise RuntimeError(f"The site does not build, so nothing was pushed: {lines[-1] if lines else 'unknown error'}")
+            # git refuses a path that neither exists nor is tracked, like
+            # sound/Intro before any intro sound is uploaded.
+            paths = [path for path in PUBLISH_PATHS if (BASE_DIR / path).exists() or run_git("ls-files", "--", path)]
+            run_git("add", "--", *paths)
+            run_git("commit", "-m", f"Update leaderboard ({datetime.now():%Y-%m-%d})", "--", *paths)
         run_git("push", timeout=180)
         return ok("Pushed. The public site updates in a minute or two", publish=publish_state())
 

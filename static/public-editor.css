@@ -41,6 +41,11 @@ main { padding-bottom: 130px; }
 .focus-side { display: grid; gap: 10px; min-width: 0; }
 .focus-preview { aspect-ratio: 3.2 / 1; border: 1px solid var(--line); border-radius: 12px; background: #120f0b no-repeat; background-size: cover; }
 .editor-card .focus-side .editor-add { justify-self: start; }
+/* Mana sounds: a row per colour with its symbol, sound, volume and a test. */
+.mana-sound-row > span { display: flex; align-items: center; gap: 8px; }
+.mana-sound-row .ms { font-size: 1.15rem; }
+.mana-sound-row .editor-volume { flex: 1 1 140px; min-width: 120px; }
+.mana-editor .editor-hint .editor-upload { display: inline-grid; margin: 6px 0 0; }
 /* A player's decks added by hand, as removable chips. */
 .editor-decks { display: grid; gap: 10px; min-width: 0; }
 .editor-deck-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -53,6 +58,9 @@ main { padding-bottom: 130px; }
 .editor-status { color: var(--muted); font-size: .82rem; }
 .editor-status.error { color: #ffb5c5; font-size: .82rem; }
 
+/* The site's settings gear sits above the publish bar here. */
+.settings { bottom: 82px; }
+.settings-panel p.error { color: #ff9c8a; font-style: normal; }
 #publish-bar { position: fixed; z-index: 10; right: 0; bottom: 0; left: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-top: 1px solid #6b5a2c; background: #14110df5; font-size: .85rem; }
 .publish-tag { flex: none; color: var(--gold); font-size: .69rem; font-weight: 800; letter-spacing: .18em; }
 #publish-state { flex: 1; min-width: 0; color: var(--muted); }
