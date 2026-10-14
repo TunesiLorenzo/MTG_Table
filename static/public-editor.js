@@ -94,16 +94,19 @@
       <p class="editor-hint">Plays as the deck's page opens. New files in sound/Commander are listed here and at the table.</p>`;
   }
 
-  /* The slider applies to the preview as it moves, so the level can be set by ear. */
-  const chosenVolume = () => Number(app.querySelector("[data-volume]").value);
+  /* The slider applies to the preview as it moves, so the level can be set by ear.
+     Looked up inside the form: the deck's sound button in site.js carries
+     data-sound and data-volume too, and comes first on the page. */
+  const editorPart = (selector) => app.querySelector(`.editor-card ${selector}`);
+  const chosenVolume = () => Number(editorPart("[data-volume]").value);
   function paintPreview() {
-    const button = app.querySelector("[data-preview-sound]");
+    const button = editorPart("[data-preview-sound]");
     if (!button) return;
-    const sound = app.querySelector("[data-sound]").value;
+    const sound = editorPart("[data-sound]").value;
     button.textContent = soundPreview.paused ? "Play" : "Stop";
     button.disabled = !sound;
-    app.querySelector("[data-volume-field]").hidden = !sound;
-    app.querySelector("[data-volume-label]").textContent = `${chosenVolume()}%`;
+    editorPart("[data-volume-field]").hidden = !sound;
+    editorPart("[data-volume-label]").textContent = `${chosenVolume()}%`;
     soundPreview.volume = chosenVolume() / 100;
   }
   for (const event of ["play", "pause", "ended"]) soundPreview.addEventListener(event, paintPreview);
