@@ -11,6 +11,7 @@ Lighting effects are deliberately not implemented.
 
 import colorsys
 import copy
+import io
 import json
 import os
 import re
@@ -19,7 +20,10 @@ import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
@@ -81,9 +85,25 @@ ROSTER_GROUPS = ("players", "decks")
 ROSTER_PICTURE_DIR = BASE_DIR / "Backgrounds"
 ROSTER_PICTURE_EXTENSIONS = {".jpg", ".jpeg", ".jfif", ".png", ".webp"}
 ROSTER_COMMANDER_MAX = 120
+# A player's decks added by hand, played yet or not.
+ROSTER_DECKS_MAX = 40
+# Pictures sent from the editor land here, inside the folder it picks from.
+ROSTER_UPLOAD_DIR = ROSTER_PICTURE_DIR / "Uploads"
+ROSTER_UPLOAD_MAX = 20 * 1024 * 1024
+# A deck's sound is one of the commander recordings the table plays, so a
+# sound uploaded from the editor lands in sound/Commander beside them.
+ROSTER_SOUND_UPLOAD_MAX = 10 * 1024 * 1024
+# A deck's colour identity is stored as some of WUBRG in that order, or C for
+# colourless. Scryfall supplies it from the commander's name.
+MANA_COLORS = "WUBRG"
+# A deck page's theme, chosen by hand in place of the one its commander's
+# colours give it. Mirrors THEMES in site/site.js.
+DECK_THEMES = {"w", "u", "b", "r", "g", "c", "gold", "wu", "ub", "br", "rg", "gw", "wb", "ur", "bg", "rw", "gu",
+               "wgu", "uwb", "bur", "rbg", "grw", "wbg", "urw", "bgu", "rwb", "gur"}
+SCRYFALL_NAMED_URL = "https://api.scryfall.com/cards/named"
 # Everything the public site is built from, and so everything a publish
 # commits. Code and the rest of the working tree are left for a normal commit.
-PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds")
+PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds", "sound/Commander")
 PUBLISH_BRANCH = "main"
 roster_lock = threading.Lock()
 publish_lock = threading.Lock()
@@ -967,13 +987,94 @@ def roster_entry_from_payload(group, payload):
         if len(commander) > ROSTER_COMMANDER_MAX:
             raise ValueError(f"Commander must be at most {ROSTER_COMMANDER_MAX} characters")
         entry["commander"] = commander
+        entry["colors"] = clean_colors(payload.get("colors"))
+        entry["card_colors"] = clean_colors(payload.get("card_colors"))
+        theme = str(payload.get("theme") or "").strip().lower()
+        if theme and theme not in DECK_THEMES:
+            raise ValueError("Unknown theme")
+        entry["theme"] = theme
         entry["art"] = picture(payload.get("art"))
+        entry["art_focus"] = clean_focus(payload.get("art_focus")) if entry["art"] else ""
         cards = payload.get("cards")
         entry["cards"] = [card for card in map(picture, cards if isinstance(cards, list) else []) if card]
+        entry["sound"] = validate_commander_sound(payload.get("sound"))
     else:
         entry["portrait"] = picture(payload.get("portrait"))
         entry["background"] = picture(payload.get("background"))
+        entry["background_focus"] = clean_focus(payload.get("background_focus")) if entry["background"] else ""
+        decks = payload.get("decks")
+        entry["decks"] = []
+        for deck in decks if isinstance(decks, list) else []:
+            deck = clean_game_text(deck, "Deck name", GAME_DECK_MAX)
+            if deck.casefold() not in {saved.casefold() for saved in entry["decks"]}:
+                entry["decks"].append(deck)
+        if len(entry["decks"]) > ROSTER_DECKS_MAX:
+            raise ValueError(f"A player can have at most {ROSTER_DECKS_MAX} decks added by hand")
     return {key: value for key, value in entry.items() if value}
+
+
+def clean_focus(value):
+    """The point a cropped picture is centred on, as "x% y%", or "" for the default."""
+    if not value:
+        return ""
+    match = re.fullmatch(r"\s*(\d{1,3}(?:\.\d+)?)%\s+(\d{1,3}(?:\.\d+)?)%\s*", str(value))
+    if not match or any(float(number) > 100 for number in match.groups()):
+        raise ValueError("A crop is two percentages, like 50% 25%")
+    return f"{float(match[1]):g}% {float(match[2]):g}%"
+
+
+def clean_colors(value):
+    """A colour identity as some of WUBRG in that order, C, or "" when unknown."""
+    letters = set(re.sub(r"[^A-Za-z]", "", str(value or "")).upper())
+    if letters - set(MANA_COLORS + "C"):
+        raise ValueError("Colours are W, U, B, R and G, or C for colourless")
+    if "C" in letters:
+        if len(letters) > 1:
+            raise ValueError("A colourless deck has no other colours")
+        return "C"
+    return "".join(color for color in MANA_COLORS if color in letters)
+
+
+def scryfall_card(name):
+    """One card from Scryfall by approximate name, or None when it has no match."""
+    lookup = urllib.request.Request(f"{SCRYFALL_NAMED_URL}?{urlencode({'fuzzy': name})}",
+                                    headers={"User-Agent": "MTGTable/1.0", "Accept": "application/json"})
+    # Scryfall asks for a short pause between requests.
+    time.sleep(0.1)
+    try:
+        with urllib.request.urlopen(lookup, timeout=10) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise RuntimeError(f"Scryfall answered {error.code}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(f"Could not reach Scryfall: {error.reason}") from error
+
+
+def lookup_color_identity(commander):
+    """The colour identity of a commander, or of partners written "A & B".
+
+    The whole name is tried first, since some single cards have an & in theirs.
+    """
+    commander = re.sub(r"\s+", " ", str(commander or "")).strip()
+    if not commander:
+        raise ValueError("Enter the commander first")
+    names = [commander]
+    cards = [scryfall_card(commander)]
+    if cards[0] is None and "&" in commander:
+        names = [part.strip() for part in commander.split("&") if part.strip()]
+        cards = [scryfall_card(name) for name in names]
+    missing = [name for name, card in zip(names, cards) if card is None]
+    if missing:
+        raise ValueError(f"Scryfall has no card called {', '.join(missing)}")
+    letters = set().union(*(card.get("color_identity") or [] for card in cards))
+    # The card's own colours, its frame: a double-faced card keeps them on its front.
+    printed = set().union(*((card.get("colors") if "colors" in card else (card.get("card_faces") or [{}])[0].get("colors")) or []
+                            for card in cards))
+    return {"colors": "".join(color for color in MANA_COLORS if color in letters) or "C",
+            "card_colors": "".join(color for color in MANA_COLORS if color in printed) or "C",
+            "cards": [card.get("name", "") for card in cards]}
 
 
 def run_git(*arguments, timeout=60):
@@ -1034,6 +1135,9 @@ def public_site_roster():
             for key in build_site.IMAGE_LIST_KEYS:
                 if entry.get(key):
                     entry[key] = [served(source) for source in entry[key]]
+    for entry in roster["decks"].values():
+        if entry.get("sound"):
+            entry["sound"] = "/sound/Commander/" + quote(entry["sound"])
     return jsonify(roster)
 
 
@@ -1045,7 +1149,78 @@ def public_site_asset(filename):
 @app.get("/api/public/roster")
 def get_public_roster():
     return jsonify({"ok": True, "roster": load_roster(), "pictures": list_roster_pictures(),
-                    "publish": publish_state()})
+                    "sounds": list_commander_sounds(), "publish": publish_state()})
+
+
+@app.post("/api/public/pictures")
+def upload_roster_picture():
+    """Save a picture sent from the roster editor into Backgrounds/Uploads.
+
+    It is only stored here; nothing uses it until a roster entry names it, and
+    it reaches the public site with the next publish, like every picture.
+    """
+    upload = request.files.get("picture")
+    if not upload or not upload.filename:
+        raise ValueError("Choose a picture to upload")
+    suffix = Path(upload.filename).suffix.lower()
+    if suffix not in ROSTER_PICTURE_EXTENSIONS:
+        raise ValueError("Pictures must be JPG, PNG, WebP or JFIF")
+    data = upload.read(ROSTER_UPLOAD_MAX + 1)
+    if len(data) > ROSTER_UPLOAD_MAX:
+        raise ValueError(f"Pictures must be at most {ROSTER_UPLOAD_MAX // (1024 * 1024)} MB")
+    # Pillow is only needed to build the site, so a check is done when it is there.
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    if Image:
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                image.verify()
+        except Exception as error:
+            raise ValueError("That file is not a picture Pillow can read") from error
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", Path(upload.filename).stem).strip("-")[:60] or "picture"
+    with roster_lock:
+        ROSTER_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        target, copy_number = ROSTER_UPLOAD_DIR / f"{stem}{suffix}", 2
+        while target.exists():
+            target, copy_number = ROSTER_UPLOAD_DIR / f"{stem}-{copy_number}{suffix}", copy_number + 1
+        target.write_bytes(data)
+    path = target.relative_to(BASE_DIR).as_posix()
+    return ok(f"Uploaded {path}", path=path, pictures=list_roster_pictures(), publish=publish_state())
+
+
+@app.post("/api/public/sounds")
+def upload_roster_sound():
+    """Save a sound sent from the roster editor into sound/Commander.
+
+    The table's commander picker lists it straight away. Like a picture, it
+    reaches the public site once a deck names it and the site is published.
+    """
+    upload = request.files.get("sound")
+    if not upload or not upload.filename:
+        raise ValueError("Choose a sound to upload")
+    suffix = Path(upload.filename).suffix.lower()
+    if suffix not in ANNOUNCER_EXTENSIONS:
+        raise ValueError("Sounds must be MP3, WAV, OGG or M4A")
+    data = upload.read(ROSTER_SOUND_UPLOAD_MAX + 1)
+    if len(data) > ROSTER_SOUND_UPLOAD_MAX:
+        raise ValueError(f"Sounds must be at most {ROSTER_SOUND_UPLOAD_MAX // (1024 * 1024)} MB")
+    stem = re.sub(r"[^A-Za-z0-9]+", "_", Path(upload.filename).stem).strip("_")[:60] or "sound"
+    with roster_lock:
+        COMMANDER_SOUND_DIR.mkdir(parents=True, exist_ok=True)
+        target, copy_number = COMMANDER_SOUND_DIR / f"{stem}{suffix}", 2
+        while target.exists():
+            target, copy_number = COMMANDER_SOUND_DIR / f"{stem}_{copy_number}{suffix}", copy_number + 1
+        target.write_bytes(data)
+    return ok(f"Uploaded {target.name}", file=target.name, sounds=list_commander_sounds(), publish=publish_state())
+
+
+@app.get("/api/public/color-identity")
+def get_color_identity():
+    """A commander's colour identity from Scryfall, for the roster editor."""
+    found = lookup_color_identity(request.args.get("commander", ""))
+    return ok(f"{' & '.join(found['cards'])}: {found['colors']}", **found)
 
 
 @app.post("/api/public/roster")
@@ -1057,6 +1232,20 @@ def set_public_roster_entry():
         raise ValueError("Unknown roster group")
     name = clean_game_text(payload.get("name"), "Name", GAME_DECK_MAX)
     entry = roster_entry_from_payload(group, payload.get("entry") or {})
+    # A deck saved with a commander gets what is missing from Scryfall: its
+    # colours, and the card's own colours, which a new commander replaces. Out
+    # of reach is no reason to refuse the save: they stay unknown.
+    if group == "decks" and entry.get("commander"):
+        saved = next((value for key, value in load_roster()["decks"].items() if key.casefold() == name.casefold()), {})
+        if saved.get("commander") != entry["commander"]:
+            entry.pop("card_colors", None)
+        if not entry.get("colors") or not entry.get("card_colors"):
+            try:
+                found = lookup_color_identity(entry["commander"])
+                entry.setdefault("colors", found["colors"])
+                entry.setdefault("card_colors", found["card_colors"])
+            except (RuntimeError, ValueError):
+                pass
     with roster_lock:
         roster = load_roster()
         # Names match the way the statistics do, whatever case they were typed in.

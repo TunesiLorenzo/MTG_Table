@@ -42,7 +42,8 @@
       "art_focus": "51.8% 7.5%",
       "cards": [
         "Backgrounds/Commander/arcades_strategist.webp"
-      ]
+      ],
+      "card_colors": "WUG"
     },
     "Azlask": {
       "commander": "Azlask, the Swelling Scourge",
@@ -51,7 +52,8 @@
       "cards": [
         "Backgrounds/Commander/Azlask.jpg"
       ],
-      "sound": "Azlask.wav"
+      "sound": "Azlask.wav",
+      "card_colors": "C"
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
@@ -60,7 +62,8 @@
         "Backgrounds/Commander/Cloud.webp"
       ],
       "colors": "WRG",
-      "sound": "FF7.wav"
+      "sound": "FF7.wav",
+      "card_colors": "WRG"
     },
     "Commodoro": {
       "commander": "Commodore Guff",
@@ -70,7 +73,8 @@
       "cards": [
         "Backgrounds/Commander/CommodorGuff.webp"
       ],
-      "sound": "Guff.wav"
+      "sound": "Guff.wav",
+      "card_colors": "WUR"
     },
     "Dwight": {
       "commander": "Dwight o' Lantern",
@@ -80,7 +84,8 @@
       "cards": [
         "Backgrounds/Commander/Dwight_O_lantern.webp"
       ],
-      "sound": "Dwight_o_lantern.wav"
+      "sound": "Dwight_o_lantern.wav",
+      "card_colors": "WUBRG"
     },
     "Leonardo": {
       "commander": "Leonardo, the Balance & Dina, Essence Brewer",
@@ -89,7 +94,8 @@
         "Backgrounds/Commander/LeonardoTMNT.webp"
       ],
       "colors": "WUBRG",
-      "sound": "Leonardo_The_Balance.wav"
+      "sound": "Leonardo_The_Balance.wav",
+      "card_colors": "WBG"
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
@@ -98,7 +104,8 @@
       "cards": [
         "Backgrounds/Commander/Narset.jpg"
       ],
-      "sound": "Fight Whoosh.mp3"
+      "sound": "Fight Whoosh.mp3",
+      "card_colors": "WUR"
     },
     "Niv-Mizzet": {
       "commander": "niv-mizzet parun",
@@ -107,7 +114,8 @@
       "art_focus": "51.6% 8.6%",
       "cards": [
         "Backgrounds/Commander/Niv-Mizzet.jpg"
-      ]
+      ],
+      "card_colors": "UR"
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
@@ -115,7 +123,8 @@
       "art": "Backgrounds/Players/Oloro.jpg",
       "cards": [
         "Backgrounds/Commander/Oloro.png"
-      ]
+      ],
+      "card_colors": "WUB"
     },
     "Urza": {
       "commander": "Urza, Lord High Artificer",
@@ -124,7 +133,8 @@
       "cards": [
         "Backgrounds/Commander/Urza.jpg"
       ],
-      "sound": "Electricity.mp3"
+      "sound": "Electricity.mp3",
+      "card_colors": "U"
     },
     "Yuna": {
       "commander": "Yuna, Grand Summoner",
@@ -133,7 +143,8 @@
       "cards": [
         "Backgrounds/Commander/Yuna.jpg"
       ],
-      "sound": "Chimes.mp3"
+      "sound": "Chimes.mp3",
+      "card_colors": "WUG"
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
@@ -143,14 +154,16 @@
       "cards": [
         "Backgrounds/Commander/Zhulodok.jpg"
       ],
-      "sound": "Lovecraft Growl.mp3"
+      "sound": "Lovecraft Growl.mp3",
+      "card_colors": "C"
     },
     "Vaevictis": {
       "commander": "Vaevictis asmadi, the Dire",
       "colors": "BRG",
       "cards": [
         "Backgrounds/Commander/Vaevictis.jpg"
-      ]
+      ],
+      "card_colors": "BRG"
     },
     "Lumra": {
       "commander": "Lumra, Bellows of the beast",
@@ -169,7 +182,8 @@
       "cards": [
         "Backgrounds/Commander/DinaEssenceBrewer.webp"
       ],
-      "sound": "Dina.wav"
+      "sound": "Dina.wav",
+      "card_colors": "BG"
     },
     "Obeka": {
       "commander": "Obeka, Splitter of Seconds",
@@ -178,7 +192,8 @@
       "art_focus": "57.2% 13.4%",
       "cards": [
         "Backgrounds/Commander/Obeka.jpg"
-      ]
+      ],
+      "card_colors": "UBR"
     },
     "Beamtown Bullies": {
       "commander": "Beamtown Bullies",
@@ -188,7 +203,8 @@
       "cards": [
         "Backgrounds/Commander/BeamtownBullies.jfif"
       ],
-      "sound": "BeamTownBullies.wav"
+      "sound": "BeamTownBullies.wav",
+      "card_colors": "BRG"
     }
   }
 }

@@ -192,6 +192,53 @@ function manaVar(colors) {
   return `--mana:${(stops.length === 1 ? [stops[0], stops[0]] : stops).join(",")};`;
 }
 
+/* ---------------------------------------------------------------- theme -- */
+
+/* A deck's page takes its theme from its commander: the colour of the card
+   itself (Scryfall's card_colors) when known, otherwise its colour identity.
+   No colour is colourless, one is that colour, two is their guild, three is
+   their shard or wedge, and four or five is gold. The roster's "theme"
+   overrides it, chosen in the editor. A key lists its colours with the one
+   that paints the page first: a shard's centre colour, a wedge's clan colour
+   as on Khans of Tarkir. */
+const THEMES = {
+  w: "White", u: "Blue", b: "Black", r: "Red", g: "Green", c: "Colourless", gold: "Gold",
+  wu: "Azorius", ub: "Dimir", br: "Rakdos", rg: "Gruul", gw: "Selesnya",
+  wb: "Orzhov", ur: "Izzet", bg: "Golgari", rw: "Boros", gu: "Simic",
+  wgu: "Bant", uwb: "Esper", bur: "Grixis", rbg: "Jund", grw: "Naya",
+  wbg: "Abzan", urw: "Jeskai", bgu: "Sultai", rwb: "Mardu", gur: "Temur",
+};
+
+function themeFromColors(value) {
+  if (typeof value !== "string" || !value) return "";
+  const colors = [...value.toLowerCase()].filter((color) => "wubrg".includes(color));
+  if (!colors.length) return "c";
+  if (colors.length === 1) return colors[0];
+  if (colors.length <= 3) return Object.keys(THEMES).find((key) => key.length === colors.length && colors.every((color) => key.includes(color)));
+  return "gold";
+}
+const autoTheme = (name) => themeFromColors(deckInfo(name).card_colors) || themeFromColors(deckInfo(name).colors);
+const deckTheme = (name, override = deckInfo(name).theme) => (override in THEMES ? override : autoTheme(name));
+
+/* Paints the page in a theme ("" for the page's own), and points the embers,
+   the bursts and the sigil at the given colours (none for all five). */
+function applyTheme(key, colors = []) {
+  const root = document.documentElement;
+  delete root.dataset.themeC;
+  if (key in THEMES) {
+    const [first, second, third] = key.length <= 3 ? [...key] : [key];
+    root.dataset.themeA = first;
+    root.dataset.themeB = second || first;
+    if (third) root.dataset.themeC = third;
+  } else {
+    delete root.dataset.themeA;
+    delete root.dataset.themeB;
+  }
+  const lit = new Set(colors.map((color) => color.toLowerCase()).filter((color) => "wubrg".includes(color)));
+  for (const symbol of document.querySelectorAll(".sigil-symbol")) symbol.classList.toggle("is-dim", lit.size > 0 && !lit.has(symbol.dataset.color));
+  embers.setColors(colors);
+}
+
 /* A place in the standings, read the way a set symbol reads its rarity. */
 const RARITY_NAMES = { mythic: "Mythic rare", rare: "Rare", uncommon: "Uncommon", common: "Common" };
 function rarity(position) {
@@ -332,6 +379,16 @@ function backLink(kind) {
 
 /* ---------------------------------------------------------------- views -- */
 
+/* The standings' columns, each with the short heading a phone shows instead;
+   the key under the table spells the short ones out. */
+const STANDINGS_COLUMNS = [
+  ["#", "#"], ["Player", "Player"], ["Recorded games", "GP"], ["Recorded wins", "W"], ["Historical wins", "HW"],
+  ["Recorded win rate", "W%"], ["Top 2", "T2"], ["Avg. finish", "Avg"],
+];
+const standingsHead = () => STANDINGS_COLUMNS.map(([long, short]) => long === short
+  ? `<th>${long}</th>`
+  : `<th title="${long}"><span class="th-long">${long}</span><span class="th-short" aria-hidden="true">${short}</span></th>`).join("");
+
 function homeView() {
   const champion = stats.players[0];
   const strongest = stats.decks[0];
@@ -357,9 +414,10 @@ function homeView() {
     <section class="card">
       ${heading("ALL-TIME TABLE", "Player standings", "Sorted by recorded wins, then historical wins")}
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Player</th><th>Recorded games</th><th>Recorded wins</th><th>Historical wins</th><th>Recorded win rate</th><th>Top 2</th><th>Avg. finish</th></tr></thead>
+        <thead><tr>${standingsHead()}</tr></thead>
         <tbody>${standings}</tbody>
       </table></div>
+      <p class="table-key" aria-hidden="true">GP games · W wins · HW historical wins · W% win rate · T2 top-two finishes · Avg average finish</p>
     </section>
     <section class="card">
       ${heading("ALL-TIME WINS", "Player win histogram")}
@@ -503,6 +561,10 @@ function startSlides() {
 
 /* -------------------------------------------------------------- effects -- */
 
+/* What the embers and bursts are made of; applyTheme() narrows it to a deck's
+   colours. startEmbers() fills in setColors once it is running. */
+const embers = { colors: [], bursts: [...MANA_ORDER], setColors: () => {} };
+
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
 /* The CSS for entrances only applies under .motion, so with reduced motion,
@@ -595,9 +657,17 @@ function startEmbers() {
   if (!canvas || reducedMotion.matches) return;
   const context = canvas.getContext("2d");
   const root = getComputedStyle(document.documentElement);
-  const colors = ["--mana-w", "--mana-u", "--mana-b", "--mana-r", "--mana-g", "--bronze-light", "--bronze-light"]
-    .map((name) => root.getPropertyValue(name).trim() || "#e3bb7a");
-  const manaColor = Object.fromEntries(MANA_ORDER.map((color) => [color, root.getPropertyValue(`--mana-${color.toLowerCase()}`).trim()]));
+  const manaColor = Object.fromEntries([...MANA_ORDER, "C"].map((color) => [color, root.getPropertyValue(`--mana-${color.toLowerCase()}`).trim()]));
+  const allColors = [...MANA_ORDER.map((color) => manaColor[color]), "#e3bb7a", "#e3bb7a"];
+  embers.colors = allColors;
+  /* A deck's colours plus its theme's accent; none means all five again. */
+  embers.setColors = (letters) => {
+    const chosen = letters.map((color) => color.toUpperCase()).filter((color) => color in manaColor);
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--bronze-light").trim() || "#e3bb7a";
+    embers.colors = chosen.length ? [...chosen.map((color) => manaColor[color]), accent] : allColors;
+    embers.bursts = chosen.length ? chosen : [...MANA_ORDER];
+    for (const mote of motes) mote.color = embers.colors[Math.floor(Math.random() * embers.colors.length)];
+  };
   const pointer = { x: -1e4, y: -1e4 };
   const sparks = [];
   const rings = [];
@@ -611,7 +681,7 @@ function startEmbers() {
     rise: 10 + Math.random() * 28,
     sway: 6 + Math.random() * 18,
     phase: Math.random() * Math.PI * 2,
-    color: colors[Math.floor(Math.random() * colors.length)],
+    color: embers.colors[Math.floor(Math.random() * embers.colors.length)],
     glow: 0.35 + Math.random() * 0.5,
     pushX: 0,
     pushY: 0,
@@ -631,7 +701,7 @@ function startEmbers() {
   document.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   resize();
 
-  const burst = (x, y, color = MANA_ORDER[Math.floor(Math.random() * MANA_ORDER.length)]) => {
+  const burst = (x, y, color = embers.bursts[Math.floor(Math.random() * embers.bursts.length)]) => {
     const tint = manaColor[color];
     for (let index = 0; index < 42; index += 1) {
       const angle = Math.random() * Math.PI * 2;
@@ -809,6 +879,9 @@ function route() {
   if (kind === "player" && name) app.innerHTML = playerView(name);
   else if (kind === "deck" && name) app.innerHTML = deckView(name);
   else app.innerHTML = homeView();
+  const deck = kind === "deck" && name && stats.deckIndex.get(keyOf(name));
+  if (deck) applyTheme(deckTheme(deck.name), deckColors(deck.name));
+  else applyTheme("");
   startSlides();
   startDeckSound();
   revealOnScroll();
@@ -844,12 +917,90 @@ async function loadJson(path) {
 
 /* ------------------------------------------------------------- grimoire -- */
 
-/* The opening: a grimoire rises, its cover swings open, three pages turn,
-   light and the five mana symbols pour out, and it zooms away into the
-   leaderboard. Its markup is in index.html and its timing in site.css;
-   this ends it after GRIMOIRE_SECONDS, or at once on a click or a key.
-   The promise resolves as it starts to fade, so the page rises in behind. */
-const GRIMOIRE_SECONDS = 2.9;
+/* The opening: an ancient tome rises, its emblem burns awake, it opens and
+   two pages turn, then the magic writes itself across the pages, ignites,
+   and pours out as light and the five mana symbols before it zooms away.
+   Its markup is in index.html and its timing in site.css; this writes the
+   ink (fresh scribbles every time), ends it after GRIMOIRE_SECONDS or at
+   once on a click or a key, and resolves as it starts to fade, so the page
+   rises in behind it. */
+const GRIMOIRE_SECONDS = 3.9;
+const RUNES = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ";
+
+/* A line of cursive that is not quite any language: humps, cups, loops above
+   and below the line, and gaps between "words", drifting a little. */
+function scribble(x, y, width) {
+  const n = (value) => value.toFixed(1);
+  let d = `M${n(x)} ${n(y)}`;
+  let along = x;
+  while (along < x + width - 6) {
+    const w = 2.6 + Math.random() * 3.4;
+    const h = 2 + Math.random() * 2.4;
+    const drift = (Math.random() - 0.5) * 0.5;
+    const shape = Math.random();
+    if (shape < 0.16) { d += ` c${n(w * 0.2)} ${n(-h * 2.9)} ${n(w * 0.95)} ${n(-h * 2.9)} ${n(w * 0.5)} ${n(drift)}`; along += w * 0.5; }
+    else if (shape < 0.28) { d += ` c${n(w * 0.2)} ${n(h * 2.3)} ${n(w * 0.95)} ${n(h * 2.3)} ${n(w * 0.5)} ${n(drift)}`; along += w * 0.5; }
+    else if (shape < 0.55) { d += ` q${n(w / 2)} ${n(-h * 1.4)} ${n(w)} ${n(drift)}`; along += w; }
+    else if (shape < 0.78) { d += ` q${n(w / 2)} ${n(h * 0.9)} ${n(w)} ${n(drift)}`; along += w; }
+    else { d += ` c${n(w * 0.1)} ${n(-h * 1.3)} ${n(w * 0.95)} ${n(-h * 1.3)} ${n(w * 0.4)} ${n(drift)}`; along += w * 0.4; }
+    if (Math.random() < 0.13) {
+      const gap = 4 + Math.random() * 5;
+      d += ` m${n(gap)} ${n((Math.random() - 0.5) * 0.8)}`;
+      along += gap;
+    }
+  }
+  return d;
+}
+
+/* A circle drawn by hand: a slightly uneven ring that overshoots its start. */
+function wobblyCircle(cx, cy, r) {
+  const points = 28;
+  const start = Math.random() * Math.PI * 2;
+  let d = "";
+  for (let index = 0; index <= points + 2; index += 1) {
+    const angle = start + index / points * Math.PI * 2;
+    const radius = r * (1 + (Math.random() - 0.5) * 0.035);
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    d += `${index ? " L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function inkPage(svg, page) {
+  const strokes = [];
+  const write = (d, start, seconds, extra = "") => strokes.push(`<path class="ink${extra}" pathLength="1" d="${d}" style="--t:${start.toFixed(2)}s;--d:${seconds.toFixed(2)}s"/>`);
+  const lines = (from, to, step, x, width, start, extra = "") => {
+    for (let y = from, index = 0; y <= to; y += step, index += 1) {
+      const length = width * (0.62 + Math.random() * 0.38);
+      write(scribble(x, y + (Math.random() - 0.5), length), start + index * 0.1, 0.32 + length / 600, extra);
+    }
+  };
+  if (page === "faded") {
+    lines(34, 300, 13, 30, 180, 0);
+  } else if (page === "left") {
+    write(scribble(40, 40, 120), 2.2, 0.4, " ink-bold ink-red");
+    lines(60, 150, 13, 30, 182, 2.3);
+    write(wobblyCircle(120, 214, 38), 2.45, 0.5);
+    write("M120 180 L152 232 L88 232 Z", 2.7, 0.45);
+    write(wobblyCircle(120, 214, 8), 2.85, 0.2);
+    lines(272, 308, 12, 30, 182, 2.6);
+  } else {
+    write("M28 44 c-6 -14 14 -20 16 -6 c2 12 -14 14 -10 2", 2.15, 0.3, " ink-bold ink-red");
+    write(scribble(50, 40, 110), 2.2, 0.4, " ink-bold ink-red");
+    write(wobblyCircle(120, 158, 64), 2.25, 0.55);
+    write(wobblyCircle(120, 158, 52), 2.4, 0.5);
+    const tips = [0, 2, 4, 1, 3, 0].map((step) => {
+      const angle = -Math.PI / 2 + step * Math.PI * 2 / 5;
+      return `${(120 + Math.cos(angle) * 48).toFixed(1)} ${(158 + Math.sin(angle) * 48).toFixed(1)}`;
+    });
+    write(`M${tips.join(" L")}`, 2.55, 0.55);
+    write(wobblyCircle(120, 158, 9), 2.85, 0.2);
+    strokes.push(`<path id="ink-rune-ring" d="M120 158m-58 0a58 58 0 1 1 116 0a58 58 0 1 1-116 0" stroke="none"/><text style="--t:2.5s"><textPath href="#ink-rune-ring" textLength="355">${RUNES}${RUNES.slice(0, 8)}</textPath></text>`);
+    lines(236, 302, 12, 30, 182, 2.3);
+  }
+  svg.innerHTML = strokes.join("");
+}
 
 function playGrimoire() {
   const book = document.querySelector(".grimoire");
@@ -858,6 +1009,14 @@ function playGrimoire() {
     return Promise.resolve();
   }
   try { sessionStorage.setItem("grimoire-opened", "1"); } catch (error) { /* plays again next time */ }
+  for (const svg of book.querySelectorAll(".grimoire-ink")) inkPage(svg, svg.dataset.ink);
+  /* Dust shaken loose as the cover opens. */
+  for (let index = 0; index < 18; index += 1) {
+    const mote = document.createElement("span");
+    mote.className = "grimoire-dust";
+    mote.style.cssText = `left:${38 + Math.random() * 30}%;top:${40 + Math.random() * 28}%;--t:${(1 + Math.random() * 0.8).toFixed(2)}s;--dx:${((Math.random() - 0.5) * 80).toFixed(0)}px`;
+    book.append(mote);
+  }
   return new Promise((resolve) => {
     let closed = false;
     const close = () => {

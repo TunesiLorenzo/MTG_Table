@@ -92,7 +92,7 @@ h2 { margin: 3px 0 0; font-size: 1.3rem; letter-spacing: -.02em; }
 .historical-entry { display: flex; align-items: center; gap: 9px; padding: 7px 8px 7px 12px; border: 1px solid #4b425c; border-radius: 999px; background: #100d19; font-size: .8rem; }
 .historical-entry strong { color: var(--gold); }
 .delete-historical { min-height: 28px; padding: 0 9px; border-color: #60384c; border-radius: 999px; background: transparent; color: #d996aa; font-size: .68rem; }
-.legacy-note { color: var(--gold); font-size: .67rem; font-weight: 700; }
+.legacy-cell { color: var(--muted, #aaa2b8); }
 .date-field { display: grid; gap: 5px; margin: 0; color: var(--muted); font-size: .72rem; font-weight: 700; }
 input, select, button { min-height: 46px; border: 1px solid #4b425c; border-radius: 12px; font: inherit; }
 input, select { width: 100%; padding: 0 13px; background: #100d19; color: #fff; }

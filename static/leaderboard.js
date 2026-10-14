@@ -11,9 +11,9 @@ function renderSummary(stats) {
   const mostPlayed = [...stats.decks].sort((a, b) => b.games - a.games || b.wins - a.wins)[0];
   const cards = [
     ["GAMES RECORDED", games.length, games.length === 1 ? "match in the archive" : "matches in the archive"],
-    ["MOST WINS", champion ? champion.name : "—", champion ? `${champion.wins} total win${champion.wins === 1 ? "" : "s"}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
-    ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${[...strongest.pilots].sort().join(", ")} · ${strongest.wins} wins · ${Math.round(strongest.wins / strongest.games * 100)}% rate` : "No results yet"],
-    ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${[...mostPlayed.pilots].sort().join(", ")} · ${mostPlayed.games} appearance${mostPlayed.games === 1 ? "" : "s"}` : "No results yet"],
+    ["MOST WINS", champion ? champion.name : "—", champion ? `${champion.detailedWins} recorded win${champion.detailedWins === 1 ? "" : "s"}${champion.historicalWins ? ` · ${champion.historicalWins} historical` : ""}` : "No results yet"],
+    ["STRONGEST DECK", strongest ? strongest.name : "—", strongest ? `${[...strongest.players].sort().join(", ")} · ${strongest.wins} wins · ${Math.round(strongest.wins / strongest.games * 100)}% rate` : "No results yet"],
+    ["MOST PLAYED DECK", mostPlayed ? mostPlayed.name : "—", mostPlayed ? `${[...mostPlayed.players].sort().join(", ")} · ${mostPlayed.games} appearance${mostPlayed.games === 1 ? "" : "s"}` : "No results yet"],
   ];
   $("#summary-grid").innerHTML = cards.map(([label, value, detail]) => `<article class="summary"><span class="eyebrow">${escapeHtml(label)}</span><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join("");
 }
@@ -33,9 +33,9 @@ function renderChart(target, entries, kind) {
     const detail = kind === "player"
       ? `${entry.wins} win${entry.wins === 1 ? "" : "s"}${entry.historicalWins ? ` · ${entry.historicalWins} historical` : ""}`
       : `${entry.wins}W${winRate === null ? "" : ` · ${winRate}%`}`;
-    const pilots = kind === "deck" ? [...entry.pilots].sort().join(", ") : "";
+    const players = kind === "deck" ? [...entry.players].sort().join(", ") : "";
     const label = kind === "deck"
-      ? `<span class="bar-label deck-label" title="${escapeHtml(`${entry.name} — ${pilots}`)}"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(pilots)}</small></span>`
+      ? `<span class="bar-label deck-label" title="${escapeHtml(`${entry.name} — ${players}`)}"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(players)}</small></span>`
       : `<span class="bar-label" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</span>`;
     return `<div class="bar-item">${label}<span class="bar-track"><span class="bar-fill" style="--width:${width}%"></span></span><span class="bar-value">${detail}</span></div>`;
   }).join("");
@@ -44,13 +44,13 @@ function renderChart(target, entries, kind) {
 function renderStandings(players) {
   const body = $("#standings-body");
   if (!players.length) {
-    body.innerHTML = '<tr><td colspan="7"><div class="empty">Standings appear after the first recorded game.</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="8"><div class="empty">Standings appear after the first recorded game.</div></td></tr>';
     return;
   }
   body.innerHTML = players.map((player, index) => `<tr>
     <td>${index + 1}</td>
-    <td class="player-cell"><strong>${escapeHtml(player.name)}</strong><small>${player.decks.size} recorded deck${player.decks.size === 1 ? "" : "s"}${player.historicalWins ? ` · <span class="legacy-note">${player.historicalWins} historical win${player.historicalWins === 1 ? "" : "s"}</span>` : ""}</small></td>
-    <td>${player.games || "—"}</td><td>${player.wins}</td><td>${player.games ? `${Math.round(player.detailedWins / player.games * 100)}%` : "—"}</td>
+    <td class="player-cell"><strong>${escapeHtml(player.name)}</strong><small>${player.decks.size} recorded deck${player.decks.size === 1 ? "" : "s"}</small></td>
+    <td>${player.games || "—"}</td><td>${player.detailedWins}</td><td class="legacy-cell">${player.historicalWins || "—"}</td><td>${player.games ? `${Math.round(player.detailedWins / player.games * 100)}%` : "—"}</td>
     <td>${player.games ? player.topTwos : "—"}</td><td>${player.games ? (player.rankTotal / player.games).toFixed(2) : "—"}</td>
   </tr>`).join("");
 }
@@ -79,7 +79,8 @@ function renderHistory() {
 render = function () {
   const stats = aggregate();
   renderSummary(stats);
-  renderChart("#player-chart", stats.players, "player");
+  // The chart is all-time wins, so it keeps its own order by the total.
+  renderChart("#player-chart", [...stats.players].sort((a, b) => b.wins - a.wins), "player");
   renderChart("#deck-chart", stats.decks, "deck");
   renderStandings(stats.players);
   renderHistory();

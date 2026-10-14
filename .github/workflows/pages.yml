@@ -1,7 +1,7 @@
 name: Publish leaderboard
 
 # Rebuilds the public leaderboard whenever something it shows changes: a new
-# result in game_history.json, a picture, or the site itself.
+# result in game_history.json, a picture, a deck sound, or the site itself.
 on:
   push:
     branches: [main]
@@ -9,6 +9,7 @@ on:
       - "site/**"
       - "game_history.json"
       - "Backgrounds/**"
+      - "sound/Commander/**"
       - "build_site.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:

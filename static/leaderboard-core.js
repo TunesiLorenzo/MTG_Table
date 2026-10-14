@@ -44,11 +44,11 @@ function aggregate() {
       const playerKey = result.name.toLocaleLowerCase();
       const deckKey = result.deck.toLocaleLowerCase();
       if (!players.has(playerKey)) players.set(playerKey, { name: result.name, games: 0, detailedWins: 0, historicalWins: 0, wins: 0, topTwos: 0, rankTotal: 0, decks: new Set() });
-      if (!decks.has(deckKey)) decks.set(deckKey, { name: result.deck, games: 0, wins: 0, rankTotal: 0, pilots: new Set() });
+      if (!decks.has(deckKey)) decks.set(deckKey, { name: result.deck, games: 0, wins: 0, rankTotal: 0, players: new Set() });
       const player = players.get(playerKey);
       const deck = decks.get(deckKey);
       player.games += 1; player.rankTotal += result.rank; player.decks.add(result.deck);
-      deck.games += 1; deck.rankTotal += result.rank; deck.pilots.add(result.name);
+      deck.games += 1; deck.rankTotal += result.rank; deck.players.add(result.name);
       if (!isDraw && result.rank === 1) { player.detailedWins += 1; player.wins += 1; deck.wins += 1; }
       if (result.rank <= 2) player.topTwos += 1;
     }
@@ -62,7 +62,8 @@ function aggregate() {
   }
   const finish = (entry) => entry.games ? entry.rankTotal / entry.games : Number.POSITIVE_INFINITY;
   const rate = (entry) => entry.games ? entry.wins / entry.games : 0;
-  const playerList = [...players.values()].sort((a, b) => b.wins - a.wins || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
+  /* Standings go by recorded wins; wins from before recording only break ties. */
+  const playerList = [...players.values()].sort((a, b) => b.detailedWins - a.detailedWins || b.historicalWins - a.historicalWins || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
   const deckList = [...decks.values()].sort((a, b) => b.wins - a.wins || rate(b) - rate(a) || finish(a) - finish(b) || b.games - a.games || a.name.localeCompare(b.name));
   return { players: playerList, decks: deckList };
 }
