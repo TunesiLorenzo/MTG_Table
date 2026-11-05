@@ -150,7 +150,7 @@ h2 { margin: 3px 0 0; font: 700 1.22rem/1.2 var(--display); letter-spacing: .01e
   to { clip-path: polygon(-30% 0, 130% 0, 100% 100%, -30% 100%); }
 }
 @keyframes slide-settle { from { transform: scale(1.07); } to { transform: scale(1); } }
-@keyframes slide-leave { to { transform: translateX(4%) scale(1.03); filter: brightness(.45); } }
+@keyframes slide-leave { to { transform: translateX(4%) scale(1.03); filter: var(--slide-fade, brightness(1)) brightness(.45); } }
 @keyframes wipe-sweep {
   0% { left: -15%; opacity: 0; }
   12% { opacity: 1; }
@@ -261,6 +261,12 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 }
 .hero .discontinued-sash { top: 38px; left: -62px; width: 240px; padding: 7px 0; font-size: .74rem; letter-spacing: .2em; }
 .is-discontinued.has-art::before { filter: grayscale(.6) brightness(.85); }
+/* slide-leave darkens on top of this fade, so it stays grey on the way out. */
+.hero-slide.is-discontinued { --slide-fade: grayscale(.6) brightness(.85); filter: var(--slide-fade); }
+/* A player's banner cycles through their decks: the sash shows only while a
+   discontinued deck's art is up (startSlides() sets .shows-discontinued). */
+.discontinued-sash.is-cycling { opacity: 0; transition: opacity .6s ease; }
+.hero.shows-discontinued .discontinued-sash.is-cycling { opacity: 1; }
 
 /* ------------------------------------------------------------- settings -- */
 /* The speaker in the corner and its panel; see the settings section of site.js. */
@@ -358,8 +364,8 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
   .sigil-symbol { font-size: 26px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
   .hero.has-art { min-height: 300px; }
-  /* Room for the sash above the deck's name when the banner has no art to fill. */
-  .hero.is-discontinued { padding-top: 76px; }
+  /* Room for the sash above the deck's name or the player's photo. */
+  .hero.is-discontinued, .hero.has-sash { padding-top: 110px; }
   .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
   .loyalty-large { min-width: 42px; height: 38px; font-size: 1rem; }
   .card { padding: 17px; }

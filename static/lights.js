@@ -980,7 +980,50 @@ async function shutdownServer() {
   }
 }
 
+/* Off and straight back on: the server starts a fresh copy of itself and goes.
+   The old one answers for half a second more, so the wait for the new one
+   starts after that; the status polling carries on and picks it up. */
+async function restartServer() {
+  const button = $("#restart-server");
+  button.disabled = true;
+  setStatus("Restarting the server…", "busy");
+  try {
+    const result = await fetch("/api/restart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).then((r) => r.json());
+    if (!result.ok) throw new Error(result.message || "The server would not restart");
+    setStatus(result.message, "busy");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message === "Failed to fetch" ? "No answer from the server — it may be stopped." : error.message, "error");
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  for (let tries = 0; tries < 30; tries += 1) {
+    try {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      if (response.ok) {
+        button.disabled = false;
+        setStatus("Server restarted.", "success");
+        refreshStatus();
+        return;
+      }
+    } catch (_) { /* Not back yet. */ }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  button.disabled = false;
+  setStatus("The server has not come back yet — check the PC.", "error");
+}
+
 document.addEventListener("click", async (event) => {
+  if (event.target.closest("#restart-server")) {
+    if (window.confirm("Restart the local table server? The table display, lights, and leaderboard go offline for a few seconds while it turns off and back on.")) {
+      await restartServer();
+    }
+    return;
+  }
   if (event.target.closest("#shutdown")) {
     if (window.confirm("Turn off the local table server? The table display, lights, and leaderboard will all go offline until you start it again on the PC.")) {
       await shutdownServer();

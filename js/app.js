@@ -3497,6 +3497,41 @@
     });
   }
 
+  /* --- Restart the server ---
+     Off and straight back on: the server starts a fresh copy of itself and
+     goes. This page stays as it is and keeps its game; the button waits for
+     the new server to answer, so it can say when it is back. */
+  function restartServer() {
+    var button = document.getElementById('restart-server');
+    if (!button || button.disabled) return;
+    var reset = function (text) {
+      button.textContent = text;
+      window.setTimeout(function () {
+        button.textContent = 'Restart local server';
+        button.disabled = false;
+      }, 3000);
+    };
+    button.disabled = true;
+    button.textContent = 'Restarting…';
+    postJSON('/api/restart', {}, function (result) {
+      if (!result || !result.ok) { reset('Restart — no answer'); return; }
+      var tries = 0;
+      // The old server answers for half a second more, so give it time to go.
+      var check = function () {
+        tries += 1;
+        window.fetch('/api/status', { cache: 'no-store' }).then(function (response) {
+          if (!response.ok) throw new Error('not yet');
+          reset('Local server restarted');
+          syncHouseLights();
+        }).catch(function () {
+          if (tries < 30) window.setTimeout(check, 1000);
+          else reset('Not back yet — check the PC');
+        });
+      };
+      window.setTimeout(check, 2000);
+    });
+  }
+
   function syncHouseLights() {
     if (!window.fetch) return;
     window.fetch('/api/status', { cache: 'no-store' }).then(function (response) {
@@ -4149,6 +4184,10 @@
       if (action === 'shutdown' &&
           window.confirm('Turn off the local table server? Every page — this one, the lights, and the leaderboard — will go offline until you start it again on the PC.')) {
         shutdownServer();
+      }
+      if (action === 'restart-server' &&
+          window.confirm('Restart the local table server? Every page goes offline for a few seconds while it turns off and back on. This game is saved first.')) {
+        restartServer();
       }
       if (action === 'reset' &&
           window.confirm('Reset all life totals to ' + state.startingLife + ', and clear seat colours and art?')) {

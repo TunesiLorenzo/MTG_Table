@@ -44,6 +44,13 @@ server is still running behind it, still holding the port and the `rpgtable.loca
 name. It saves the table first and withdraws the mDNS advertisement on the way
 out. Starting it again is `python web.py` on the PC, as always.
 
+**Restarting the server:** the *Restart local server* button beside it does the
+same saving, then starts a fresh copy of the server with the same command line
+and stops the old one. The new copy waits for the old one to let go of the port
+before it serves, so pages are offline for a few seconds and then reconnect;
+`serve.py` does not open another browser tab when it comes back this way. The
+new copy runs in the same terminal window as the old one, if there was one.
+
 If Windows Firewall prompts, allow Python on private networks only, and make
 sure UDP 5353 is allowed on private networks or the name will not be discovered.
 
@@ -121,7 +128,10 @@ repository:
 ```
 
 Every field is optional. A player without a `background` gets the art of their
-most played deck, and a player without a `portrait` gets their initial. Only
+most played deck, and a player without a `portrait` gets their initial. A deck
+with `"discontinued": true` (the **Discontinued** box in its editor) is no
+longer played: it keeps its page, art, sound and results, and a crimson sash
+across its card and banner marks it retired. Only
 pictures named here are published; the rest of `Backgrounds/`, the sounds, and
 the other pages stay out of the site.
 

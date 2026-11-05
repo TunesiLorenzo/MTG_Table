@@ -12,7 +12,7 @@ import threading
 import webbrowser
 
 import mdns
-from web import app
+from web import app, wait_for_previous_server
 
 
 def main():
@@ -30,10 +30,14 @@ def main():
     print("Bound to {}:{} - other devices on the LAN can open it too.".format(args.host, args.port))
     print("Ctrl+C to stop.")
 
+    # A restart from the table or lights page: wait for the old server to go,
+    # and leave the browser alone - the pages already open reconnect.
+    restarted = wait_for_previous_server(args.host, args.port)
+
     if not args.no_mdns:
         mdns.register(args.port, hostname=args.hostname)
 
-    if not args.no_browser:
+    if not args.no_browser and not restarted:
         threading.Timer(0.7, lambda: webbrowser.open(url)).start()
 
     try:

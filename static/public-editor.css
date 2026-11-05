@@ -54,6 +54,9 @@ main { padding-bottom: 130px; }
 .editor-card .editor-deck-list button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: #e6cfa6; font-size: 1rem; }
 .editor-card .editor-deck-list button:hover { background: #2d241a; }
 .editor-deck-add { display: flex; gap: 8px; }
+/* A deck's Discontinued switch: a plain checkbox, not a full-width input. */
+.editor-check { display: inline-flex; align-items: center; gap: 10px; justify-self: start; color: #f3ece1; font-size: .9rem; cursor: pointer; }
+.editor-card .editor-check input { width: 18px; min-height: 0; height: 18px; padding: 0; accent-color: var(--bronze); cursor: pointer; }
 .editor-hint { margin: -6px 0 0 122px; color: var(--muted); font: italic .9rem var(--serif); }
 .editor-status { color: var(--muted); font-size: .82rem; }
 .editor-status.error { color: #ffb5c5; font-size: .82rem; }

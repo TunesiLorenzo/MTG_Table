@@ -212,7 +212,9 @@
            ${focusField("art", entry.art_focus)}
            <div class="editor-cards">${(entry.cards || []).map((card) => pictureField("cards", "Card", card, "No card")).join("")}</div>
            <button type="button" class="editor-add" data-add-card>+ Add a commander card</button>
-           ${soundField(entry.sound || "", entry.volume)}`
+           ${soundField(entry.sound || "", entry.volume)}
+           <div class="editor-field"><span>Status</span><label class="editor-check"><input type="checkbox" data-discontinued${entry.discontinued ? " checked" : ""}> Discontinued</label></div>
+           <p class="editor-hint">No longer played. It keeps its page, art, sound and results, with a banner saying it is retired.</p>`
         : `${pictureField("portrait", "Profile photo", entry.portrait || "", "Initial only")}
            ${pictureField("background", "Banner", entry.background || "", "Cycle through their decks")}
            ${focusField("background", entry.background_focus)}
@@ -428,7 +430,7 @@
         ? { commander: form.elements.commander.value, colors: colorBoxes().filter((box) => box.checked).map((box) => box.value).join(""),
             /* Kept only while they still belong to the commander typed in; else the server looks them up again. */
             card_colors: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.cardColors : "",
-            type_line: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.typeLine : "", theme: form.querySelector("[data-theme]").value, art: picked("art")[0] || "", art_focus: form.querySelector('[data-focus-for="art"]').dataset.focus, cards: picked("cards"), sound: form.querySelector("[data-sound]").value, volume: chosenVolume() }
+            type_line: form.dataset.cardColorsFor === form.elements.commander.value ? form.dataset.typeLine : "", theme: form.querySelector("[data-theme]").value, art: picked("art")[0] || "", art_focus: form.querySelector('[data-focus-for="art"]').dataset.focus, cards: picked("cards"), sound: form.querySelector("[data-sound]").value, volume: chosenVolume(), discontinued: form.querySelector("[data-discontinued]").checked }
         : { portrait: picked("portrait")[0] || "", background: picked("background")[0] || "", background_focus: form.querySelector('[data-focus-for="background"]').dataset.focus, decks: [...form.querySelectorAll(".editor-deck-list [data-deck]")].map((item) => item.dataset.deck) };
       soundPreview.pause();
       try {

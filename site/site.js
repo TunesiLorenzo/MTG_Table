@@ -126,7 +126,7 @@ function playerBanner(player) {
   if (own) return [{ picture: own, focus: playerInfo(player.name).background_focus, label: "" }];
   const seen = new Set();
   return byPlay(player.decks)
-    .map((deck) => ({ picture: deckInfo(deck.name).art, focus: deckInfo(deck.name).art_focus, label: deck.name }))
+    .map((deck) => ({ picture: deckInfo(deck.name).art, focus: deckInfo(deck.name).art_focus, label: deck.name, discontinued: deckInfo(deck.name).discontinued === true }))
     .filter(({ picture }) => picture && !seen.has(picture.full) && seen.add(picture.full));
 }
 
@@ -368,8 +368,9 @@ function commanderZone(player) {
     ? `<img src="${escapeHtml(card.thumb)}" alt="${escapeHtml(info.commander || deck.name)}">`
     : info.art ? `<span class="zone-art"${styleAttr(artVar(info.art, "thumb"), focusVar(info.art_focus))}></span>` : "";
   return `<section class="card commander-zone"${styleAttr(manaVar(colors))}>
+    ${discontinuedSash(deck.name)}
     ${picture ? `<a class="zone-slot" href="${deckHref(deck.name)}">${picture}</a>` : ""}
-    <div class="zone-body"><span class="eyebrow">COMMANDER ZONE · MOST PLAYED</span>
+    <div class="zone-body"><span class="eyebrow">COMMANDER ZONE · MOST PLAYED${isDiscontinued(deck.name) ? " · NO LONGER PLAYED" : ""}</span>
       <h2>${escapeHtml(info.commander || deck.name)}</h2>${pips(colors)}
       <p>${deckLink(deck.name)}, cast in ${deck.games} of ${plural(player.games, "recorded game")}.</p>
       <div class="zone-stats">${loyalty(deck.wins, "Wins with it")}<span>${plural(deck.wins, "win")} · ${percent(deck.wins, deck.games)} win rate · avg. finish ${average(deck)}</span></div>
@@ -481,8 +482,9 @@ function playerView(name) {
   document.title = `${player.name} · MTG Leaderboard`;
   return `
     ${backLink("player")}
-    <section class="hero${slides.length ? " has-art" : ""}"${styleAttr(manaVar(playerColors(player)))}>
-      ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
+    <section class="hero${slides.length ? " has-art" : ""}${slides.some((slide) => slide.discontinued) ? " has-sash" : ""}${slides[0]?.discontinued ? " shows-discontinued" : ""}"${styleAttr(manaVar(playerColors(player)))}>
+      ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide${slide.discontinued ? " is-discontinued" : ""}" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
+      ${slides.some((slide) => slide.discontinued) ? '<span class="discontinued-sash is-cycling" aria-hidden="true">Discontinued</span>' : ""}
       ${slides.length > 1 ? `<span class="hero-wipe" aria-hidden="true"></span><span class="hero-showing">${escapeHtml(slides[0].label)}</span>` : ""}
       <span class="hero-portrait">${portrait ? `<a class="zoomable" href="${escapeHtml(portrait.full)}" data-zoom="${escapeHtml(portrait.full)}" data-zoom-alt="${escapeHtml(player.name)}" aria-label="Enlarge ${escapeHtml(player.name)}'s photo">${avatar(player.name, "avatar-large")}</a>` : avatar(player.name, "avatar-large")}${loyalty(player.wins, "Total wins", "loyalty-large")}</span>
       <div><span class="eyebrow">PLAYER · #${position} IN THE STANDINGS</span><h1>${escapeHtml(player.name)}</h1>
@@ -590,6 +592,8 @@ function startSlides() {
     next.classList.add("is-active");
     replay(next, "is-entering");
     replay(wipe, "is-sweeping");
+    /* A discontinued deck's sash comes and goes with its art. */
+    hero.classList.toggle("shows-discontinued", next.classList.contains("is-discontinued"));
     if (label) {
       label.textContent = next.dataset.label;
       replay(label, "is-changing");

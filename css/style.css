@@ -1777,6 +1777,7 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
    would not press by accident. */
 .hub__action--stop { color: #ffb5c5; border-color: #7a3450; background: #2a1622; }
 .hub__action--stop:hover { color: #fff; border-color: #b3556f; }
+.hub__action--restart:disabled { opacity: .7; cursor: default; }
 .hub__action--stop.is-stopped { color: #8b8296; border-color: var(--line); background: #11161f; cursor: default; }
 
 /* --------------------------------------------------- day/night atmosphere -- */

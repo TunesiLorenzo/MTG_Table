@@ -15,6 +15,7 @@ import io
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -39,6 +40,11 @@ import mdns
 
 
 BASE_DIR = Path(__file__).resolve().parent
+# Where the server was started from, so a restart runs the same command line
+# from the same place.
+STARTUP_DIR = os.getcwd()
+# Set on the copy a restart starts; see wait_for_previous_server().
+RESTART_ENV = "MTG_TABLE_RESTARTED"
 app = Flask(__name__)
 
 # The existing bulb remains the center bulb. The other two start unassigned and
@@ -1129,6 +1135,9 @@ def roster_entry_from_payload(group, payload):
         entry["sound"] = validate_commander_sound(payload.get("sound"))
         if entry["sound"]:
             entry["volume"] = clean_sound_volume(payload.get("volume"))
+        # No longer played: the deck keeps its page, art and sound, and the
+        # site marks it with a banner.
+        entry["discontinued"] = payload.get("discontinued") is True
     else:
         entry["portrait"] = picture(payload.get("portrait"))
         entry["background"] = picture(payload.get("background"))
@@ -2417,21 +2426,60 @@ def shutdown_server():
     The reply goes out first and the process ends a moment later, so the page
     can say what happened rather than reporting a dead connection.
     """
+    save_before_stopping()
+    threading.Timer(0.5, stop_process).start()
+    return ok("Server stopping. This page will go offline until you start it again.")
+
+
+@app.post("/api/restart")
+def restart_server():
+    """Stop the server and start it again, the same way it was started.
+
+    The new copy starts straight away but waits for this one to let go of the
+    port before it serves (see wait_for_previous_server), so it reads the
+    table and results this one has just saved. Pages are offline for the few
+    seconds in between.
+    """
+    save_before_stopping()
+    try:
+        subprocess.Popen([sys.executable, *sys.argv], cwd=STARTUP_DIR, env={**os.environ, RESTART_ENV: "1"})
+    except OSError as error:
+        raise ValueError(f"Could not start a new server: {error}") from None
+    threading.Timer(0.5, stop_process).start()
+    return ok("Server restarting. Pages will be back in a few seconds.")
+
+
+def save_before_stopping():
     try:
         save_table_state()
         with history_lock:
             save_game_history()
     except Exception:
-        app.logger.exception("Could not save the table before shutting down")
+        app.logger.exception("Could not save the table before stopping")
 
-    def stop():
-        # os._exit skips atexit handlers, so withdraw the mDNS name by hand -
-        # leaving it advertised would point phones at a port nobody answers.
-        mdns.unregister()
-        os._exit(0)
 
-    threading.Timer(0.5, stop).start()
-    return ok("Server stopping. This page will go offline until you start it again.")
+def stop_process():
+    # os._exit skips atexit handlers, so withdraw the mDNS name by hand -
+    # leaving it advertised would point phones at a port nobody answers.
+    mdns.unregister()
+    os._exit(0)
+
+
+def wait_for_previous_server(host, port, timeout=20):
+    """On a copy started by a restart, wait until the old copy has let go of
+    the port, and report whether this copy is one. Windows would let both hold
+    the port at once (see the README), with the old one still answering."""
+    if not os.environ.pop(RESTART_ENV, None):
+        return False
+    probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket() as probe:
+            probe.settimeout(0.3)
+            if probe.connect_ex((probe_host, port)) != 0:
+                break
+        time.sleep(0.2)
+    return True
 
 
 load_table_state()
@@ -2442,6 +2490,7 @@ if __name__ == "__main__":
     print("MTG table display:  http://127.0.0.1:5001/")
     print("Light controls:     http://127.0.0.1:5001/lights")
     print("On your phone, use http://rpgtable.local:5001 while on the same Wi-Fi")
+    wait_for_previous_server("0.0.0.0", 5001)
     mdns.register(5001)
     try:
         app.run(host="0.0.0.0", port=5001, threaded=True)
