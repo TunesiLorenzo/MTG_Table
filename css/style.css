@@ -2253,6 +2253,48 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .coin-toss__pick:hover { background: color-mix(in srgb, var(--coin-accent) 40%, #0b0e14); }
 .coin-toss__pick:active { scale: .95; }
 
+/* Flip until lost: a switch beside the call, and a way in from a landed coin
+   when the coin is not normally called. Mid-run the coin goes again by
+   itself, so neither shows, and nor does the tap-to-flip hint. */
+.coin-toss__run,
+.coin-toss__start-run {
+  padding: 1.2vmin 2.4vmin;
+  color: var(--ink);
+  background: transparent;
+  border: .25vmin dashed color-mix(in srgb, var(--coin-accent) 70%, #fff);
+  border-radius: 1.4vmin;
+  font-family: var(--font-display);
+  font-size: 2.2vmin;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: scale 140ms var(--ease-out), background 180ms, color 180ms;
+}
+.coin-toss__run:active,
+.coin-toss__start-run:active { scale: .95; }
+.coin-toss__run[aria-pressed="true"] {
+  color: #fff;
+  background: color-mix(in srgb, var(--coin-accent) 40%, #0b0e14);
+  border-style: solid;
+  box-shadow: 0 0 3vmin color-mix(in srgb, var(--coin-accent) 35%, transparent);
+}
+/* Beside the result rather than under it: below the note there is no room
+   left on a wide screen. 33vmin is the half's padding, clear of the coin. */
+.coin-toss__half { position: relative; }
+.coin-toss__start-run {
+  position: absolute;
+  top: calc(33vmin + clamp(2rem, 8vmin, 6rem) / 2);
+  left: calc(50% + 21vmin);
+  translate: 0 -50%;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+.coin-toss.is-landed:not(.is-running) .coin-toss__start-run { opacity: 1; pointer-events: auto; transition: opacity 400ms 900ms; }
+.coin-toss.is-calling .coin-toss__start-run { display: none; }
+.coin-toss.is-running .coin-toss__hint { visibility: hidden; }
+
 .coin-toss__stage {
   position: absolute;
   inset: 0;

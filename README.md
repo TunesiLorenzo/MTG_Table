@@ -224,6 +224,13 @@ is random and the bounces, the roll round its rim and the side it stops on all
 follow from it. Tap the landed coin to flip again, which keeps a count of heads
 and tails until the coin is put away; tap anywhere else to put it away.
 
+For cards that flip until a flip is lost, press **Flip until lost** beside a
+landed coin, or **Until lost** beside Heads and Tails when the coin is called.
+The call is made once: the coin then throws itself again after every won flip,
+counting the wins in a row, and stops at the first loss with how many were won
+("Called heads · won 3, then lost"). Tapping the coin mid-run skips the pause
+before the next flip; tapping anywhere else puts the coin away and ends the run.
+
 The coin is struck in the colour of the player throwing it. Its two faces are
 the greyscale relief maps `static/coin_heads.png` (the planeswalker side) and
 `static/coin_tails.png` (the lettered side); replace them with any square

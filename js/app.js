@@ -2697,8 +2697,14 @@
     dom: null, frame: null, timer: null, whoosh: null,
     landed: false, calling: false,
     coin: null,          // the last coin thrown, lying where it stopped
-    heads: 0, tails: 0   // the tally since the coin was brought out
+    heads: 0, tails: 0,  // the tally since the coin was brought out
+    /* Flipping until a flip is lost, for cards that say so: `runArmed` while
+       Until lost is pressed in the call, then `run` holds the one call made
+       and the wins so far until the losing flip ends it. */
+    runArmed: false, run: null
   };
+  // How long a won flip of a run stays on show before the next throw.
+  var COIN_RUN_PAUSE = 1300;
   var coinNoise = null;
   var coinSoundFiles = [];
   var coinClips = [];
@@ -3218,10 +3224,11 @@
     coinToss.heads = coinToss.tails = 0;
     coinToss.coin = placeCoin(coinStart(table), null);
     coinToss.landed = coinToss.calling = false;
+    coinToss.run = null;
 
     dom.overlay.style.setProperty('--coin-accent', seatColor(state.currentPlayer));
     dom.overlay.style.setProperty('--coin-size', table.radius * 2 + 'vmin');
-    dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost');
+    dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost', 'is-running');
     dom.overlay.hidden = false;
     dom.overlay.classList.remove('is-active');
     poseCoin(dom, coinToss.coin, table);
@@ -3233,14 +3240,24 @@
   }
 
   /* Heads or tails, asked towards both long sides; the coin waits where it
-     lies until one of them is tapped. */
-  function askCoinCall() {
+     lies until one of them is tapped. `run` arms Until lost from the start. */
+  function askCoinCall(run) {
     var dom = coinDom();
     window.clearTimeout(coinToss.timer);
     coinToss.landed = false;
     coinToss.calling = true;
-    dom.overlay.classList.remove('is-landed', 'is-won', 'is-lost');
+    coinToss.run = null;
+    armCoinRun(!!run);
+    dom.overlay.classList.remove('is-landed', 'is-won', 'is-lost', 'is-running');
     dom.overlay.classList.add('is-calling');
+  }
+
+  /* Until lost is one choice shown on both sides, so both buttons follow it. */
+  function armCoinRun(armed) {
+    coinToss.runArmed = armed;
+    coinDom().overlay.querySelectorAll('[data-run]').forEach(function (button) {
+      button.setAttribute('aria-pressed', armed ? 'true' : 'false');
+    });
   }
 
   /* Throws the coin from where it lies and follows it until it is still.
@@ -3266,19 +3283,38 @@
       coinToss.landed = true;
       stopCoinWhoosh();
       coinToss[heads ? 'heads' : 'tails']++;
-      if (call) {
-        var won = call === (heads ? 'heads' : 'tails');
-        notes.push('Called ' + call + ', ' + (won ? 'won' : 'lost'));
+      var run = coinToss.run;
+      var won = !!call && call === (heads ? 'heads' : 'tails');
+      if (run) {
+        // A run counts its wins in place of the tally, and goes again by
+        // itself until the first loss.
+        if (won) run.wins++;
+        notes.push('Called ' + call + ' · ' + (won
+          ? 'won ' + run.wins + (run.wins > 1 ? ' in a row' : '')
+          : (run.wins ? 'won ' + run.wins + ', then lost' : 'lost the first flip')));
         dom.overlay.classList.add(won ? 'is-won' : 'is-lost');
-      }
-      // Worth keeping count once there is more than one: Krark's Thumb, a run
-      // of flips for Okaun, best of three.
-      if (coinToss.heads + coinToss.tails > 1) {
-        notes.push('Heads ' + coinToss.heads + ' · Tails ' + coinToss.tails);
+        if (!won) {
+          coinToss.run = null;
+          dom.overlay.classList.remove('is-running');
+        }
+      } else {
+        if (call) {
+          notes.push('Called ' + call + ', ' + (won ? 'won' : 'lost'));
+          dom.overlay.classList.add(won ? 'is-won' : 'is-lost');
+        }
+        // Worth keeping count once there is more than one: Krark's Thumb,
+        // best of three.
+        if (coinToss.heads + coinToss.tails > 1) {
+          notes.push('Heads ' + coinToss.heads + ' · Tails ' + coinToss.tails);
+        }
       }
       dom.results.forEach(function (label) { label.textContent = heads ? 'Heads' : 'Tails'; });
       dom.notes.forEach(function (note) { note.textContent = notes.join(' · '); });
       dom.overlay.classList.add('is-landed');
+      if (coinToss.run) {
+        coinToss.timer = window.setTimeout(function () { tossCoin(call); }, COIN_RUN_PAUSE);
+        return;
+      }
       // Set to stay, it is left out until it is tapped away.
       if (coinOption('hold')) coinToss.timer = window.setTimeout(closeCoinToss, coinOption('hold'));
     }
@@ -3331,8 +3367,21 @@
   /* A tap on the landed coin throws it again; anywhere else puts it away. */
   function tapCoinToss(event) {
     var dom = coinDom();
+    if (event.target.closest('[data-run]')) {
+      armCoinRun(!coinToss.runArmed);
+      return;
+    }
+    if (event.target.closest('[data-start-run]')) {
+      askCoinCall(true);
+      return;
+    }
     var pick = event.target.closest('[data-call]');
     if (pick) {
+      if (coinToss.runArmed) {
+        coinToss.run = { call: pick.dataset.call, wins: 0 };
+        dom.overlay.classList.add('is-running');
+      }
+      armCoinRun(false);
       tossCoin(pick.dataset.call);
       return;
     }
@@ -3345,6 +3394,8 @@
     var onCoin = event.clientX >= box.left && event.clientX <= box.right &&
       event.clientY >= box.top && event.clientY <= box.bottom;
     if (!onCoin) closeCoinToss();
+    // Mid-run, the coin goes again on its own; a tap only skips the wait.
+    else if (coinToss.run) tossCoin(coinToss.run.call);
     else if (coinSettings.call) askCoinCall();
     else tossCoin(null);
   }
@@ -3353,6 +3404,8 @@
     var dom = coinDom();
     window.clearTimeout(coinToss.timer);
     coinToss.landed = coinToss.calling = false;
+    coinToss.run = null;
+    dom.overlay.classList.remove('is-running');
     dom.overlay.classList.remove('is-active');
     coinToss.timer = window.setTimeout(function () {
       dom.overlay.hidden = true;
