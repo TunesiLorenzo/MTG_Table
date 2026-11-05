@@ -230,7 +230,8 @@
         "Backgrounds/Commander/BeamtownBullies.jfif"
       ],
       "sound": "BeamTownBullies.wav",
-      "volume": 39
+      "volume": 39,
+      "discontinued": true
     }
   }
 }

@@ -250,6 +250,17 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 .deck-gallery img { display: block; width: 100%; border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 16px 40px #05030a55; }
 .deck-art { flex: 3 1 420px; }
 .deck-printing { flex: 1 1 190px; max-width: 280px; }
+/* A discontinued deck: a crimson sash across the top-left corner of its card
+   and its page's banner, over art faded towards grey. The sash stays in the
+   body font so it reads the same under every theme's display face. */
+.discontinued-sash {
+  position: absolute; z-index: 2; top: 26px; left: -46px; width: 170px; padding: 5px 0; transform: rotate(-45deg); pointer-events: none;
+  background: linear-gradient(#a3301f, #6a160c); color: #fbe9d2; text-align: center; text-transform: uppercase; text-shadow: 0 1px 2px #0008;
+  font: 800 .6rem/1.2 Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .16em;
+  box-shadow: inset 0 1px 0 #f0b07a66, inset 0 -1px 0 #f0b07a40, 0 4px 12px #000a;
+}
+.hero .discontinued-sash { top: 38px; left: -62px; width: 240px; padding: 7px 0; font-size: .74rem; letter-spacing: .2em; }
+.is-discontinued.has-art::before { filter: grayscale(.6) brightness(.85); }
 
 /* ------------------------------------------------------------- settings -- */
 /* The speaker in the corner and its panel; see the settings section of site.js. */
@@ -347,6 +358,8 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
   .sigil-symbol { font-size: 26px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }
   .hero.has-art { min-height: 300px; }
+  /* Room for the sash above the deck's name when the banner has no art to fill. */
+  .hero.is-discontinued { padding-top: 76px; }
   .avatar-large { width: 84px; height: 84px; font-size: 2rem; }
   .loyalty-large { min-width: 42px; height: 38px; font-size: 1rem; }
   .card { padding: 17px; }

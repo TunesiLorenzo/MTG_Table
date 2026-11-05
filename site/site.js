@@ -305,12 +305,18 @@ function finishBars(entry, colors) {
   return bars(["1st", "2nd", "3rd", "4th"].map((label, index) => [label, label, entry.finishes[index], plural(entry.finishes[index], "game"), colors]));
 }
 
+/* A deck marked Discontinued in the editor: no longer played, but it keeps
+   its page, art, sound and results, with a sash across the corner. */
+const isDiscontinued = (name) => deckInfo(name).discontinued === true;
+const discontinuedSash = (name) => isDiscontinued(name) ? '<span class="discontinued-sash">Discontinued</span>' : "";
+
 /* Hovering a deck that has commander cards swaps its art for them. */
 function deckCard(deck, caption) {
   const info = deckInfo(deck.name);
   const colors = deckColors(deck.name);
   const cards = (info.cards || []).slice(0, 2);
-  return `<a class="deck-card${info.art ? " has-art" : ""}${colors.length ? " has-mana" : ""}" href="${deckHref(deck.name)}"${styleAttr(artVar(info.art, "thumb"), focusVar(info.art_focus), manaVar(colors))}>
+  return `<a class="deck-card${info.art ? " has-art" : ""}${colors.length ? " has-mana" : ""}${isDiscontinued(deck.name) ? " is-discontinued" : ""}" href="${deckHref(deck.name)}"${styleAttr(artVar(info.art, "thumb"), focusVar(info.art_focus), manaVar(colors))}>
+    ${discontinuedSash(deck.name)}
     <span class="deck-card-body"><span class="deck-card-name"><strong>${escapeHtml(deck.name)}</strong>${pips(colors)}</span><small>${escapeHtml(caption)}</small>
     ${deck.games ? `<span class="deck-card-stats">${deck.wins}W · ${plural(deck.games, "game")} · ${percent(deck.wins, deck.games)}</span>` : '<span class="deck-card-stats is-new">NOT PLAYED YET</span>'}</span>
     ${cards.length ? `<span class="deck-card-reveal" aria-hidden="true">${cards.map((card) => `<img src="${escapeHtml(card.thumb)}" alt="" loading="lazy">`).join("")}</span>` : ""}
@@ -514,9 +520,10 @@ function deckView(name) {
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
     ${backLink("deck")}
-    <section class="hero${info.art ? " has-art" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
+    <section class="hero${info.art ? " has-art" : ""}${isDiscontinued(deck.name) ? " is-discontinued" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
+      ${discontinuedSash(deck.name)}
       ${info.sound ? soundButton(info.sound, info.volume) : ""}
-      <div><span class="eyebrow">DECK · ${deck.games ? `#${position} BY WINS` : "NOT PLAYED YET"}</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
+      <div><span class="eyebrow">DECK · ${deck.games ? `#${position} BY WINS` : "NOT PLAYED YET"}${isDiscontinued(deck.name) ? " · NO LONGER PLAYED" : ""}</span><h1>${escapeHtml(deck.name)}</h1>${pips(colors)}
       <p>${info.commander ? `${escapeHtml(info.commander)} · ` : ""}${deck.games ? `Played by ${deckPeople(deck).map(playerLink).join(", ")}` : deck.owners.size ? `Owned by ${deckPeople(deck).map(playerLink).join(", ")}, not played yet` : "Not played yet"}.</p></div>
     </section>
     ${tiles([
