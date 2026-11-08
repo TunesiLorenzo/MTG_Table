@@ -101,9 +101,55 @@ average finish, strongest and most-played decks, performance charts, and a
 chronological game archive. Deck charts show each deck's player. Removing an
 incorrect game recalculates every statistic.
 
+**Game statistics.** A game saved from the life tracker's result window keeps
+the tracker's statistics with it (game time, starting life, and each player's
+turn times, damage, life gained, eliminations and the rest; see *Game
+statistics* under the life tracker). Results entered by hand on the entry page
+have none, and neither do games recorded before the tracker kept them. From
+those games the leaderboard and the public site both show:
+
+- **Each game's stats**, folded under its result in the archive (*Game stats*):
+  the game's awards and every player's numbers, the best in each column in gold.
+- **Records**: the slowest and fastest players (by average turn, once a player
+  has 5 tracked turns), the biggest hit ever, the most damage, life gained and
+  eliminations in one game, the longest single turn, the longest and quickest
+  games, and the player with the most awards.
+- **Per-player averages**: a *Player statistics* table on the leaderboard, and
+  a *Play style* section on each player's page on the site: average and longest
+  turn, damage, commander damage and life gained per game, eliminations, biggest
+  hit, and the awards they have won.
+
+The awards and records are worked out in one place, `js/game-stats.js`, which
+the table's end-of-game recap, the leaderboard and the public site all load, so
+all three always agree.
+
 Results are written immediately and atomically to `game_history.json`, and the
 shutdown button saves them again before the server stops. The file is tracked by
 Git, so committing after a game-night creates an additional versioned backup.
+
+## Sending games to Google Drive
+
+The result window can also hand the whole game out, beside **Save result**:
+
+- **Send to Drive** posts it to the game inbox, `mtg_games.json` in the table
+  owner's Google Drive (set up once, see [`drive/README.md`](drive/README.md)).
+  Without a connection the game is kept on the device and sent automatically
+  once it can be; until then the hub button carries a gold dot and the hub's
+  *Game* section has **Send N unsent games** and **Download them**.
+- **Download** saves it as a `.json` file, and **Share** (on phones that allow
+  it) passes that file straight to WhatsApp, Telegram or email.
+
+All three carry everything the tracker knows: the leaderboard entry with each
+player's stats, the final state of every seat, and a turn-by-turn timeline of
+life and poison with every elimination, its cause and who made it. The format
+is in `drive/README.md`. Nothing sent to Drive reaches the leaderboard by
+itself; importing it is a separate, manual step.
+
+Every game has its own id, kept by the leaderboard too, so the same game saved
+here and sent to Drive is one game, and saving it twice adds nothing. A result
+changed after it was handed out goes out as a correction that replaces the
+earlier one. On a page with no local server behind it, **Save result** is not
+shown and **Send to Drive** takes its place.
 
 ## The public copy (GitHub Pages)
 
@@ -169,7 +215,9 @@ Press **F11** or the hub's *Fullscreen* button to go edge to edge.
 | **Commander damage, poison, tax, seat setup** | Tap any counter chip to open that seat's tray |
 | **Player art** | Drag an image file onto that player's panel |
 | **Player entrance** | Turn it on in the hub, then tap the first player's wooden name cover to start the clockwise sequence |
+| **Skip the entrance** | Ctrl+click (Cmd+click on a Mac) any wooden name cover: they all drop at once, silently, and the first player is picked |
 | **House lights** | The lightbulb left of the turn button, or the hub menu |
+| **Stop / start the clock** | The hourglass left of the lightbulb, which shines yellow while the clock is stopped, or *Stop clock* in the hub |
 | **Resend the lighting** | The `⟳` below the turn button, or *Resend lights* in the hub |
 | Turn direction, starting life, reset, fullscreen | The hub beside the turn button |
 | Close the hub or a tray | The `×` / *Done*, a tap anywhere outside it, or `Esc` |
@@ -290,6 +338,25 @@ other way (a concession gets its own grey **CONCEDED** stamp); either fades the
 panel right back and skips that seat in the rotation, and **Back in the game**
 undoes it.
 
+Every elimination is announced: a random line from `sound/Announcer/Base/Death`
+(never the same one twice in a row), then the player's own clip from
+`sound/Announcer/Players/Death`, named after the player as the tracker spells
+them, ignoring case and punctuation (`Borgo.mp3` for *borgo*). The name starts
+a moment before the line ends, over its tail. A player without a clip gets just
+the line.
+
+At the same time the player's background sweeps into the middle as the entrance
+title card, in the same frame and the same shape as their quadrant, and as the
+name is called it sinks into flame and burns away like a revealed commander,
+with `Fire.mp3` and the commander burn's lighting. A seat with no background
+gets only the announcement.
+
+Players knocked out together go one after another, and on the last elimination
+the winner's drum roll waits for the burn to finish. **Back in the game** cuts it
+short. The lights page's **Sound & timing** tab switches the announcement and
+the burn on or off separately, can leave concessions out, and sets how early the
+name starts and the volume.
+
 ### Seat colour and art
 
 The colour dot at the top of the tray, beside the player's name, sets a seat's
@@ -298,9 +365,11 @@ opponents see for them. **Drag an image file onto a
 panel** to use it as that seat's background; it is downscaled and stored with the
 rest of the table state, and *Clear art* removes it.
 
-*Reset Game* clears seat colours and art along with the counters, for a clean
-table between groups. Switching *Start* life resets the totals but keeps them,
-so changing the format mid-setup does not wipe everyone's art.
+*Reset Game* puts the life totals and counters back to the start, the clock
+stopped at 0:00 until the first player is picked, and turns on the house
+lights. Each seat keeps whatever deck preset it has on — colours, art and
+sounds. Switching *Start* life resets the totals the same way, without
+touching the lights.
 
 ### Player entrance
 
@@ -340,6 +409,70 @@ The turn passes around the **physical table** (top-left → top-right →
 bottom-right → bottom-left), not across the grid, and **eliminated players are
 skipped**. Turning *Lights follow turn* on in the hub makes every configured bulb
 take the new player's color on each turn change — see *Player colors* below.
+
+### Game statistics
+
+The tracker keeps score of each player's game as it goes. Each seat's tray
+ends with a one-line summary for that player (time, turns, average turn,
+damage dealt, life gained, kills), and **Game stats** in the hub shows every
+player side by side, live, with the highest value in each row in gold. The
+same table appears in the result window when the game ends, and is saved with
+the result in `game_history.json`.
+
+| Stat | How it is counted |
+| --- | --- |
+| Play time, turns, avg and longest turn | From each pass of the turn. A turn under 5 seconds is a slipped pass and is not counted; passing back with Backspace takes the last turn off again and lets its clock carry on |
+| Damage dealt | Life an opponent loses **during your turn**. The buttons sit on the panel that takes the damage, so whoever's turn it is gets the credit; life lost on your own turn only counts as damage taken |
+| Commander damage | Read straight from the `♛` counters, so it is exact whoever's turn it was |
+| Biggest hit | The largest single burst of damage you dealt to one opponent |
+| Poison given | Poison an opponent takes during your turn (shown once anyone has some) |
+| Life gained, damage taken, lowest life | Your own totals, any turn |
+| Eliminations, taken out by | The commander that dealt 21, otherwise whoever's turn it was; a concession is nobody's kill |
+
+**Game recap.** When the winner celebration (or the draw call) finishes, a
+recap fills the screen before the result window. It is split across the
+middle, the far half turned round, so both sides of the table read it the
+right way up. Each half has the result, game time, turns and eliminations, up
+to eight awards, and every player's numbers in finishing order, with the best
+in each column in gold. **Register the game** on either half moves on to the
+result window. Until the next game starts, *Game stats* in the hub brings the
+recap back.
+
+| Award | Goes to |
+| --- | --- |
+| Longest Player | The slowest average turn (with their longest turn and total time) |
+| Heavy Hitter | The most damage dealt |
+| Best Healer | The most life gained |
+| Executioner | The most players taken out |
+| One Punch | The biggest single hit |
+| Commander General | The most commander damage |
+| Speed Demon | The fastest average turn |
+| Close Call | A player still standing who fell to the low-life mark (10 in a 40-life game), lowest first |
+| Plague Bearer | The most poison given |
+| Punching Bag | The most damage taken |
+
+An award nobody earned is left out, a tie is shared, and one that every
+player would share is not given. The first eight that apply are shown, in
+the order above (`RECAP_AWARDS` in `js/app.js`).
+
+Presses that follow each other within `STAT_BATCH_MS` are one event, so
+tapping −5 and then +5 to fix a slip counts as nothing.
+
+**The game clock.** One clock drives the turn badge, every turn time and the
+game time, and it stops when a winner or a draw is declared.
+
+- **It waits for the game to start.** After *Reset game*, and whenever the
+  *Player entrance* covers go on, the clock is held at 0:00 — the badge shows
+  `❚❚ 0:00` in amber and the hub reads *Clock waiting*. With the entrance on,
+  nothing is counted through the announcements: the clock starts when the
+  first player is picked after *Fight*. Without it, it starts on *Pick first
+  player*, the first pass of the turn, or the first life change, whichever
+  comes first. Switching *Clock waiting* off starts it by hand.
+- **Stop clock** (hub, *Game*) stops it for a break; switch it off to carry
+  on. Nothing in between is counted, even if the turn is passed meanwhile.
+- **Reset clock** puts the game time and every player's play time, turn
+  count and turn times back to zero. Damage, life gained and the other
+  numbers are kept; *Reset game* clears everything.
 
 ### House lights
 
@@ -629,7 +762,8 @@ moves on the table: foil shimmer (the default), bellows breath, dragon breath,
 arcane flow, heat haze & embers, storm, shadow creep, wind sway, radiance,
 caustics, artifact glint, glowing eyes, roar (the card shakes while sound waves
 ripple out of the mouth), quake, heartbeat, frost, snowfall, toxic, void rift,
-inferno, ghost, or none. A live preview sits beside the
+inferno, ghost, blood drain, overgrowth, time ripple, rain, mana orbit, cosmic,
+treasure, or none. A live preview sits beside the
 menu. Choose **Place focus** or **Place eyes / mouth** and click the preview to
 set the points the effect works around — the chest that breathes, the source of
 the light, the mouth the breath leaves from, a pair of eyes to light up. **Art

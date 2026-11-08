@@ -142,6 +142,40 @@ td:first-child { color: var(--gold); font-weight: 800; }
 .game-player strong, .game-player small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-player strong { margin-top: 4px; font-size: .9rem; }
 .game-player small { margin-top: 3px; color: var(--muted); font-size: .75rem; }
+/* ------------------------------------------------------------ statistics --
+   Records, the per-player averages, and each game's own stats folded under
+   its result. Gold marks the best in a column. */
+.records-card, .player-stats-card { margin-bottom: 26px; }
+.stat-icon { width: 20px; height: 20px; flex: none; color: var(--gold); }
+.records-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.record { position: relative; min-width: 0; padding: 15px 15px 14px 50px; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(135deg, #e4b95f10, transparent 60%), #191421; }
+.record .stat-icon { position: absolute; top: 15px; left: 16px; width: 22px; height: 22px; filter: drop-shadow(0 0 6px #e4b95f55); }
+.record .eyebrow { display: block; color: var(--gold); }
+.record strong { display: block; margin-top: 5px; overflow: hidden; font-size: 1.15rem; text-overflow: ellipsis; white-space: nowrap; }
+.record small { display: block; margin-top: 4px; color: var(--muted); font-size: .76rem; }
+.stats-table td.is-lead { color: var(--gold); font-weight: 800; }
+.stats-table .stats-player strong { display: block; }
+.stats-table .stats-player small { display: block; color: var(--muted); font-size: .7rem; }
+.player-stats-table th:nth-child(2), .player-stats-table td:nth-child(2) { text-align: right; }
+.player-stats-table th:first-child, .player-stats-table td:first-child { color: inherit; font-weight: inherit; text-align: left; }
+.award-cell { text-align: left !important; }
+.award-cell span { display: inline-flex; align-items: center; gap: 4px; margin: 0 8px 2px 0; font-size: .76rem; }
+.award-cell .stat-icon { width: 15px; height: 15px; }
+.award-cell small { color: var(--muted); font-size: .7rem; }
+.game-stats { border-top: 1px solid #342c42; }
+.game-stats summary { display: flex; align-items: baseline; gap: 10px; padding: 10px 15px; color: #c9b6ef; font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.game-stats summary::-webkit-details-marker { display: none; }
+.game-stats summary::before { content: ""; align-self: center; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--purple); transition: rotate .15s; }
+.game-stats[open] summary::before { rotate: 90deg; }
+.game-stats summary small { color: var(--muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
+.award-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin: 0; padding: 0 15px 12px; list-style: none; }
+.award-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 11px; border: 1px solid #3b324a; border-radius: 12px; background: #120f1a; }
+.award-list b { display: block; color: var(--gold); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; }
+.award-list strong { display: block; margin-top: 2px; font-size: .9rem; }
+.award-list small { display: block; color: var(--muted); font-size: .72rem; }
+.game-stats .table-wrap { padding: 0 6px 8px; }
+.game-stats .stats-table { font-size: .8rem; }
+.game-stats .stats-table th, .game-stats .stats-table td { padding: 8px 7px; }
 #status { position: fixed; z-index: 10; bottom: 16px; left: 50%; translate: -50%; width: min(520px, calc(100% - 32px)); padding: 13px 16px; border: 1px solid #443b53; border-radius: 14px; background: #1b1725f5; text-align: center; box-shadow: 0 10px 30px #0008; }
 #status.success { border-color: #347656; } #status.error { border-color: #a3445f; color: #ffb5c5; }
 @container (max-width: 780px) {

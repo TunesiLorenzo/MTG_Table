@@ -256,6 +256,31 @@ def blend(start, end, amount):
     )
 
 
+def _as_rgb(value):
+    hue, saturation, brightness, _ = value
+    return colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, brightness / 100.0)
+
+
+def blend_rgb(start, end, amount):
+    """Interpolate two light values as mixed light rather than around the hue circle.
+
+    For a cue's quick fades. Going round the circle suits a slow turn
+    crossfade, but squeezed into a second it turns a red flash easing back to
+    cyan into a sweep through orange, yellow and green — on the strip, a
+    rainbow flicker. Mixed as light, the color simply dissolves from one into
+    the other. Two whites still cross-fade along the temperature dial.
+    """
+    if amount >= 1.0:
+        return end
+    if amount <= 0.0:
+        return start
+    if start[3] is not None and end[3] is not None:
+        return blend(start, end, amount)
+    mixed = [a + (b - a) * amount for a, b in zip(_as_rgb(start), _as_rgb(end))]
+    hue, saturation, value = colorsys.rgb_to_hsv(*mixed)
+    return (int(round(hue * 360)) % 360, int(round(saturation * 100)), max(1, int(round(value * 100))), None)
+
+
 # ------------------------------------------------------------------ cues --
 # A cue is a few seconds of choreography for some of the lights. Each light it
 # takes gets a Track: (seconds, step) pairs, and the moment it lets go. A step
@@ -1008,6 +1033,9 @@ class TurnLighting:
             chips = {device: shown[1] for device, shown in self._painted.items()
                      if shown is not None and shown[0] in (_CHIP, _CHIP_DIM)}
             leads = {device: self._lead(device) for device in cues}
+            # Lights whose plan is an effect on their own chip, which a cue
+            # stopped and which starts again from its beginning as it ends.
+            delegated = {device for device in cues if device in self._delegated}
 
         reachable = {device for device in set(cues) | fades | set(effects) | set(settling)
                      if self.resolve_device(device) is not None}
@@ -1019,7 +1047,7 @@ class TurnLighting:
 
         frames = {}
         for device in reachable:
-            frame = self._frame(device, now, bases, fades, effects, cues, settling, chips, leads)
+            frame = self._frame(device, now, bases, fades, effects, cues, settling, chips, leads, delegated)
             if frame is not None:
                 frames[device] = frame
         self._dispatch(frames, effects, cues, epochs, now)
@@ -1077,7 +1105,7 @@ class TurnLighting:
             elapsed += self._lead(device) if lead is None else lead
         return elapsed
 
-    def _frame(self, device, now, bases, fades, effects, cues, settling, chips, leads):
+    def _frame(self, device, now, bases, fades, effects, cues, settling, chips, leads, delegated=()):
         """What a light should show now, as (value, pause, reliable); None leaves it be.
 
         `pause` is how long the light rests after answering its last write
@@ -1102,9 +1130,17 @@ class TurnLighting:
                     playing.shown = self._plan_dim_value(device, factor, now, base, bases, effects, chips)
                     return playing.shown, CUE_STEP_SECONDS, amount >= 1.0
                 target = self._plan_value(device, now, base, bases, effects)
+                if device in delegated:
+                    # The chip's effect restarts from its own beginning once the
+                    # cue lets go — a crossfade from dark — so easing back up to
+                    # the plain color first only for the restart to cut it to
+                    # black reads as a blink. Easing down to dark instead hands
+                    # over without a seam.
+                    hue, saturation, _, _ = base
+                    target = (hue, saturation, 1, None)
                 if playing.release_from is None:
                     playing.release_from = playing.shown if _is_light_value(playing.shown) else target
-                playing.shown = blend(playing.release_from, target, amount)
+                playing.shown = blend_rgb(playing.release_from, target, amount)
                 return playing.shown, CUE_STEP_SECONDS, amount >= 1.0
             index, start, step, following = playing.track.step_at(elapsed)
             if step is not None:
@@ -1151,7 +1187,7 @@ class TurnLighting:
                 playing.fade_from = (playing.shown if _is_light_value(playing.shown)
                                      else self._plan_value(device, now, base, bases, effects))
             amount = 1.0 if seconds <= 0 else min(1.0, max(0.0, (elapsed - start) / seconds))
-            return blend(playing.fade_from, to_value, amount), amount >= 1.0
+            return blend_rgb(playing.fade_from, to_value, amount), amount >= 1.0
         if kind == "solid":
             return step[1], True
         if kind == "dim":

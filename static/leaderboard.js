@@ -62,6 +62,9 @@ function renderHistory() {
     list.innerHTML = '<div class="empty">No games recorded yet. Record the first result from the entry page.</div>';
     return;
   }
+  // The page reloads the games every 20 seconds: a game's stats left open
+  // stay open through it.
+  const open = new Set([...list.querySelectorAll(".game-stats[open]")].map((panel) => panel.closest("[data-game-id]").dataset.gameId));
   list.innerHTML = games.map((game) => {
     const results = [...game.players].sort((a, b) => a.rank - b.rank);
     const winner = results[0];
@@ -72,8 +75,97 @@ function renderHistory() {
     return `<article class="game-card" data-game-id="${escapeHtml(game.id)}">
       <div class="game-head"><div><span class="game-date">${escapeHtml(formatDate(game.date))}</span><span class="game-winner">${escapeHtml(headline)}</span></div><button class="delete-game" type="button" data-delete-game="${escapeHtml(game.id)}">Remove</button></div>
       <div class="game-results">${results.map((result) => `<div class="game-player${result.rank === 1 ? " is-winner" : ""}"><span class="place">#${result.rank}${result.rank === 1 ? (isDraw ? " · DRAW" : " · WINNER") : ""}</span><strong>${escapeHtml(result.name)}</strong><small title="${escapeHtml(result.deck)}">${escapeHtml(result.deck)}</small></div>`).join("")}</div>
+      ${gameStatsPanel(game)}
     </article>`;
   }).join("");
+  list.querySelectorAll("[data-game-id]").forEach((card) => {
+    const panel = card.querySelector(".game-stats");
+    if (panel && open.has(card.dataset.gameId)) panel.open = true;
+  });
+}
+
+/* ------------------------------------------------------------ statistics --
+   What the life tracker saved with each game: the awards, records and
+   averages come from js/game-stats.js, shared with the tracker and the
+   public site. A game recorded without them simply has none. */
+
+/* Optional: should game-stats.js fail to load, the statistics are left out
+   and the rest of the leaderboard still draws. */
+const GS = window.GameStats || null;
+const statIcon = (name) => GS.icon(name, "stat-icon");
+const names = (list) => list.map((p) => escapeHtml(p.name)).join(" &amp; ");
+
+/* One game's awards and every player's numbers, folded away under the result. */
+function gameStatsPanel(game) {
+  const summary = GS && GS.gameSummary(game);
+  if (!summary) return "";
+  const tops = GS.leaders(summary.players);
+  const facts = [
+    summary.durationSeconds ? `${GS.clock(summary.durationSeconds)} game` : "",
+    GS.plural(summary.turns, "turn", "turns"),
+    GS.plural(summary.eliminations, "elimination", "eliminations"),
+  ].filter(Boolean).join(" · ");
+  const awards = summary.awards.length
+    ? `<ul class="award-list">${summary.awards.map((entry) => `<li title="${escapeHtml(entry.award.note)}">${statIcon(entry.award.icon)}<span><b>${escapeHtml(entry.award.title)}</b><strong>${names(entry.winners)}</strong><small>${escapeHtml(entry.value)}</small></span></li>`).join("")}</ul>`
+    : "";
+  const rows = summary.players.map((p) => `<tr>
+    <td>${p.rank}</td>
+    <td class="stats-player"><strong>${escapeHtml(p.name)}</strong>${p.eliminatedBy ? `<small>out to ${escapeHtml(p.eliminatedBy)}</small>` : ""}</td>
+    ${GS.COLUMNS.map((column) => p.hasStats
+      ? `<td${tops[column.key] !== undefined && p[column.key] === tops[column.key] ? ' class="is-lead"' : ""}>${GS.cell(column, p[column.key])}</td>`
+      : "<td>—</td>").join("")}
+  </tr>`).join("");
+  return `<details class="game-stats">
+    <summary><span>Game stats</span><small>${escapeHtml(facts)}</small></summary>
+    ${awards}
+    <div class="table-wrap"><table class="stats-table">
+      <thead><tr><th>#</th><th>Player</th>${GS.COLUMNS.map((column) => `<th title="${escapeHtml(column.label)}">${escapeHtml(column.short)}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </details>`;
+}
+
+function renderRecords() {
+  const records = GS ? GS.records(games) : [];
+  $("#records-grid").innerHTML = records.length
+    ? records.map((record) => `<article class="record">${statIcon(record.icon)}<span class="eyebrow">${escapeHtml(record.title)}</span>
+        <strong>${record.holders.length ? record.holders.map(escapeHtml).join(" &amp; ") : escapeHtml(record.value)}</strong>
+        <small>${escapeHtml([record.holders.length ? record.value : "", record.detail, record.date ? formatDate(record.date) : ""].filter(Boolean).join(" · "))}</small></article>`).join("")
+    : '<div class="empty">Records appear once a game is saved from the life tracker with its statistics.</div>';
+}
+
+function renderPlayerStats() {
+  const totals = GS ? GS.playerTotals(games) : [];
+  const box = $("#player-stats");
+  if (!totals.length) {
+    box.innerHTML = '<div class="empty">Averages appear once a game is saved from the life tracker with its statistics.</div>';
+    return;
+  }
+  const columns = [
+    ["Tracked games", (t) => t.games],
+    ["Avg turn", (t) => t.avgTurnSeconds, "high", true],
+    ["Longest turn", (t) => t.longestTurnSeconds, "high", true],
+    ["Time / game", (t) => t.perGame.playSeconds, "high", true],
+    ["Damage / game", (t) => t.perGame.damageDealt, "high"],
+    ["Cmdr / game", (t) => t.perGame.commanderDealt, "high"],
+    ["Life gained / game", (t) => t.perGame.lifeGained, "high"],
+    ["Taken / game", (t) => t.perGame.damageTaken],
+    ["Eliminations", (t) => t.eliminations, "high"],
+    ["Biggest hit", (t) => t.biggestHit, "high"],
+  ];
+  const tops = columns.map(([, value, lead]) => lead ? Math.max(...totals.map(value)) : null);
+  box.innerHTML = `<table class="stats-table player-stats-table">
+    <thead><tr><th>Player</th>${columns.map(([label]) => `<th>${escapeHtml(label)}</th>`).join("")}<th>Awards</th></tr></thead>
+    <tbody>${totals.map((t) => `<tr>
+      <td class="stats-player"><strong>${escapeHtml(t.name)}</strong></td>
+      ${columns.map(([, value, , isClock], index) => {
+        const raw = value(t);
+        const shown = isClock ? GS.clock(raw) : String(GS.perGame(raw));
+        return `<td${tops[index] && raw === tops[index] ? ' class="is-lead"' : ""}>${shown}</td>`;
+      }).join("")}
+      <td class="award-cell">${t.awards.length ? t.awards.slice(0, 3).map((entry) => `<span title="${escapeHtml(entry.award.note)}">${statIcon(entry.award.icon)}${escapeHtml(entry.award.title)}${entry.count > 1 ? ` ×${entry.count}` : ""}</span>`).join("") + (t.awards.length > 3 ? `<small>+${t.awards.length - 3} more</small>` : "") : "—"}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
 }
 
 render = function () {
@@ -83,6 +175,8 @@ render = function () {
   renderChart("#player-chart", [...stats.players].sort((a, b) => b.wins - a.wins), "player");
   renderChart("#deck-chart", stats.decks, "deck");
   renderStandings(stats.players);
+  renderRecords();
+  renderPlayerStats();
   renderHistory();
 };
 

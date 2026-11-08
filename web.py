@@ -160,6 +160,11 @@ ANNOUNCER_DIR = BASE_DIR / "sound" / "Announcer"
 ANNOUNCER_PLAYER_DIR = ANNOUNCER_DIR / "Players"
 ANNOUNCER_BASE_DIR = ANNOUNCER_DIR / "Base"
 ANNOUNCER_WINNER_FILE = "Winner.mp3"
+# An elimination is announced as a random line from Base/Death ("Down goes
+# another one!") and then the player's own clip from Players/Death, matched to
+# the seat's name. Either folder can be empty; the other still plays.
+ANNOUNCER_DEATH_INTRO_DIR = ANNOUNCER_BASE_DIR / "Death"
+ANNOUNCER_DEATH_PLAYER_DIR = ANNOUNCER_PLAYER_DIR / "Death"
 ANNOUNCER_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a"}
 CROWD_SOUND_PATTERN = re.compile(r"^crowd_\d+\.wav$", re.IGNORECASE)
 # Recordings of a coin landing, for the coin toss. None are needed: without
@@ -223,6 +228,13 @@ COMMANDER_FX_EFFECTS = (
     ("void", "Void rift"),
     ("inferno", "Inferno"),
     ("ghost", "Ghost"),
+    ("blood", "Blood drain"),
+    ("vines", "Overgrowth"),
+    ("time", "Time ripple"),
+    ("rain", "Rain"),
+    ("mana", "Mana orbit"),
+    ("cosmic", "Cosmic"),
+    ("treasure", "Treasure"),
     ("none", "No animation"),
 )
 COMMANDER_FX_LABELS = dict(COMMANDER_FX_EFFECTS)
@@ -278,6 +290,16 @@ table_state = {
     "cues": cues.default_settings(),
 }
 state_lock = threading.Lock()
+
+# A fresh token per seat each time a preset or roster deck is loaded onto it,
+# so the table display re-dresses the seat even when the same deck is loaded
+# again after its art was cleared there. Not saved: a restart starts blank,
+# and a blank token never re-dresses anything.
+preset_loads = [""] * PLAYER_COUNT
+
+
+def mark_preset_load(index):
+    preset_loads[index] = f"{time.time_ns():x}"
 
 # ---------- HOUSE LIGHTS ----------
 # One switch for "we are not playing right now": plain working light on every
@@ -572,6 +594,35 @@ def clean_game_text(value, label, maximum):
     return value
 
 
+GAME_STAT_FIELDS = (
+    "turns", "play_seconds", "longest_turn_seconds", "damage_dealt", "commander_damage_dealt",
+    "poison_dealt", "biggest_hit", "life_gained", "damage_taken", "eliminations",
+)
+GAME_STAT_MAX = 10_000_000
+GAME_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+
+
+def clean_game_stats(value):
+    """The tracker's per-player statistics for one game, or None without any.
+
+    Optional and forgiving: a result is worth keeping even when its statistics
+    are not, so a field that is missing or nonsensical is simply left out."""
+    if not isinstance(value, dict):
+        return None
+    stats = {}
+    for field in GAME_STAT_FIELDS:
+        number = value.get(field)
+        if isinstance(number, (int, float)) and not isinstance(number, bool) and 0 <= number <= GAME_STAT_MAX:
+            stats[field] = int(round(number))
+    lowest = value.get("lowest_life")
+    if isinstance(lowest, (int, float)) and not isinstance(lowest, bool) and abs(lowest) <= GAME_STAT_MAX:
+        stats["lowest_life"] = int(round(lowest))
+    by = value.get("eliminated_by")
+    if isinstance(by, str) and by.strip():
+        stats["eliminated_by"] = re.sub(r"\s+", " ", by).strip()[:GAME_NAME_MAX]
+    return stats or None
+
+
 def game_from_payload(payload):
     """Validate one four-player result and return its persistent representation."""
     date = str(payload.get("date", "")).strip()
@@ -598,7 +649,11 @@ def game_from_payload(payload):
             rank = int(entry.get("rank"))
         except (TypeError, ValueError) as error:
             raise ValueError("Every ranking must be a number from 1 to 4") from error
-        players.append({"name": name, "deck": deck, "rank": rank})
+        player = {"name": name, "deck": deck, "rank": rank}
+        stats = clean_game_stats(entry.get("stats"))
+        if stats:
+            player["stats"] = stats
+        players.append(player)
 
     if any(entry["rank"] not in {1, 2, 3, 4} for entry in players):
         raise ValueError("Every ranking must be a number from 1 to 4")
@@ -609,13 +664,25 @@ def game_from_payload(payload):
     if len({entry["name"].casefold() for entry in players}) != GAME_PLAYER_COUNT:
         raise ValueError("Each player name must be different")
 
-    return {
-        "id": uuid4().hex,
+    # The tracker names its game, so the same game saved here and sent to the
+    # Drive inbox (drive/inbox.gs) is recognised as one when it is imported.
+    given_id = payload.get("id")
+    game_id = given_id if isinstance(given_id, str) and GAME_ID_PATTERN.fullmatch(given_id) else uuid4().hex
+    game = {
+        "id": game_id,
         "date": date,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "outcome": outcome,
         "players": players,
     }
+    duration = payload.get("duration_seconds")
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and 0 < duration <= GAME_STAT_MAX:
+        game["duration_seconds"] = int(round(duration))
+    # The starting life, which the Close Call award measures low life against.
+    life = payload.get("starting_life")
+    if isinstance(life, int) and not isinstance(life, bool) and 1 <= life <= 1000:
+        game["starting_life"] = life
+    return game
 
 
 def historical_wins_from_payload(payload):
@@ -669,6 +736,22 @@ def list_announcer_sounds():
         return []
     return [{"file": item.name, "label": item.stem.replace("_", " ")}
             for item in sorted(files, key=lambda item: item.stem.casefold())]
+
+
+def list_sound_files(folder):
+    """Every playable recording directly inside `folder`, by name."""
+    try:
+        files = [item.name for item in folder.iterdir()
+                 if item.is_file() and item.suffix.casefold() in ANNOUNCER_EXTENSIONS]
+    except OSError:
+        return []
+    return sorted(files, key=str.casefold)
+
+
+def announcer_death_sounds():
+    """The elimination intros and the per-player elimination clips."""
+    return {"intros": list_sound_files(ANNOUNCER_DEATH_INTRO_DIR),
+            "players": list_sound_files(ANNOUNCER_DEATH_PLAYER_DIR)}
 
 
 def announcer_winner_sound():
@@ -997,7 +1080,7 @@ def fade_to_house_lights(seconds):
 def player_payload(index):
     """One player as the pages see it: base color, light plan, derived targets."""
     player = table_state["players"][index]
-    return dict(player, targets=player_targets(player))
+    return dict(player, targets=player_targets(player), preset_load=preset_loads[index])
 
 
 def players_payload():
@@ -1166,15 +1249,29 @@ def get_games():
 
 @app.post("/api/games")
 def add_game():
-    game = game_from_payload(request.get_json(force=True, silent=True) or {})
+    payload = request.get_json(force=True, silent=True) or {}
+    game = game_from_payload(payload)
+    replaces = payload.get("replaces")
     with history_lock:
-        game_history.append(game)
+        # Saving the same game again (a second press, a resend) adds nothing.
+        existing = next((saved for saved in game_history if saved.get("id") == game["id"]), None)
+        if existing is not None:
+            return ok("Game is already on the leaderboard", game=existing, duplicate=True)
+        before = list(game_history)
+        # A corrected result names the one it replaces, which it takes the place of.
+        index = next((i for i, saved in enumerate(game_history)
+                      if isinstance(replaces, str) and saved.get("id") == replaces), None)
+        if index is None:
+            game_history.append(game)
+        else:
+            game_history[index] = game
         try:
             save_game_history()
         except Exception:
-            game_history.pop()
+            game_history[:] = before
             raise
-    return ok("Game added to the leaderboard", game=game), 201
+    message = "Game result corrected" if index is not None else "Game added to the leaderboard"
+    return ok(message, game=game), 201
 
 
 @app.delete("/api/games/<game_id>")
@@ -1835,6 +1932,7 @@ def status():
         "pictures": list_roster_pictures(),
         "announcer_sounds": list_announcer_sounds(),
         "announcer_winner": announcer_winner_sound(),
+        "announcer_death": announcer_death_sounds(),
         "crowd_sounds": list_crowd_sounds(),
         "coin_sounds": list_coin_sounds(),
         "commander_sounds": list_commander_sounds(),
@@ -1855,6 +1953,7 @@ def get_table_state():
     return jsonify({"ok": True, **table_state, "players": players_payload(),
                     "announcer_sounds": list_announcer_sounds(),
                     "announcer_winner": announcer_winner_sound(),
+                    "announcer_death": announcer_death_sounds(),
                     "crowd_sounds": list_crowd_sounds(),
                     "coin_sounds": list_coin_sounds(),
                     "commander_sounds": list_commander_sounds()})
@@ -2163,6 +2262,7 @@ def load_player_profile(index):
 
     with state_lock:
         apply_saved_player(table_state["players"][index], saved, keep_name=True)
+        mark_preset_load(index)
         save_table_state()
 
     applied = 0
@@ -2198,6 +2298,7 @@ def load_roster_deck(index):
             player[key] = details[key]
         for key in ("commander_sound", "second_commander_sound"):
             player[key] = known_or_blank(validate_commander_sound, details[key])
+        mark_preset_load(index)
         save_table_state()
 
     return ok(f"Loaded the {deck} deck onto player {index + 1}. Set its lights, then save it as a preset",

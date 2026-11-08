@@ -244,7 +244,7 @@ html, body {
 }
 /* Counter the table display's brightness boost on the parked mini cards. */
 .commander-card .commander-card__face { filter: brightness(var(--commander-brightness, .7)); }
-.commander-card__face--back { background-image: url("/Backgrounds/Commander/mtgback.jpg"); }
+.commander-card__face--back { background-image: url("../Backgrounds/Commander/mtgback.jpg"); }
 /* The animated copy of the card (js/commander-fx.js) lies over the face's own
    picture, inside the face, so it flips, dims and burns with it. Until its
    frames arrive it is transparent and the plain picture shows. */
@@ -546,7 +546,7 @@ html, body {
   overflow: hidden;
   color: var(--accent);
   background:
-    linear-gradient(#0007, #0009), url("/Backgrounds/Sigil.jpg");
+    linear-gradient(#0007, #0009), url("../Backgrounds/Sigil.jpg");
   background-position: center;
   background-size: cover;
   border: 0;
@@ -959,6 +959,13 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   letter-spacing: .06em;
 }
 .seat__timer:empty { display: none; }
+/* The clock is stopped (by hand, or waiting for the game to start): the
+   badge holds its time in amber and breathes slowly so it is not misread as
+   running. */
+.seat__timer.is-stopped { color: var(--warn); animation: timer-stopped 2s ease-in-out infinite; }
+@keyframes timer-stopped { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .seat__timer.is-stopped { animation: none; } }
+.hub__action--switch:disabled { opacity: .45; cursor: default; }
 
 /* Side seats are too narrow for the badge beside the name: it goes under it.
    (Their counters wrap onto two rows on their own; see .seat__counters.) */
@@ -1781,6 +1788,24 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   backdrop-filter: blur(3px);
 }
 .hub__btn:hover, .hub.is-open .hub__btn { opacity: 1; color: var(--ink); border-color: var(--ink-dim); background: #0b0e14; }
+/* A game is waiting to reach the Drive inbox: the hub's Game section says
+   more. Full strength even while the button itself is dimmed. */
+.hub__btn.has-unsent { opacity: 1; }
+.hub__btn.has-unsent::after {
+  content: '';
+  position: absolute;
+  top: 0.2vmin;
+  right: 0.2vmin;
+  width: 1.3vmin;
+  height: 1.3vmin;
+  border-radius: 50%;
+  background: #f0b429;
+  box-shadow: 0 0 0 0.25vmin #0b0e14;
+}
+.hub__row[hidden] { display: none; }
+/* The GitHub Pages copy has no table server: lights and server controls go. */
+.is-static [data-needs-server] { display: none !important; }
+.hub__action--outbox { color: #ffd98a; border-color: #8f6f2a; }
 
 /* Line icons drawn in the button's own colour, so they follow its states. */
 .hub__icon {
@@ -2045,6 +2070,29 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   opacity: 1;
 }
 .hub__satellite--left.is-active .hub__icon-bulb { fill: currentColor; fill-opacity: .4; }
+/* The hourglass, just outside the lightbulb: stops and starts the game clock.
+   Stopped, it is a bright, shining yellow, so nobody forgets the clock is off. */
+.hub__satellite--left.hub__satellite--outer { right: calc(100% + 6.2vmin); }
+.hub__satellite--clock .hub__icon-sand { fill: currentColor; fill-opacity: .55; stroke: none; }
+.hub__satellite--clock.is-waiting { color: #ffd60a; border-color: #ffd60a80; opacity: .85; }
+.hub__satellite--clock.is-stopped,
+.hub__satellite--clock.is-stopped:hover {
+  color: #2b1d00;
+  background: radial-gradient(circle at 50% 40%, #fff7b8 0%, #ffe14a 45%, #ffbf00 100%);
+  border-color: #fffbd6;
+  opacity: 1;
+  animation: clock-stopped-shine 1.4s ease-in-out infinite;
+}
+.hub__satellite--clock.is-stopped .hub__icon { stroke-width: 2.2; }
+.hub__satellite--clock.is-stopped .hub__icon-sand { fill-opacity: 1; }
+.hub__satellite--clock:disabled { opacity: .25; cursor: default; }
+@keyframes clock-stopped-shine {
+  0%, 100% { box-shadow: 0 0 0 .25vmin #ffe14a66, 0 0 1.4vmin #ffd60acc, 0 0 3vmin #ffbf0088; }
+  50% { box-shadow: 0 0 0 .45vmin #fff3a0aa, 0 0 2.2vmin #ffe14aff, 0 0 5.5vmin #ffbf00cc; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub__satellite--clock.is-stopped { animation: none; box-shadow: 0 0 2vmin #ffd60acc; }
+}
 @keyframes quick-resend-spin { to { transform: translateX(-50%) rotate(360deg); } }
 .daytime-atmosphere::before,
 .daytime-atmosphere::after {
@@ -2126,23 +2174,48 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 }
 /* The flash spreads from the middle of the seat it happened to — full
    strength there, fading across the table — so everyone sees that something
-   landed and where. js/app.js places --tint-x/--tint-y and times the attack
-   and fade from SCREEN_TINT_MS. */
+   landed and where. js/app.js places each colour's origin and times the
+   attack and fade from SCREEN_TINT_MS.
+
+   Red and green are separate layers, each with its own opacity, so a heal
+   straight after a hit cross-fades from one to the other rather than the
+   colour snapping across. Both curves are soft at the ends: the rise eases in
+   instead of popping, and the fade lingers a moment then glides out. */
 .screen-tint {
   position: fixed;
   z-index: 80;
   inset: 0;
-  opacity: 0;
   pointer-events: none;
-  background: radial-gradient(circle at var(--tint-x, 50%) var(--tint-y, 50%),
+}
+.screen-tint::before,
+.screen-tint::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle at var(--flash-x, 50%) var(--flash-y, 50%),
     var(--screen-flash) 0,
     color-mix(in srgb, var(--screen-flash) 62%, transparent) 36%,
     color-mix(in srgb, var(--screen-flash) 24%, transparent) 100%);
-  transition: opacity var(--tint-fade, 310ms) ease-out;
+  transition: opacity var(--tint-fade, 680ms) cubic-bezier(.4, 0, .6, 1);
+  will-change: opacity;
 }
-.screen-tint.is-damage { --screen-flash: var(--damage-screen-tint); }
-.screen-tint.is-heal { --screen-flash: var(--heal-screen-tint); }
-.screen-tint.is-on { opacity: 1; transition-duration: var(--tint-attack, 70ms); }
+.screen-tint::before {
+  --screen-flash: var(--damage-screen-tint);
+  --flash-x: var(--damage-x);
+  --flash-y: var(--damage-y);
+}
+.screen-tint::after {
+  --screen-flash: var(--heal-screen-tint);
+  --flash-x: var(--heal-x);
+  --flash-y: var(--heal-y);
+}
+.screen-tint.is-damage::before,
+.screen-tint.is-heal::after {
+  opacity: 1;
+  transition-duration: var(--tint-attack, 160ms);
+  transition-timing-function: cubic-bezier(.33, 0, .2, 1);
+}
 
 /* A revealed player's title card, split top/bottom and rotated for the pair of
    seats on each physical edge. Both copies travel in the same local direction;
@@ -2271,6 +2344,116 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
     transform: translateX(-92vw) skewX(-3deg) scale(.97);
     filter: blur(.35vmin) brightness(.76);
   }
+}
+
+/* An eliminated player's title card: the entrance card's frame, size and
+   shape, burned away where it stands. A burn line climbs from the bottom to
+   the top: below it the card is gone (the mask on .death-reveal__burn), and on
+   it ride a glowing charred edge and the flame (.death-reveal__front). The
+   mask and the front run on one timeline in the same box, so the art
+   disappears exactly where the fire is. The box overhangs the card by
+   --burn-pad so the card's glow burns with it instead of being cut off.
+   Timings match DEATH_SINK_DELAY_MS / DEATH_SINK_MS in js/app.js. */
+.death-reveal { --burn-pad: 6vmin; z-index: 91; }
+.death-reveal__stage {
+  position: relative;
+  height: calc(100% - 1vmin);
+  aspect-ratio: var(--board-reveal-aspect, 16 / 9);
+}
+.death-reveal__burn {
+  position: absolute;
+  inset: calc(-1 * var(--burn-pad));
+}
+.death-reveal .board-reveal__card {
+  position: absolute;
+  inset: var(--burn-pad);
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+}
+.death-reveal__front {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: var(--burn-pad);
+  right: var(--burn-pad);
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+/* The line itself, glowing. */
+.death-reveal__front::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: -1%;
+  right: -1%;
+  top: -.8vmin;
+  height: 1.6vmin;
+  background: radial-gradient(ellipse at center, #fff1b8 0%, #ffae42 35%, #ff5a0f 60%, transparent 78%);
+  filter: blur(.3vmin);
+}
+/* Scorched paper just above the line: browning, then black, then the ember. */
+.death-reveal__char {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 16%;
+  background: linear-gradient(to bottom, transparent, #3a1d0a55 45%, #1a0904cc 80%, #ff7a1f 100%);
+}
+.death-reveal__fire {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  bottom: 100%;
+  width: 100%;
+  height: 46%;
+  object-fit: cover;
+  object-position: bottom;
+  /* The flame's base sits just under the line, where the mask hides it. */
+  transform: translateY(14%);
+  filter: url(#death-unscreen);
+}
+.death-reveal__filters { position: absolute; width: 0; height: 0; }
+.death-reveal.is-burning .death-reveal__burn {
+  -webkit-mask-image: linear-gradient(to bottom, #000 49.2%, transparent 50%);
+  mask-image: linear-gradient(to bottom, #000 49.2%, transparent 50%);
+  -webkit-mask-size: 100% 200%;
+  mask-size: 100% 200%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: death-burn-mask 3800ms linear 300ms both;
+}
+.death-reveal.is-burning .death-reveal__front {
+  animation:
+    death-burn-front 3800ms linear 300ms both,
+    death-burn-flame 4100ms ease-in-out both;
+}
+/* The art warms in the heat as the line climbs. */
+.death-reveal.is-burning .board-reveal__art {
+  animation: death-burn-heat 4100ms ease-in both;
+}
+/* With the mask twice the box's height, its edge sits at the bottom at 0%
+   and the top at 100%, keeping pace with the front's translate below. */
+@keyframes death-burn-mask {
+  from { -webkit-mask-position: 0 0%; mask-position: 0 0%; }
+  to { -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+}
+@keyframes death-burn-front {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes death-burn-flame {
+  0% { opacity: 0; }
+  10%, 86% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes death-burn-heat {
+  from { filter: brightness(var(--board-reveal-brightness, 1)); }
+  to { filter: brightness(calc(var(--board-reveal-brightness, 1) * .82)) sepia(.45) saturate(1.3); }
 }
 
 /* The "pick first player" spin: same split top/bottom + rotate trick as
@@ -2884,11 +3067,256 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .result-dialog__player { overflow: hidden; color: var(--player-color); font-size: 1.9vmin; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .result-dialog__status { min-height: 2.5vmin; color: #7ee0aa; font-size: 1.5vmin; }
 .result-dialog__status.is-error { color: #ff9eb4; }
-.result-dialog__actions { display: flex; justify-content: flex-end; gap: 1vmin; }
+.result-dialog__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 1vmin; }
 .result-dialog__actions button { min-width: 14vmin; cursor: pointer; font-weight: 800; }
+.result-dialog__actions > button[hidden] { display: none; }
 .result-dialog__later { color: var(--ink-dim) !important; }
 .result-dialog__save { color: #fff !important; background: #7044cf !important; border-color: #a77aff !important; }
 .result-dialog__save:disabled { opacity: .55; cursor: wait; }
+/* Download, Share, Send to Drive: outlined beside the filled Save. Without the
+   local server Save is gone and Send to Drive takes its place. */
+.result-dialog__alt { color: #d8c8ff !important; border-color: #7a5fb8 !important; }
+.result-dialog__alt:disabled { opacity: .55; cursor: wait; }
+.result-dialog__alt.result-dialog__primary { color: #fff !important; background: #7044cf !important; border-color: #a77aff !important; }
+
+/* Game statistics: the hub's Game stats window and the result window share
+   one table. Gold marks the highest value in a row. */
+.stats-dialog { width: min(60rem, calc(100vw - 8vmin)); }
+.result-dialog__stats { margin: 1.4vmin 0 .6vmin; overflow-x: auto; }
+.result-dialog p.stats-summary { margin: 0 0 1vmin; color: var(--ink); font-size: 1.6vmin; font-weight: 700; letter-spacing: .04em; }
+.result-dialog p.stats-note { margin: 1.2vmin 0 1.6vmin; font-size: 1.35vmin; }
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.6vmin;
+  font-variant-numeric: tabular-nums;
+}
+.stats-table th, .stats-table td { padding: .55vmin 1vmin; text-align: right; white-space: nowrap; }
+.stats-table thead th {
+  overflow: hidden;
+  max-width: 16vmin;
+  color: var(--player-color);
+  font-size: 1.7vmin;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid #343e51;
+}
+.stats-table tbody th { color: var(--ink-dim); font-size: 1.4vmin; font-weight: 700; text-align: left; letter-spacing: .04em; }
+.stats-table tbody tr:nth-child(odd) { background: #ffffff05; }
+.stats-table td.is-lead { color: #e4b95f; font-weight: 800; }
+
+/* ------------------------------------------------------------ game recap --
+   Between the celebration and the result form. Two identical halves, the far
+   one turned round, so both sides of the table read it the right way up.
+   Sizes are in container units: each half scales to its own box. */
+.game-recap {
+  --recap-accent: #7044cf;
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 0%, color-mix(in srgb, var(--recap-accent) 24%, transparent), transparent 70%),
+    radial-gradient(ellipse 70% 55% at 50% 100%, color-mix(in srgb, var(--recap-accent) 24%, transparent), transparent 70%),
+    #07090d;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+.game-recap[hidden] { display: none; }
+.game-recap.is-active { opacity: 1; }
+.game-recap__half {
+  container-type: size;
+  display: grid;
+  grid-template-columns: minmax(0, 29%) minmax(0, 1fr);
+  gap: 3cqw;
+  min-height: 0;
+  padding: 5cqh 3cqw;
+  overflow: hidden;
+}
+.game-recap__half--far { rotate: 180deg; }
+.game-recap.is-active .game-recap__half { animation: recap-half-in 700ms var(--ease-out) both; }
+/* Each half rises from its own edge of the screen. */
+.game-recap.is-active .game-recap__half--far { animation-name: recap-far-in; }
+@keyframes recap-half-in { from { opacity: 0; translate: 0 6%; } }
+@keyframes recap-far-in { from { opacity: 0; translate: 0 -6%; } }
+.game-recap__divider {
+  height: .35vmin;
+  background: linear-gradient(90deg, transparent, var(--recap-accent) 20% 80%, transparent);
+  box-shadow: 0 0 2vmin var(--recap-accent);
+}
+
+.game-recap__lead {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.4cqh;
+  min-width: 0;
+}
+.game-recap__eyebrow {
+  color: #c4a1ff;
+  font-family: var(--font-display);
+  font-size: 3.4cqh;
+  font-weight: 700;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+}
+.game-recap__name {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 15cqh;
+  font-weight: 700;
+  line-height: .95;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 4cqh color-mix(in srgb, currentColor 45%, transparent);
+}
+.game-recap__between { color: var(--ink-dim); font-size: 3.6cqh; font-weight: 700; }
+.game-recap__facts { display: flex; gap: 3cqw; margin: 1cqh 0 0; }
+.game-recap__facts div { display: grid; gap: .4cqh; }
+.game-recap__facts dt { color: var(--ink-dim); font-size: 2.5cqh; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.game-recap__facts dd { margin: 0; font-family: var(--font-display); font-size: 5.4cqh; font-weight: 700; font-variant-numeric: tabular-nums; }
+.game-recap__continue {
+  align-self: flex-start;
+  margin-top: 1.5cqh;
+  padding: 2cqh 3cqw;
+  color: #fff;
+  font: 700 3.4cqh var(--font-ui);
+  background: #7044cf;
+  border: 1px solid #a77aff;
+  border-radius: 1.6cqh;
+  box-shadow: 0 0 3cqh #7044cf88;
+  cursor: pointer;
+}
+.game-recap__continue:hover { background: #8255e0; }
+
+.game-recap__body {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 3cqh;
+  min-width: 0;
+  min-height: 0;
+}
+.game-recap__awards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.6cqh 1.2cqw;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recap-award {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "icon title" "icon who" "value value" "note note";
+  column-gap: 1.6cqh;
+  align-items: center;
+  min-width: 0;
+  padding: 1.6cqh 1.4cqw 1.6cqh 1.2cqw;
+  overflow: hidden;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--player-color) 16%, #0d1119), #0d1119 70%);
+  border: 1px solid color-mix(in srgb, var(--player-color) 45%, transparent);
+  border-radius: 1.8cqh;
+  box-shadow: inset .5cqh 0 0 var(--player-color);
+}
+.game-recap.is-active .recap-award { animation: recap-award-in 520ms var(--ease-out) both; animation-delay: calc(350ms + var(--order) * 90ms); }
+@keyframes recap-award-in { from { opacity: 0; scale: .9; } }
+.recap-award__icon {
+  grid-area: icon;
+  width: 6cqh;
+  height: 6cqh;
+  fill: none;
+  stroke: #e4b95f;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 1cqh #e4b95f66);
+}
+.recap-award__title { grid-area: title; color: #e4b95f; font-family: var(--font-display); font-size: 2.5cqh; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recap-award__who { grid-area: who; overflow: hidden; font-family: var(--font-display); font-size: 4.2cqh; font-weight: 700; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.recap-award__value { grid-area: value; margin-top: .8cqh; font-size: 3cqh; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recap-award__note { grid-area: note; color: var(--ink-dim); font-size: 2.3cqh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.recap-table {
+  align-self: start;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 3cqh;
+  font-variant-numeric: tabular-nums;
+}
+.recap-table th, .recap-table td { padding: 1cqh .8cqw; text-align: right; white-space: nowrap; }
+.recap-table thead th {
+  color: var(--ink-dim);
+  font-size: 2.3cqh;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #343e51;
+}
+.recap-table tbody tr { border-bottom: 1px solid #ffffff0a; }
+.recap-table tbody tr:first-child { background: color-mix(in srgb, var(--player-color) 10%, transparent); }
+.recap-table__rank { width: 1%; color: var(--ink-dim); font-weight: 800; text-align: center !important; }
+.recap-table .recap-table__name {
+  max-width: 22cqw;
+  overflow: hidden;
+  color: var(--player-color);
+  font-family: var(--font-display);
+  font-size: 3.4cqh;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+.recap-table__name small { display: block; color: var(--ink-dim); font-family: var(--font-ui); font-size: 2.1cqh; font-weight: 600; }
+.recap-table td.is-lead { color: #e4b95f; font-weight: 800; }
+
+/* A portrait screen leaves each half too narrow for two columns: stack the
+   headline above, and fit the awards two abreast. */
+@container (max-aspect-ratio: 8 / 5) {
+  .game-recap__half { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 2cqh; }
+  .game-recap__lead { flex-flow: row wrap; align-items: center; gap: 1cqh 3cqw; }
+  .game-recap__name { font-size: 8cqh; }
+  .game-recap__facts { margin: 0; }
+  .game-recap__continue { margin: 0; align-self: center; }
+  .game-recap__awards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recap-table { font-size: 2.2cqh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-recap, .game-recap .game-recap__half, .game-recap .recap-award { animation: none !important; transition-duration: 1ms; }
+}
+
+/* The tray's own one-line summary: the player's numbers, readable from
+   their seat. */
+.tray__stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto repeat(6, minmax(0, 1fr));
+  align-items: center;
+  gap: .6vmin;
+  padding: .45vmin .9vmin;
+  background: #ffffff07;
+  border: 1px solid #ffffff0d;
+  border-radius: .9vmin;
+}
+.tray__stat { display: grid; justify-items: center; min-width: 0; line-height: 1.1; }
+.tray__stat strong {
+  font-family: var(--font-display);
+  font-size: clamp(.62rem, 1.9vmin, 1.2rem);
+  font-variant-numeric: tabular-nums;
+}
+.tray__stat small {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--ink-dim);
+  font-size: clamp(.45rem, 1.2vmin, .8rem);
+  letter-spacing: .06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .seat__entrance { animation-duration: 1ms !important; }

@@ -37,12 +37,12 @@
       "brightness": 90,
       "temperature": 2700,
       "effect": "cycle",
-      "effect_seconds": 2.0
+      "effect_seconds": 5.3
     },
     "center": {
       "enabled": true,
       "mode": "color",
-      "hue": 181,
+      "hue": 121,
       "saturation": 32,
       "brightness": 90,
       "temperature": 2700,
@@ -52,23 +52,23 @@
     "bottom_right": {
       "enabled": true,
       "mode": "color",
-      "hue": 121,
+      "hue": 181,
       "saturation": 100,
       "brightness": 90,
       "temperature": 2700,
       "effect": "cycle",
-      "effect_seconds": 2.0
+      "effect_seconds": 5.3
     },
     "strip": {
       "enabled": true,
       "mode": "color",
-      "hue": 238,
+      "hue": 302,
       "saturation": 100,
       "brightness": 90,
       "temperature": 2700,
       "effect": "pulse",
-      "effect_seconds": 2.0
+      "effect_seconds": 3.0
     }
   },
-  "saved_at": "2026-11-08T16:33:31"
+  "saved_at": "2026-11-08T21:54:09"
 }

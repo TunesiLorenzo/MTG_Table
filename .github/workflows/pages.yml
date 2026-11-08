@@ -12,6 +12,12 @@ on:
       - "sound/Commander/**"
       - "sound/Intro/**"
       - "build_site.py"
+      # The life tracker, published at tracker/.
+      - "index.html"
+      - "css/**"
+      - "js/**"
+      - "static/**"
+      - "sound/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

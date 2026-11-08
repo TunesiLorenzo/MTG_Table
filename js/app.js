@@ -10,6 +10,10 @@
   'use strict';
 
   var STORAGE_KEY = 'mtg-table-state-v1';
+  /* Set by build_site.py on the GitHub Pages copy (/tracker/): no table
+     server behind the page, so no lights, no server controls, and nothing to
+     ask it. Results go to the Drive inbox or a file instead. */
+  var STATIC_SITE = window.MTG_TABLE_STATIC === true;
   var START_CHOICES = [20, 30, 40];
 
   /* Seats fill the grid row by row, but the turn passes around the physical
@@ -102,6 +106,14 @@
   var AUDIO_WAKE_MS = 500;
   /* A long stop for a clip that never reports ending. */
   var ANNOUNCER_MAX_MS = 20000;
+  /* How close (seconds) a clip's lead point must be before a timer takes
+     over from the coarse timeupdate events to hit it exactly. */
+  var LEAD_TIMER_WINDOW = 0.3;
+  /* The commander recording's dip as the winner's name starts (seconds). */
+  var COMMANDER_DUCK_SECONDS = 0.25;
+  /* The fanfare starts at its first audible sound rather than any silence it
+     was recorded with, up to this far in (seconds). */
+  var WIN_FANFARE_MAX_SKIP = 1.0;
   /* The title card stays up for at least BOARD_REVEAL_MS, and in any case
      until the player's announcement has finished; it then slides out over
      BOARD_REVEAL_EXIT_MS (matching board-reveal-out in CSS). */
@@ -123,9 +135,9 @@
   /* One tap's whole-screen flash: a quick rise, a brief hold, and a fade over
      the rest of SCREEN_TINT_MS. Presses closer together than the sustain — a
      held button, a burst of taps — keep it up rather than strobing. */
-  var SCREEN_TINT_MS = 420;
-  var SCREEN_TINT_ATTACK_MS = 70;
-  var SCREEN_TINT_HOLD_MS = 40;
+  var SCREEN_TINT_MS = 900;
+  var SCREEN_TINT_ATTACK_MS = 160;
+  var SCREEN_TINT_HOLD_MS = 60;
   var SCREEN_TINT_SUSTAIN_MS = 450;
   /* The middle of each seat's quadrant, as a percentage of the screen: where
      that seat's flash spreads from. */
@@ -153,6 +165,12 @@
      away, and how long the float takes (css/style.css, .seat__delta). */
   var DELTA_BATCH_MS = 1800;
   var DELTA_LEAVE_MS = 480;
+  /* Game statistics. A turn shorter than this was a slipped pass, not a turn,
+     and is not counted. Life changes that follow each other this closely are
+     one event: -5 then +5 to fix a mis-tap nets to nothing, not 5 damage and
+     5 life gained. */
+  var STAT_TURN_MIN_MS = 5000;
+  var STAT_BATCH_MS = DELTA_BATCH_MS;
   var CONFETTI_COUNT = 70;
   /* A held +/- renews the room lights' flash at most this often; the server
      holds the colour a little longer than that after the last renewal. */
@@ -161,11 +179,17 @@
   var COMMANDER_BURN_ARRIVE = 0.18;
 
   var state = loadState();
+  /* The life change each seat is in the middle of, for the statistics: who
+     was up when it began and its running net. Not saved — at worst a refresh
+     mid-burst ends the burst early. */
+  var statBatches = [null, null, null, null];
   var seatViews = [];
   var winnerCelebrationTimer = null;
   var boardRevealTimer = null;
   var boardRevealShown = 0;
   var entranceSequence = null;
+  /* A Ctrl+click skip's covers on their way down (skipEntrance). */
+  var entranceSkip = null;
   var entranceLayeredAudio = [];
   var winnerLayeredAudio = [];
   var drawSequence = null;
@@ -191,6 +215,8 @@
   var announcerVoice = null;
   var announcerTimer = null;
   var winnerAnnouncement = null;
+  /* Silence at the start of win.mp3, skipped once clip analysis has found it. */
+  var winFanfareSkip = 0;
   /* The winner sequence's volumes (percent) and timings (seconds), set on the
      lights page's Sound & timing tab; these are its defaults until the status
      poll brings the saved ones (cues.py, "winner_sound"). */
@@ -200,7 +226,8 @@
     commander_volume: 130,
     announce_delay: 0.5,
     announcer_volume: 100,
-    fanfare_gap: 0.3,
+    commander_under_name: 60,
+    fanfare_gap: 0.0,
     fanfare_volume: 100,
     celebration_hold: 5.6
   };
@@ -298,7 +325,7 @@
 
   /* An unknown name falls back to the click, so a new action still makes a
      sound before it earns one of its own. */
-  function playSound(name, volume) {
+  function playSound(name, volume, fromSeconds) {
     var entry = soundPools[name] || soundPools.click;
     if (!entry) return;
 
@@ -308,7 +335,7 @@
       try {
         element.volume = typeof volume === 'number' ? Math.max(0, Math.min(1, volume))
           : (SOUNDS[name] || SOUNDS.click).volume;
-        element.currentTime = 0;
+        element.currentTime = fromSeconds > 0 ? fromSeconds : 0;
         var started = element.play();
         /* A browser that has not seen a gesture yet rejects playback; the table
            must carry on silently rather than throw. */
@@ -350,6 +377,7 @@
     var guard = null;
     var finished = false;
     var leadFinished = false;
+    var leadTimer = null;
 
     // `leadDone(remainingSeconds)` hears how much of the clip is still to
     // play, so a follow-on sound can time a fade to the clip's last word.
@@ -377,10 +405,17 @@
     audio.preload = 'auto';
     audio.volume = typeof volume === 'number' ? Math.max(0, Math.min(1, volume)) : 1;
     if (typeof leadSeconds === 'number' && leadDone) {
+      // timeupdate only fires every quarter second or so: once the lead point
+      // is that close, a timer lands on it exactly instead.
       audio.addEventListener('timeupdate', function () {
-        if (!Number.isFinite(audio.duration)) return;
-        var remaining = audio.duration - audio.currentTime;
-        if (remaining <= leadSeconds) finishLead(Math.max(0, remaining));
+        if (!Number.isFinite(audio.duration) || leadTimer !== null) return;
+        var wait = audio.duration - audio.currentTime - leadSeconds;
+        if (wait > LEAD_TIMER_WINDOW) return;
+        leadTimer = window.setTimeout(function () {
+          // Cut off in the meantime (stopAnnouncer pauses it): no lead.
+          if (audio.paused && !audio.ended) return;
+          finishLead(Math.max(0, audio.duration - audio.currentTime));
+        }, Math.max(0, wait) * 1000 / (audio.playbackRate || 1));
       });
     }
     audio.addEventListener('ended', function () { finish(true); });
@@ -426,6 +461,8 @@
     audio.loop = !!loop;
     audio.volume = Math.min(1, level);
     if (level > 1) boostAudio(audio, level);
+    // What it actually plays at: a boost needs an audio context to exist.
+    audio._level = audio._boost ? level : Math.min(1, level);
     collection.push(audio);
 
     function finishLead() {
@@ -479,9 +516,117 @@
       gain.gain.value = level;
       source.connect(gain);
       gain.connect(audioContext.destination);
+      audio._boost = gain;
     } catch (err) {
       /* Left playing at its recorded level. */
     }
+  }
+
+  /* A layer's level as playLayeredAudio set it (1 = as recorded), changed
+     through its boost gain when it has one and its own volume otherwise. */
+  function setLayerLevel(audio, level) {
+    level = Math.max(0, level);
+    audio._level = level;
+    if (audio._boost) {
+      audio._boost.gain.value = level;
+      audio.volume = 1;
+    } else {
+      audio.volume = Math.min(1, level);
+    }
+  }
+
+  function fadeLayerLevel(audio, target, seconds) {
+    var from = typeof audio._level === 'number' ? audio._level : audio.volume;
+    var began = window.performance.now();
+    window.clearInterval(audio._fade);
+    audio._fade = window.setInterval(function () {
+      var t = seconds > 0 ? Math.min(1, (window.performance.now() - began) / (seconds * 1000)) : 1;
+      setLayerLevel(audio, from + (target - from) * t);
+      if (t >= 1) window.clearInterval(audio._fade);
+    }, 20);
+  }
+
+  /* --- Clip analysis ---
+     Recordings carry silence at both ends, and their loudness is whatever it
+     was recorded at. Each file is decoded once into 50 ms loudness blocks,
+     which tell the winner sequence where the audible part starts and ends and
+     how loud it is, so the fanfare can follow the name's last word and the
+     commander sound can sit under the name. Resolves null when the file
+     cannot be fetched or decoded; callers then fall back to the clip's ends. */
+  var CLIP_BLOCK_SECONDS = 0.05;
+  var clipProfiles = {};
+
+  function clipProfile(url) {
+    if (!url) return Promise.resolve(null);
+    if (clipProfiles[url]) return clipProfiles[url];
+    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline || !window.fetch) return Promise.resolve(null);
+    var profile = window.fetch(url).then(function (response) {
+      if (!response.ok) throw new Error('missing');
+      return response.arrayBuffer();
+    }).then(function (data) {
+      // An offline context decodes without the gesture a live one waits for.
+      return new Promise(function (resolve, reject) {
+        var decoding = new Offline(1, 1, 44100).decodeAudioData(data, resolve, reject);
+        if (decoding && decoding.then) decoding.then(resolve, reject);
+      });
+    }).then(measureClip).catch(function () {
+      delete clipProfiles[url];
+      return null;
+    });
+    clipProfiles[url] = profile;
+    return profile;
+  }
+
+  function measureClip(buffer) {
+    var size = Math.max(1, Math.round(buffer.sampleRate * CLIP_BLOCK_SECONDS));
+    var channels = [];
+    for (var c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+    var count = Math.ceil(buffer.length / size);
+    var blocks = new Float32Array(count);
+    var peak = 0;
+    for (var b = 0; b < count; b++) {
+      var from = b * size;
+      var to = Math.min(buffer.length, from + size);
+      var sum = 0;
+      channels.forEach(function (data) {
+        for (var i = from; i < to; i++) sum += data[i] * data[i];
+      });
+      blocks[b] = Math.sqrt(sum / Math.max(1, (to - from) * channels.length));
+      if (blocks[b] > peak) peak = blocks[b];
+    }
+    // Audible means within ~26 dB of the clip's loudest moment, so a breath
+    // or a reverb tail after the last word counts as the silence after it.
+    var floor = Math.max(0.002, peak * 0.05);
+    var first = -1;
+    var last = -1;
+    for (var k = 0; k < count; k++) {
+      if (blocks[k] < floor) continue;
+      if (first < 0) first = k;
+      last = k;
+    }
+    return {
+      duration: buffer.duration,
+      start: first < 0 ? 0 : first * CLIP_BLOCK_SECONDS,
+      end: last < 0 ? buffer.duration : Math.min(buffer.duration, (last + 1) * CLIP_BLOCK_SECONDS),
+      floor: floor,
+      blocks: blocks
+    };
+  }
+
+  /* The clip's loudness (RMS of its audible blocks) between two points of its
+     own timeline; 0 when nothing in that stretch is audible. */
+  function clipLoudness(profile, fromSeconds, toSeconds) {
+    var first = Math.max(0, Math.floor(fromSeconds / CLIP_BLOCK_SECONDS));
+    var last = Math.min(profile.blocks.length, Math.ceil(toSeconds / CLIP_BLOCK_SECONDS));
+    var sum = 0;
+    var counted = 0;
+    for (var b = first; b < last; b++) {
+      if (profile.blocks[b] < profile.floor) continue;
+      sum += profile.blocks[b] * profile.blocks[b];
+      counted++;
+    }
+    return counted ? Math.sqrt(sum / counted) : 0;
   }
 
   function playEntranceLayer(url, loop, done, volume, leadSeconds, leadDone) {
@@ -490,6 +635,7 @@
 
   function stopAudioLayers(collection) {
     collection.forEach(function (audio) {
+      window.clearInterval(audio._fade);
       try {
         audio.pause();
         audio.currentTime = 0;
@@ -506,16 +652,23 @@
 
   /* Winner.mp3 contains its own drum build. At `reveal_at` the winner screen
      and commander recording land, and the player's name is announced over the
-     commander recording `announce_delay` later. Once the name has finished (or,
-     with no name recorded, the commander recording) the room lights head home
-     to the house lights (cues.winner keeps the same clock), and `fanfare_gap`
-     later `done` starts the fanfare. Every volume and timing comes from the
-     lights page's Sound & timing tab. */
+     commander recording `announce_delay` later. As the name starts the
+     commander recording dips until it is no louder than `commander_under_name`
+     percent of the name. At the name's last word (the silence the recording
+     ends on is skipped) the room lights head home to the house lights
+     (cues.winner keeps the same clock), and `fanfare_gap` after it — before
+     it, when negative — `done` starts the fanfare. With no name recorded the
+     end of the commander recording takes its place. Every volume and timing
+     comes from the lights page's Sound & timing tab. */
   function announceWinner(winnerIndex, midDone, done) {
     cancelWinnerAnnouncement();
     var voice = announcerSounds[winnerIndex] || '';
     var commander = commanderSounds[winnerIndex] || '';
+    var voiceUrl = voice ? 'sound/Announcer/Players/' + encodeURIComponent(voice) : '';
+    var commanderUrl = commander ? 'sound/Commander/' + encodeURIComponent(commander) : '';
     var timing = winnerSoundSettings;
+    var profiles = { voice: null, commander: null };
+    var commanderAudio = null;
 
     var token = {};
     winnerAnnouncement = token;
@@ -525,13 +678,53 @@
       return function () { if (winnerAnnouncement === token) step(); };
     }
 
-    function afterName() {
+    // The drum roll leaves seconds to decode these before they are needed;
+    // one not ready in time is simply played as recorded.
+    clipProfile(voiceUrl).then(function (profile) { profiles.voice = profile; });
+    clipProfile(commanderUrl).then(function (profile) { profiles.commander = profile; });
+    clipProfile('sound/' + SOUNDS.win.file).then(function (profile) {
+      winFanfareSkip = profile ? Math.min(profile.start, WIN_FANFARE_MAX_SKIP) : 0;
+    });
+
+    function afterName(waitSeconds) {
       winnerLightsOut = false;
       sendLightCue('winner_home');
       announcerTimer = window.setTimeout(guarded(function () {
         winnerAnnouncement = null;
         done();
-      }), timing.fanfare_gap * 1000);
+      }), Math.max(0, waitSeconds) * 1000);
+    }
+
+    function duckCommander() {
+      if (!commanderAudio || commanderAudio.ended) return;
+      var cap = timing.commander_under_name / 100;
+      var voiceLevel = Math.min(1, timing.announcer_volume / 100);
+      var level = commanderAudio._level;
+      var target;
+      if (profiles.voice && profiles.commander) {
+        // Compare the name with the stretch of the commander recording it
+        // will actually play over.
+        var at = commanderAudio.currentTime;
+        var nameLoudness = clipLoudness(profiles.voice, profiles.voice.start, profiles.voice.end) * voiceLevel;
+        var underLoudness = clipLoudness(profiles.commander, at + profiles.voice.start,
+          at + profiles.voice.end) * level;
+        if (!nameLoudness || !underLoudness) return;
+        target = level * cap * nameLoudness / underLoudness;
+      } else {
+        target = voiceLevel * cap;
+      }
+      if (target < level) fadeLayerLevel(commanderAudio, target, COMMANDER_DUCK_SECONDS);
+    }
+
+    function announceName() {
+      duckCommander();
+      // How long before the clip's end the fanfare is due: the silence after
+      // the last word, less the gap. Past the end, the rest is waited out.
+      var tail = profiles.voice ? Math.max(0, profiles.voice.duration - profiles.voice.end) : 0;
+      var lead = tail - timing.fanfare_gap;
+      playAnnouncer(voice, null, Math.max(0, lead), guarded(function () {
+        afterName(-lead);
+      }), timing.announcer_volume / 100);
     }
 
     // A layer rather than the announcer voice, so the name starting over it
@@ -541,25 +734,276 @@
     announcerTimer = window.setTimeout(guarded(function () {
       if (midDone) midDone();
       if (commander) {
-        playLayeredAudio(winnerLayeredAudio, 'sound/Commander/' + encodeURIComponent(commander), false,
-          voice ? null : guarded(afterName), timing.commander_volume / 100);
+        commanderAudio = playLayeredAudio(winnerLayeredAudio, commanderUrl, false,
+          voice ? null : guarded(function () { afterName(timing.fanfare_gap); }),
+          timing.commander_volume / 100);
       }
       if (voice) {
-        announcerTimer = window.setTimeout(guarded(function () {
-          playAnnouncer(voice, guarded(afterName), undefined, undefined, timing.announcer_volume / 100);
-        }), timing.announce_delay * 1000);
+        announcerTimer = window.setTimeout(guarded(announceName), timing.announce_delay * 1000);
       } else if (!commander) {
-        afterName();
+        afterName(timing.fanfare_gap);
       }
     }), timing.reveal_at * 1000);
   }
 
   function cancelWinnerAnnouncement() {
+    // This runs on every life change with two players left standing, so it
+    // only silences the voice when it is the winner's: otherwise it would cut
+    // off an elimination announcement at the next tap.
+    var announcing = winnerAnnouncement !== null;
     winnerAnnouncement = null;
     window.clearTimeout(announcerTimer);
     announcerTimer = null;
-    stopAnnouncer();
+    if (announcing) stopAnnouncer();
     stopAudioLayers(winnerLayeredAudio);
+  }
+
+  /* --- Elimination announcement ---
+     A random line from sound/Announcer/Base/Death ("Down goes another one!"),
+     then the player's own clip from sound/Announcer/Players/Death, matched to
+     the seat's name (Borgo.mp3 for "borgo"). The name starts `overlap` seconds
+     before the line ends, over its tail, so the two read as one call. Either
+     folder may be empty: the other still plays.
+
+     Meanwhile the player's background sweeps in as the entrance title card --
+     same frame, same size and shape as their quadrant -- and, as the name is
+     called, burns away the way a commander card does.
+
+     Players knocked out together go one after another, and a winner sequence
+     started meanwhile waits for the last of them (runWinnerSequence), so the
+     final elimination leads into the drum roll instead of under it. */
+  var deathSounds = { intros: [], players: [] };
+  var deathSoundSettings = { announce: true, burn: true, conceded: true, overlap: 0.4, volume: 100 };
+  var DEATH_BETWEEN_MS = 350;
+  /* The card's sweep in (board-reveal-in, 760 ms) is let finish before it
+     burns, and it burns DEATH_BURN_LATEST_MS in at the latest when no name is
+     called. The burn itself matches death-burn-* in CSS. */
+  var DEATH_CARD_IN_MS = 800;
+  var DEATH_BURN_LATEST_MS = 3500;
+  var DEATH_SINK_DELAY_MS = 300;
+  var DEATH_SINK_MS = 3800;
+  var deathQueue = [];
+  var deathSpeaking = null;
+  var deathVoice = null;
+  var deathToken = 0;
+  var deathTimers = [];
+  var deathWaiters = [];
+  var deathLayeredAudio = [];
+  var lastDeathIntro = '';
+
+  function soundKey(name) {
+    return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function deathClipFor(seat) {
+    var key = soundKey(seat && seat.name);
+    if (!key) return '';
+    for (var index = 0; index < deathSounds.players.length; index++) {
+      var file = deathSounds.players[index];
+      if (soundKey(file.replace(/\.[^.]+$/, '')) === key) return file;
+    }
+    return '';
+  }
+
+  /* At random, but never the same line twice in a row. */
+  function pickDeathIntro() {
+    var pool = deathSounds.intros.filter(function (file) { return file !== lastDeathIntro; });
+    if (!pool.length) pool = deathSounds.intros;
+    if (!pool.length) return '';
+    lastDeathIntro = pool[Math.floor(Math.random() * pool.length)];
+    return lastDeathIntro;
+  }
+
+  function canBurnDeathCard(seatIndex) {
+    return deathSoundSettings.burn && !!state.seats[seatIndex].image && !prefersReducedMotion() &&
+      !!document.getElementById('death-reveal');
+  }
+
+  function announceDeath(seatIndex) {
+    var seat = state.seats[seatIndex];
+    if (!deathSoundSettings.announce && !canBurnDeathCard(seatIndex)) return;
+    if (seat.out && seat.outReason === 'conceded' && !deathSoundSettings.conceded) return;
+    if (deathSpeaking === seatIndex || deathQueue.indexOf(seatIndex) !== -1) return;
+    deathQueue.push(seatIndex);
+    if (deathSpeaking === null) nextDeathAnnouncement();
+  }
+
+  function finishDeathAnnouncements() {
+    deathSpeaking = null;
+    deathVoice = null;
+    var waiting = deathWaiters;
+    deathWaiters = [];
+    waiting.forEach(function (run) { run(); });
+  }
+
+  /* The entrance title card's look, sized from the player's own quadrant. */
+  function showDeathCard(seatIndex) {
+    var overlay = document.getElementById('death-reveal');
+    var seat = state.seats[seatIndex];
+    var playerWindow = seatViews[seatIndex].el.getBoundingClientRect();
+    overlay.style.setProperty('--board-reveal-accent', seatColor(seatIndex));
+    overlay.style.setProperty('--board-reveal-aspect', playerWindow.width + ' / ' + playerWindow.height);
+    overlay.style.setProperty('--board-reveal-brightness', displayBrightness[seatIndex].background / 100);
+    overlay.querySelectorAll('.board-reveal__art').forEach(function (art) {
+      art.style.backgroundImage = 'url("' + seat.image + '")';
+      art.style.backgroundPosition = seat.imageFocus || '';
+    });
+    overlay.querySelectorAll('.board-reveal__name').forEach(function (name) {
+      name.textContent = seat.name;
+    });
+    overlay.hidden = false;
+    overlay.classList.remove('is-active', 'is-burning');
+    void overlay.offsetWidth;
+    overlay.classList.add('is-active');
+  }
+
+  function burnDeathCard() {
+    var overlay = document.getElementById('death-reveal');
+    var burnSeconds = (DEATH_SINK_DELAY_MS + DEATH_SINK_MS) / 1000;
+    overlay.classList.add('is-burning');
+    playLayeredAudio(deathLayeredAudio, 'sound/Commander/Fire.mp3', false, null, COMMANDER_FIRE_VOLUME);
+    // The room burns with it: the commander burn's own lighting.
+    sendLightCue('commander_burn', {
+      fire_at: DEATH_SINK_DELAY_MS / 1000,
+      fire_seconds: DEATH_SINK_MS / 1000,
+      end: burnSeconds + 0.6
+    });
+    overlay.querySelectorAll('.death-reveal__fire').forEach(function (fireVideo) {
+      function startFireVideo() {
+        if (Number.isFinite(fireVideo.duration) && fireVideo.duration > 0) {
+          fireVideo.playbackRate = Math.max(0.25, Math.min(4, fireVideo.duration / burnSeconds));
+        }
+        fireVideo.currentTime = 0;
+        var playing = fireVideo.play();
+        if (playing && playing.catch) playing.catch(function () {});
+      }
+      if (fireVideo.readyState >= 1) startFireVideo();
+      else fireVideo.addEventListener('loadedmetadata', startFireVideo, { once: true });
+    });
+  }
+
+  function hideDeathCard() {
+    var overlay = document.getElementById('death-reveal');
+    if (!overlay) return;
+    overlay.classList.remove('is-active', 'is-burning');
+    overlay.hidden = true;
+    overlay.querySelectorAll('.death-reveal__fire').forEach(function (fireVideo) {
+      try { fireVideo.pause(); } catch (err) { /* Nothing playing. */ }
+    });
+  }
+
+  /* Cuts whatever is playing for the current elimination: its line, its name,
+     its fire. A stale callback from it finds the token moved on and stops. */
+  function stopCurrentDeath() {
+    deathToken++;
+    deathTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    deathTimers = [];
+    stopAudioLayers(deathLayeredAudio);
+    if (deathVoice && announcerVoice === deathVoice) stopAnnouncer();
+    hideDeathCard();
+  }
+
+  function nextDeathAnnouncement() {
+    deathTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    deathTimers = [];
+    if (!deathQueue.length) {
+      finishDeathAnnouncements();
+      return;
+    }
+    var seatIndex = deathQueue.shift();
+    var token = ++deathToken;
+    var volume = deathSoundSettings.volume / 100;
+    var speak = deathSoundSettings.announce;
+    var intro = speak ? pickDeathIntro() : '';
+    var clip = speak ? deathClipFor(state.seats[seatIndex]) : '';
+    var burn = canBurnDeathCard(seatIndex);
+    var shownAt = window.performance.now();
+    var nameStarted = false;
+    var burnStarted = false;
+    // The line, the name and the burn: the next player waits for all three.
+    var pending = 3;
+    deathSpeaking = seatIndex;
+    deathVoice = null;
+
+    function guarded(step) {
+      return function () { if (token === deathToken) step(); };
+    }
+
+    function later(ms, step) {
+      deathTimers.push(window.setTimeout(guarded(step), ms));
+    }
+
+    function partDone() {
+      if (--pending > 0) return;
+      later(deathQueue.length ? DEATH_BETWEEN_MS : 0, nextDeathAnnouncement);
+    }
+
+    function startBurn() {
+      if (burnStarted) return;
+      burnStarted = true;
+      if (!burn) {
+        partDone();
+        return;
+      }
+      later(Math.max(0, DEATH_CARD_IN_MS - (window.performance.now() - shownAt)), function () {
+        burnDeathCard();
+        later(DEATH_SINK_DELAY_MS + DEATH_SINK_MS + 150, function () {
+          hideDeathCard();
+          partDone();
+        });
+      });
+    }
+
+    function startName() {
+      if (nameStarted) return;
+      nameStarted = true;
+      startBurn();
+      if (!clip) {
+        partDone();
+        return;
+      }
+      // A voice rather than a layer, so a later announcement (a draw, a
+      // commander reveal) still cuts it off as it does any other.
+      playOneShot('sound/Announcer/Players/Death/' + encodeURIComponent(clip), guarded(partDone), volume);
+      deathVoice = announcerVoice;
+    }
+
+    if (burn) {
+      showDeathCard(seatIndex);
+      later(DEATH_BURN_LATEST_MS, startBurn);
+    }
+    if (intro) {
+      // A layer, so the name starting over its last moments does not cut it.
+      playLayeredAudio(deathLayeredAudio, 'sound/Announcer/Base/Death/' + encodeURIComponent(intro), false,
+        guarded(function () { startName(); partDone(); }), volume,
+        deathSoundSettings.overlap, guarded(startName));
+    } else {
+      startName();
+      partDone();
+    }
+  }
+
+  /* Back in the game: a line still waiting is dropped, one playing is cut. */
+  function withdrawDeathAnnouncement(seatIndex) {
+    var queued = deathQueue.indexOf(seatIndex);
+    if (queued !== -1) deathQueue.splice(queued, 1);
+    if (deathSpeaking !== seatIndex) return;
+    stopCurrentDeath();
+    nextDeathAnnouncement();
+  }
+
+  /* A new game: everything stops, and nothing waiting on it runs. */
+  function cancelDeathAnnouncements() {
+    stopCurrentDeath();
+    deathQueue = [];
+    deathWaiters = [];
+    deathSpeaking = null;
+    deathVoice = null;
+  }
+
+  function afterDeathAnnouncements(run) {
+    if (deathSpeaking === null && !deathQueue.length) run();
+    else deathWaiters.push(run);
   }
 
   /* -------------------------------------------------------------- emblems -- */
@@ -600,6 +1044,7 @@
       initiative: null,
       // 'day', 'night', or null for a game that is neither.
       daytime: null,
+      stats: freshStats(),
       seats: SEAT_DEFAULTS.map(function (seat) {
         return {
           name: seat.name,
@@ -639,21 +1084,26 @@
           deck: '',
           // The pictures the server last handed this seat. Only a change to
           // them replaces the art, so a picture dropped here afterwards stays.
-          tablePictures: { background_image: '', commander_image: '', second_commander_image: '' }
+          // preset_load is the server's token for the last preset loaded onto
+          // the seat: a new one puts the preset's pictures back even unchanged.
+          tablePictures: { background_image: '', commander_image: '', second_commander_image: '', preset_load: '' }
         };
       })
     };
   }
 
   /* A dropped picture is kept as a data URL; a deck preset's is a file in
-     Backgrounds, served by the same server as this page. */
+     Backgrounds, next to this page — relative, so the same page works from the
+     table's server and from GitHub Pages' /MTG_Table/tracker/. Saves from
+     before that hold the old absolute form, which still loads at the table. */
   function isSeatPicture(value) {
     return typeof value === 'string' &&
-      (value.slice(0, 11) === 'data:image/' || value.slice(0, 13) === '/Backgrounds/');
+      (value.slice(0, 11) === 'data:image/' || value.slice(0, 12) === 'Backgrounds/' ||
+       value.slice(0, 13) === '/Backgrounds/');
   }
 
   function pictureUrl(path) {
-    return path ? '/' + path.split('/').map(encodeURIComponent).join('/') : null;
+    return path ? path.split('/').map(encodeURIComponent).join('/') : null;
   }
 
   function loadState() {
@@ -688,6 +1138,7 @@
       if (TABLE_RING.indexOf(saved.monarch) !== -1) base.monarch = saved.monarch;
       if (TABLE_RING.indexOf(saved.initiative) !== -1) base.initiative = saved.initiative;
       if (saved.daytime === 'day' || saved.daytime === 'night') base.daytime = saved.daytime;
+      base.stats = loadStats(saved.stats);
       if (Array.isArray(saved.seats)) {
         base.seats.forEach(function (seat, i) {
           var savedSeat = saved.seats[i];
@@ -812,7 +1263,8 @@
       });
       view.entrance.addEventListener('click', function (event) {
         event.stopPropagation();
-        revealEntrance(index);
+        if (event.ctrlKey || event.metaKey) skipEntrance();
+        else revealEntrance(index);
       });
       view.commander.addEventListener('click', function (event) {
         event.stopPropagation();
@@ -1011,27 +1463,678 @@
     flashScreen.kind = kind;
     flashScreen.at = now;
 
+    // Each colour keeps its own origin, so the one fading out stays where it
+    // was while the other rises from its own seat.
+    var layer = kind === 'heal' ? 'heal' : 'damage';
     var origin = SEAT_ORIGIN[seatIndex] || [50, 50];
-    tint.style.setProperty('--tint-x', origin[0] + '%');
-    tint.style.setProperty('--tint-y', origin[1] + '%');
+    tint.style.setProperty('--' + layer + '-x', origin[0] + '%');
+    tint.style.setProperty('--' + layer + '-y', origin[1] + '%');
     tint.style.setProperty('--tint-attack', SCREEN_TINT_ATTACK_MS + 'ms');
     tint.style.setProperty('--tint-fade',
       Math.max(0, SCREEN_TINT_MS - SCREEN_TINT_ATTACK_MS - SCREEN_TINT_HOLD_MS) + 'ms');
-    tint.classList.toggle('is-heal', kind === 'heal');
-    tint.classList.toggle('is-damage', kind !== 'heal');
-    tint.classList.add('is-on');
+    // Dropping the other colour fades it out as this one fades in.
+    tint.classList.remove(layer === 'heal' ? 'is-damage' : 'is-heal');
+    tint.classList.add('is-' + layer);
     window.clearTimeout(flashScreen.timer);
     flashScreen.timer = window.setTimeout(function () {
-      tint.classList.remove('is-on');
+      tint.classList.remove('is-damage', 'is-heal');
     }, SCREEN_TINT_ATTACK_MS + (sustained ? SCREEN_TINT_SUSTAIN_MS : SCREEN_TINT_HOLD_MS));
   }
 
   /* --------------------------------------------------------------- actions -- */
 
+  /* ---------------------------------------------------------------- stats -- */
+
+  /* What each player did this game. Damage has no source on this table — the
+     buttons are on the panel that takes it — so it is credited to whoever's
+     turn it is: life an opponent loses on your turn is damage you dealt, and
+     life lost on your own turn (paid life, a blocker's damage) is only damage
+     taken. Commander damage has a real source and is read straight off the
+     counters. */
+  function freshSeatStats() {
+    return {
+      turns: 0,
+      turnMs: 0,
+      longestTurnMs: 0,
+      damageDealt: 0,
+      damageTaken: 0,
+      lifeGained: 0,
+      poisonDealt: 0,
+      // The largest single burst of damage dealt to one opponent.
+      biggestHit: 0,
+      // null until the total first settles below where it started.
+      lowestLife: null,
+      // The seat that took this player out, or null.
+      killedBy: null
+    };
+  }
+
+  /* A new game's clock waits, held at zero, until play begins: the first
+     player picked (after the entrance announcements, when they are on), the
+     first pass of the turn, or the first life change. */
+  function freshStats() {
+    var now = Date.now();
+    return {
+      startedAt: now,
+      // Set when the game ends, which stops the clocks and the counting.
+      endedAt: null,
+      // Set while the clock is stopped: every timer reads as of this moment.
+      pausedAt: now,
+      // Stopped because the game has not begun yet, rather than by hand.
+      waiting: true,
+      // The last turn counted, so a pass undone with Backspace can reopen it.
+      lastTurn: null,
+      seats: [0, 1, 2, 3].map(freshSeatStats),
+      // This game's id in game_history.json and the Drive inbox, made here so
+      // a game sent twice, or saved here and sent too, is still one game.
+      gameId: newGameId(),
+      // What happened when, for the saved game: a 'turn' at the end of every
+      // counted turn with everyone's life and poison, an 'out' at every
+      // elimination. Seats by index; names are filled in when it is saved.
+      timeline: [],
+      // The id and contents of the result last saved, sent or downloaded. A
+      // different result for the same game gets a new id that replaces it.
+      handedOut: null
+    };
+  }
+
+  function newGameId() {
+    var bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.prototype.map.call(bytes, function (byte) {
+      return (byte < 16 ? '0' : '') + byte.toString(16);
+    }).join('');
+  }
+
+  /* Seconds of game time, the same clock as the game's duration. */
+  function gameSeconds() {
+    return Math.max(0, Math.round((clockNow() - state.stats.startedAt) / 1000));
+  }
+
+  function recordTimeline(event) {
+    event.t = gameSeconds();
+    state.stats.timeline.push(event);
+  }
+
+  function loadStats(saved) {
+    var base = freshStats();
+    if (!saved || typeof saved !== 'object') return base;
+    var now = Date.now();
+    if (Number.isFinite(saved.startedAt) && saved.startedAt <= now) base.startedAt = saved.startedAt;
+    if (Number.isFinite(saved.endedAt) && saved.endedAt >= base.startedAt && saved.endedAt <= now) {
+      base.endedAt = saved.endedAt;
+    }
+    // An older save without these was a running clock.
+    base.pausedAt = Number.isFinite(saved.pausedAt) && saved.pausedAt >= base.startedAt && saved.pausedAt <= now
+      ? saved.pausedAt : null;
+    base.waiting = base.pausedAt !== null && saved.waiting === true;
+    var last = saved.lastTurn;
+    if (last && TABLE_RING.indexOf(last.seat) !== -1 && Number.isFinite(last.startedAt) &&
+        Number.isFinite(last.ms) && Number.isFinite(last.longestBefore)) {
+      base.lastTurn = { seat: last.seat, startedAt: last.startedAt, ms: last.ms, longestBefore: last.longestBefore };
+    }
+    if (typeof saved.gameId === 'string' && /^[0-9a-f]{32}$/.test(saved.gameId)) base.gameId = saved.gameId;
+    if (Array.isArray(saved.timeline)) {
+      base.timeline = saved.timeline.filter(function (event) {
+        return event && typeof event === 'object' && typeof event.type === 'string' &&
+          Number.isFinite(event.t) && TABLE_RING.indexOf(event.seat) !== -1;
+      });
+    }
+    var handed = saved.handedOut;
+    if (handed && typeof handed.id === 'string' && typeof handed.fingerprint === 'string') {
+      base.handedOut = { id: handed.id, fingerprint: handed.fingerprint };
+    }
+    if (Array.isArray(saved.seats)) {
+      base.seats.forEach(function (seat, index) {
+        var from = saved.seats[index];
+        if (!from || typeof from !== 'object') return;
+        Object.keys(seat).forEach(function (key) {
+          if (key === 'lowestLife') {
+            if (Number.isFinite(from.lowestLife)) seat.lowestLife = from.lowestLife;
+          } else if (key === 'killedBy') {
+            if (TABLE_RING.indexOf(from.killedBy) !== -1 && from.killedBy !== index) seat.killedBy = from.killedBy;
+          } else if (Number.isFinite(from[key])) {
+            seat[key] = Math.max(0, from[key]);
+          }
+        });
+      });
+    }
+    return base;
+  }
+
+  /* Life changes arrive one press at a time. Each seat's run of presses is
+     netted as it goes, so the statistics stay current without counting a
+     correction twice. */
+  function recordLifeChange(seatIndex, amount) {
+    var stats = state.stats;
+    if (stats.endedAt) return;
+    // A life total moving means the game is under way.
+    if (stats.waiting) startGameClock();
+    var batch = statBatches[seatIndex];
+    if (!batch) batch = statBatches[seatIndex] = { net: 0, dealer: state.currentPlayer, timer: null };
+    var before = batch.net;
+    var after = before + amount;
+    batch.net = after;
+    var lost = Math.max(0, -after) - Math.max(0, -before);
+    var gained = Math.max(0, after) - Math.max(0, before);
+    stats.seats[seatIndex].damageTaken += lost;
+    stats.seats[seatIndex].lifeGained += gained;
+    if (batch.dealer !== seatIndex) stats.seats[batch.dealer].damageDealt += lost;
+    window.clearTimeout(batch.timer);
+    batch.timer = window.setTimeout(function () {
+      closeStatBatch(seatIndex);
+      saveState();
+    }, STAT_BATCH_MS);
+  }
+
+  function closeStatBatch(seatIndex) {
+    var batch = statBatches[seatIndex];
+    if (!batch) return;
+    window.clearTimeout(batch.timer);
+    statBatches[seatIndex] = null;
+    var stats = state.stats;
+    if (batch.net < 0 && batch.dealer !== seatIndex) {
+      var dealer = stats.seats[batch.dealer];
+      dealer.biggestHit = Math.max(dealer.biggestHit, -batch.net);
+    }
+    var life = state.seats[seatIndex].life;
+    var mine = stats.seats[seatIndex];
+    if (life < state.startingLife && (mine.lowestLife === null || life < mine.lowestLife)) mine.lowestLife = life;
+  }
+
+  function closeStatBatches() {
+    TABLE_RING.forEach(closeStatBatch);
+  }
+
+  /* Poison has no source either; `applied` is the change after clamping. */
+  function recordPoison(seatIndex, applied) {
+    var dealer = state.currentPlayer;
+    if (state.stats.endedAt || dealer === seatIndex || !applied) return;
+    var stats = state.stats.seats[dealer];
+    stats.poisonDealt = Math.max(0, stats.poisonDealt + applied);
+  }
+
+  /* The turn that is up is over: add it to that player's time. */
+  function closeTurn() {
+    closeStatBatches();
+    var stats = state.stats;
+    if (stats.endedAt) return;
+    var ms = clockNow() - state.turnStartedAt;
+    if (ms < STAT_TURN_MIN_MS) return;
+    var seat = stats.seats[state.currentPlayer];
+    stats.lastTurn = {
+      seat: state.currentPlayer, startedAt: state.turnStartedAt, ms: ms, longestBefore: seat.longestTurnMs
+    };
+    seat.turns += 1;
+    seat.turnMs += ms;
+    seat.longestTurnMs = Math.max(seat.longestTurnMs, ms);
+    recordTimeline({
+      type: 'turn',
+      turn: stats.timeline.filter(function (event) { return event.type === 'turn'; }).length + 1,
+      seat: state.currentPlayer,
+      seconds: Math.round(ms / 1000),
+      life: state.seats.map(function (each) { return each.life; }),
+      poison: state.seats.map(function (each) { return each.poison; })
+    });
+  }
+
+  /* Going back to the player whose turn was just counted means the pass was a
+     mistake: take that turn back off their record and let its clock carry on
+     from where it started, the slip included. */
+  function reopenTurn(index) {
+    var stats = state.stats;
+    var last = stats.lastTurn;
+    if (!last || last.seat !== index || stats.endedAt) return false;
+    closeStatBatches();
+    var seat = stats.seats[index];
+    seat.turns = Math.max(0, seat.turns - 1);
+    seat.turnMs = Math.max(0, seat.turnMs - last.ms);
+    seat.longestTurnMs = last.longestBefore;
+    state.turnStartedAt = last.startedAt;
+    stats.lastTurn = null;
+    for (var i = stats.timeline.length - 1; i >= 0; i--) {
+      var event = stats.timeline[i];
+      if (event.type !== 'turn') continue;
+      if (event.seat === index) stats.timeline.splice(i, 1);
+      break;
+    }
+    return true;
+  }
+
+  /* Picking the first player is when play really begins. Until a turn has
+     been counted, anything before it was setting up. */
+  function markGameStart() {
+    var played = state.stats.seats.some(function (seat) { return seat.turns > 0; });
+    if (!played) state.stats = freshStats();
+    startGameClock();
+  }
+
+  /* --------------------------------------------------------------- clock -- */
+
+  /* "Now" for every game timer: the moment the clock stopped, while it is
+     stopped, so the turn badge, turn times and game time all stand still. */
+  function clockNow() {
+    return state.stats.pausedAt || Date.now();
+  }
+
+  function isClockStopped() {
+    return state.stats.pausedAt !== null && !state.stats.endedAt;
+  }
+
+  function pauseClock() {
+    var stats = state.stats;
+    if (stats.pausedAt !== null || stats.endedAt) return;
+    stats.pausedAt = Date.now();
+  }
+
+  /* Start again from where it stopped: every running start time moves on by
+     the length of the stop, so none of it is counted. */
+  function resumeClock() {
+    var stats = state.stats;
+    stats.waiting = false;
+    if (stats.pausedAt === null) return;
+    var gap = Math.max(0, Date.now() - stats.pausedAt);
+    stats.pausedAt = null;
+    state.turnStartedAt += gap;
+    stats.startedAt += gap;
+    if (stats.lastTurn) stats.lastTurn.startedAt += gap;
+  }
+
+  function startGameClock() {
+    if (state.stats.waiting) resumeClock();
+  }
+
+  /* Hold the clock until play begins, as a new game does: for the entrance
+     covers going back over the players. A game already under way keeps its
+     numbers and just stops. */
+  function waitForGameStart() {
+    var played = state.stats.seats.some(function (seat) { return seat.turns > 0; });
+    if (!played) {
+      state.stats = freshStats();
+      state.turnStartedAt = state.stats.startedAt;
+    } else {
+      pauseClock();
+      state.stats.waiting = true;
+    }
+  }
+
+  /* Back to 0:00 for the game and every player's turn times, keeping the
+     damage and the rest. A stopped clock stays stopped, now at zero. */
+  function resetClock() {
+    var stats = state.stats;
+    var now = Date.now();
+    closeStatBatches();
+    stats.seats.forEach(function (seat) {
+      seat.turns = 0;
+      seat.turnMs = 0;
+      seat.longestTurnMs = 0;
+    });
+    stats.lastTurn = null;
+    // The turns go with the turn times; what else happened stays, at 0:00.
+    stats.timeline = stats.timeline.filter(function (event) { return event.type !== 'turn'; });
+    stats.timeline.forEach(function (event) { event.t = 0; });
+    stats.startedAt = now;
+    state.turnStartedAt = now;
+    if (stats.pausedAt !== null) stats.pausedAt = now;
+    if (stats.endedAt) stats.endedAt = now;
+  }
+
+  function endGameStats() {
+    if (state.stats.endedAt) return;
+    closeTurn();
+    state.stats.endedAt = clockNow();
+    state.stats.pausedAt = null;
+    state.stats.waiting = false;
+    state.stats.lastTurn = null;
+  }
+
+  /* The game turned out not to be over: carry on, with a fresh turn for
+     whoever is up, so the celebration is not counted as play. */
+  function resumeGameStats() {
+    if (!state.stats.endedAt) return;
+    state.stats.endedAt = null;
+    state.turnStartedAt = Date.now();
+    lastRecap = null;
+    hideGameRecap();
+  }
+
+  /* Who gets the kill: the commander that dealt 21, or else whoever's turn it
+     was. A concession, or going out on your own turn, is nobody's. */
+  function killerOf(seatIndex, activeIndex) {
+    var seat = state.seats[seatIndex];
+    if (seat.out && seat.outReason === 'conceded') return null;
+    for (var slot = 0; slot < seat.commander.length; slot++) {
+      if (slot % 4 !== seatIndex && seat.commander[slot] >= COMMANDER_LETHAL) return slot % 4;
+    }
+    return activeIndex !== seatIndex && TABLE_RING.indexOf(activeIndex) !== -1 ? activeIndex : null;
+  }
+
+  function commanderDealtBy(dealer) {
+    return state.seats.reduce(function (sum, victim, index) {
+      return index === dealer ? sum : sum + victim.commander[dealer] + victim.commander[dealer + 4];
+    }, 0);
+  }
+
+  /* One player's numbers as of now, the turn in progress included. */
+  function seatStats(index) {
+    var stats = state.stats;
+    var mine = stats.seats[index];
+    var live = !stats.endedAt && index === state.currentPlayer
+      ? Math.max(0, clockNow() - state.turnStartedAt) : 0;
+    var counting = live >= STAT_TURN_MIN_MS;
+    var turns = mine.turns + (counting ? 1 : 0);
+    var playMs = mine.turnMs + (counting ? live : 0);
+    var life = state.seats[index].life;
+    var lowest = mine.lowestLife === null ? state.startingLife : mine.lowestLife;
+    return {
+      playMs: playMs,
+      turns: turns,
+      avgTurnMs: turns ? playMs / turns : 0,
+      longestTurnMs: Math.max(mine.longestTurnMs, counting ? live : 0),
+      damageDealt: mine.damageDealt,
+      commanderDealt: commanderDealtBy(index),
+      poisonDealt: mine.poisonDealt,
+      biggestHit: mine.biggestHit,
+      lifeGained: mine.lifeGained,
+      damageTaken: mine.damageTaken,
+      lowestLife: Math.min(lowest, life),
+      kills: stats.seats.filter(function (seat) { return seat.killedBy === index; }).length,
+      killedBy: mine.killedBy
+    };
+  }
+
+  function gameDurationMs() {
+    var stats = state.stats;
+    return Math.max(0, (stats.endedAt || clockNow()) - stats.startedAt);
+  }
+
+  /* The rows of the stats table, in reading order. `lead` marks the highest
+     value in the row; `optional` rows are left out while nobody has any. */
+  var STAT_ROWS = [
+    { key: 'playMs', label: 'Play time', clock: true, lead: true },
+    { key: 'turns', label: 'Turns' },
+    { key: 'avgTurnMs', label: 'Avg turn', clock: true, lead: true },
+    { key: 'longestTurnMs', label: 'Longest turn', clock: true, lead: true },
+    { key: 'damageDealt', label: 'Damage dealt', lead: true },
+    { key: 'commanderDealt', label: 'Commander damage', lead: true },
+    { key: 'biggestHit', label: 'Biggest hit', lead: true },
+    { key: 'poisonDealt', label: 'Poison given', lead: true, optional: true },
+    { key: 'lifeGained', label: 'Life gained', lead: true },
+    { key: 'damageTaken', label: 'Damage taken' },
+    { key: 'lowestLife', label: 'Lowest life' },
+    { key: 'kills', label: 'Eliminations', lead: true }
+  ];
+
+  function statText(row, value) {
+    return row.clock ? formatClock(value) : String(value);
+  }
+
+  function gameSummaryText() {
+    var turns = TABLE_RING.reduce(function (sum, index) { return sum + seatStats(index).turns; }, 0);
+    var stats = state.stats;
+    var status = stats.endedAt ? '' : stats.waiting ? ' · clock waiting for the game to start'
+      : stats.pausedAt !== null ? ' so far · clock stopped' : ' so far';
+    return 'Game time ' + formatClock(gameDurationMs()) + ' · ' + turns + (turns === 1 ? ' turn' : ' turns') + status;
+  }
+
+  /* Every player side by side, columns in `order` (seat indexes). */
+  function statsTableHtml(order) {
+    var all = order.map(seatStats);
+    var head = '<tr><th scope="col"></th>' + order.map(function (index) {
+      return '<th scope="col" style="--player-color:' + seatColor(index) + '">' + escapeHtml(state.seats[index].name) + '</th>';
+    }).join('') + '</tr>';
+    var body = STAT_ROWS.filter(function (row) {
+      return !row.optional || all.some(function (stats) { return stats[row.key] > 0; });
+    }).map(function (row) {
+      var top = Math.max.apply(null, all.map(function (stats) { return stats[row.key]; }));
+      return '<tr><th scope="row">' + escapeHtml(row.label) + '</th>' + all.map(function (stats) {
+        var lead = row.lead && top > 0 && stats[row.key] === top;
+        return '<td' + (lead ? ' class="is-lead"' : '') + '>' + statText(row, stats[row.key]) + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+    var outBy = '<tr><th scope="row">Taken out by</th>' + all.map(function (stats) {
+      var by = stats.killedBy;
+      return '<td>' + (by === null ? '—' : '<span style="color:' + seatColor(by) + '">' +
+        escapeHtml(state.seats[by].name) + '</span>') + '</td>';
+    }).join('') + '</tr>';
+    return '<table class="stats-table"><thead>' + head + '</thead><tbody>' + body + outBy + '</tbody></table>';
+  }
+
+  /* The tray's one-line version, for the player it belongs to. */
+  var TRAY_STATS = [
+    { key: 'playMs', label: 'Time', clock: true },
+    { key: 'turns', label: 'Turns' },
+    { key: 'avgTurnMs', label: 'Avg turn', clock: true },
+    { key: 'damageDealt', label: 'Dealt' },
+    { key: 'lifeGained', label: 'Gained' },
+    { key: 'kills', label: 'Kills' }
+  ];
+
+  function renderTrayStats(seatIndex) {
+    var view = seatViews[seatIndex];
+    var box = view && !view.tray.hidden && view.tray.querySelector('[data-tray-stats]');
+    if (!box) return;
+    var stats = seatStats(seatIndex);
+    var html = '<span class="tray__heading">This game</span>' + TRAY_STATS.map(function (row) {
+      return '<span class="tray__stat"><strong>' + statText(row, stats[row.key]) + '</strong>' +
+        '<small>' + escapeHtml(row.label) + '</small></span>';
+    }).join('');
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
+
+  function renderStatsDialog() {
+    var dialog = document.getElementById('stats-dialog');
+    if (!dialog || !dialog.open) return;
+    document.getElementById('stats-summary').textContent = gameSummaryText();
+    document.getElementById('stats-table').innerHTML = statsTableHtml(TABLE_RING);
+  }
+
+  function openStatsDialog() {
+    var dialog = document.getElementById('stats-dialog');
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    renderStatsDialog();
+  }
+
+  /* Once a second: the clocks in whatever is showing statistics. */
+  function refreshLiveStats() {
+    TABLE_RING.forEach(renderTrayStats);
+    renderStatsDialog();
+  }
+
+  /* ---------------------------------------------------------- game recap -- */
+
+  /* Shown between the celebration and the result form. The awards are the
+     shared ones in js/game-stats.js, so the leaderboard and the public site
+     give the same ones for this game once it is saved. */
+
+  /* A seat's numbers in the shape js/game-stats.js works with. */
+  function sharedSeatStats(index) {
+    var s = seatStats(index);
+    return {
+      seat: index,
+      name: state.seats[index].name,
+      alive: isAlive(state.seats[index]),
+      turns: s.turns,
+      playSeconds: s.playMs / 1000,
+      avgTurnSeconds: s.avgTurnMs / 1000,
+      longestTurnSeconds: s.longestTurnMs / 1000,
+      damageDealt: s.damageDealt,
+      commanderDealt: s.commanderDealt,
+      poisonDealt: s.poisonDealt,
+      biggestHit: s.biggestHit,
+      lifeGained: s.lifeGained,
+      damageTaken: s.damageTaken,
+      lowestLife: s.lowestLife,
+      eliminations: s.kills,
+      eliminatedBy: s.killedBy === null ? null : state.seats[s.killedBy].name
+    };
+  }
+
+  function recapAwards() {
+    if (!window.GameStats) return [];
+    return window.GameStats.awards(TABLE_RING.map(sharedSeatStats), { startingLife: state.startingLife });
+  }
+
+  var RECAP_COLUMNS = [
+    { key: 'playMs', label: 'Time', clock: true, lead: true },
+    { key: 'turns', label: 'Turns' },
+    { key: 'avgTurnMs', label: 'Avg turn', clock: true, lead: true },
+    { key: 'longestTurnMs', label: 'Longest', clock: true, lead: true },
+    { key: 'damageDealt', label: 'Dealt', lead: true },
+    { key: 'commanderDealt', label: 'Cmdr', lead: true },
+    { key: 'lifeGained', label: 'Gained', lead: true },
+    { key: 'damageTaken', label: 'Taken' },
+    { key: 'lowestLife', label: 'Lowest' },
+    { key: 'kills', label: 'Kills', lead: true }
+  ];
+
+  function recapTableHtml(ranking) {
+    var rows = ranking.map(function (result) { return { rank: result.rank, index: result.index, stats: seatStats(result.index) }; });
+    var tops = {};
+    RECAP_COLUMNS.forEach(function (col) {
+      tops[col.key] = Math.max.apply(null, rows.map(function (row) { return row.stats[col.key]; }));
+    });
+    return '<table class="recap-table"><thead><tr><th scope="col">#</th><th scope="col">Player</th>' +
+      RECAP_COLUMNS.map(function (col) { return '<th scope="col">' + col.label + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + rows.map(function (row) {
+        var by = row.stats.killedBy;
+        return '<tr style="--player-color:' + seatColor(row.index) + '">' +
+          '<td class="recap-table__rank">' + row.rank + '</td>' +
+          '<th scope="row" class="recap-table__name">' + escapeHtml(state.seats[row.index].name) +
+          (by === null ? '' : '<small>out to ' + escapeHtml(state.seats[by].name) + '</small>') + '</th>' +
+          RECAP_COLUMNS.map(function (col) {
+            var value = row.stats[col.key];
+            var lead = col.lead && tops[col.key] > 0 && value === tops[col.key];
+            return '<td' + (lead ? ' class="is-lead"' : '') + '>' + statText(col, value) + '</td>';
+          }).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function recapHtml(recap) {
+    var isDraw = recap.outcome === 'draw';
+    var winner = recap.ranking[0].index;
+    var survivors = recap.ranking.filter(function (result) { return result.rank === 1; });
+    var eliminations = state.stats.seats.filter(function (seat) { return seat.killedBy !== null; }).length;
+    var turns = TABLE_RING.reduce(function (sum, index) { return sum + seatStats(index).turns; }, 0);
+    var headline = isDraw
+      ? '<strong class="game-recap__name">Draw</strong><span class="game-recap__between">' +
+        survivors.map(function (result) {
+          return '<span style="color:' + seatColor(result.index) + '">' + escapeHtml(state.seats[result.index].name) + '</span>';
+        }).join(' · ') + '</span>'
+      : '<strong class="game-recap__name" style="color:' + seatColor(winner) + '">' +
+        escapeHtml(state.seats[winner].name) + '</strong><span class="game-recap__between">wins the game</span>';
+    var facts = [
+      ['Game time', formatClock(gameDurationMs())],
+      ['Turns', String(turns)],
+      ['Eliminated', String(eliminations)]
+    ];
+    var awards = recapAwards();
+    return '<div class="game-recap__lead">' +
+      '<span class="game-recap__eyebrow">' + (isDraw ? 'Game over · draw' : 'Game over') + '</span>' +
+      headline +
+      '<dl class="game-recap__facts">' + facts.map(function (fact) {
+        return '<div><dt>' + fact[0] + '</dt><dd>' + fact[1] + '</dd></div>';
+      }).join('') + '</dl>' +
+      '<button class="game-recap__continue" type="button" data-recap-continue="1">' +
+      (recap.onContinue ? 'Register the game →' : 'Close') + '</button>' +
+      '</div>' +
+      '<div class="game-recap__body">' +
+      (awards.length ? '<ol class="game-recap__awards">' + awards.map(function (entry, position) {
+        var lead = entry.winners[0];
+        return '<li class="recap-award" style="--player-color:' + seatColor(lead.seat) + ';--order:' + position + '">' +
+          window.GameStats.icon(entry.award.icon, 'recap-award__icon') +
+          '<span class="recap-award__title">' + escapeHtml(entry.award.title) + '</span>' +
+          '<span class="recap-award__who">' + entry.winners.map(function (s) {
+            return '<span style="color:' + seatColor(s.seat) + '">' + escapeHtml(s.name) + '</span>';
+          }).join(' &amp; ') + '</span>' +
+          '<span class="recap-award__value">' + escapeHtml(entry.value) + '</span>' +
+          '<span class="recap-award__note">' + escapeHtml(entry.detail) + '</span>' +
+          '</li>';
+      }).join('') + '</ol>' : '') +
+      recapTableHtml(recap.ranking) +
+      '</div>';
+  }
+
+  var gameRecap = null;
+
+  /* outcome is 'win' or 'draw'; ranking is what the result form will be
+     prefilled with. onContinue runs when either side taps through, or is
+     null for a second look from the hub, which only closes it. */
+  function showGameRecap(outcome, ranking, onContinue) {
+    var overlay = document.getElementById('game-recap');
+    if (!overlay) {
+      if (onContinue) onContinue();
+      return;
+    }
+    closeStatBatches();
+    gameRecap = { outcome: outcome, ranking: ranking, onContinue: onContinue || null };
+    lastRecap = { outcome: outcome, ranking: ranking };
+    var html = recapHtml(gameRecap);
+    var accent = outcome === 'draw' ? '#7044cf' : seatColor(ranking[0].index);
+    overlay.style.setProperty('--recap-accent', accent);
+    overlay.querySelectorAll('[data-recap-half]').forEach(function (half) { half.innerHTML = html; });
+    overlay.hidden = false;
+    overlay.classList.remove('is-active');
+    void overlay.offsetWidth;
+    overlay.classList.add('is-active');
+  }
+
+  function hideGameRecap() {
+    var overlay = document.getElementById('game-recap');
+    gameRecap = null;
+    if (!overlay) return;
+    overlay.hidden = true;
+    overlay.classList.remove('is-active');
+  }
+
+  function isRecapShowing() {
+    return !!gameRecap;
+  }
+
+  /* The last game's recap, for another look from the hub after the result
+     form is done with. Not saved: after a refresh the hub shows the table. */
+  var lastRecap = null;
+
+  function bindGameRecap() {
+    var overlay = document.getElementById('game-recap');
+    if (!overlay) return;
+    overlay.addEventListener('click', function (event) {
+      if (!event.target.closest('[data-recap-continue]') || !gameRecap) return;
+      var next = gameRecap.onContinue;
+      hideGameRecap();
+      if (next) next();
+    });
+  }
+
+  /* What is saved with the result on the leaderboard. */
+  function statsPayload(index) {
+    var stats = seatStats(index);
+    return {
+      turns: stats.turns,
+      play_seconds: Math.round(stats.playMs / 1000),
+      longest_turn_seconds: Math.round(stats.longestTurnMs / 1000),
+      damage_dealt: stats.damageDealt,
+      commander_damage_dealt: stats.commanderDealt,
+      poison_dealt: stats.poisonDealt,
+      biggest_hit: stats.biggestHit,
+      life_gained: stats.lifeGained,
+      damage_taken: stats.damageTaken,
+      lowest_life: stats.lowestLife,
+      eliminations: stats.kills,
+      eliminated_by: stats.killedBy === null ? null : state.seats[stats.killedBy].name
+    };
+  }
+
   function changeLife(seatIndex, amount) {
     var seat = state.seats[seatIndex];
     var wasAlive = isAlive(seat);
     seat.life += amount;
+    recordLifeChange(seatIndex, amount);
     playSound(amount > 0 ? 'heal' : 'thud');
     flashScreen(amount > 0 ? 'heal' : 'damage', seatIndex);
     flashLights(amount > 0 ? 'heal' : 'damage');
@@ -1102,11 +2205,24 @@
     return deathReason(seat) === null;
   }
 
+  /* How a player went out, in the saved game's words (drive/README.md). */
+  function outCause(seat) {
+    if (isAlive(seat)) return null;
+    if (seat.out && seat.outReason === 'conceded') return 'conceded';
+    // Confirming a lethal total also marks the seat out, so the numbers first.
+    if (seat.poison >= POISON_LETHAL) return 'poison';
+    if (worstCommander(seat) >= COMMANDER_LETHAL) return 'commander';
+    if (seat.life <= 0) return 'life';
+    return 'removed';
+  }
+
   /* Keep the order players leave the game so the final result can be filled in
      without asking the table to remember it: first out is fourth, last out is
      second. A player brought back into the game is removed from that order. */
-  function updateGameOutcome(changedIndex, wasAlive) {
+  function updateGameOutcome(changedIndex, wasAlive, activeIndex) {
     var seat = state.seats[changedIndex];
+    // Whose turn it was when this happened, before an elimination moves it on.
+    var active = activeIndex === undefined ? state.currentPlayer : activeIndex;
     if (drawSequence) {
       cancelDrawSequence();
       state.gameResultPrompted = false;
@@ -1144,12 +2260,33 @@
     var at = state.eliminationOrder.indexOf(changedIndex);
     if (wasAlive && !aliveNow && at === -1) state.eliminationOrder.push(changedIndex);
     if (!wasAlive && aliveNow && at !== -1) state.eliminationOrder.splice(at, 1);
+    if (wasAlive && !aliveNow) announceDeath(changedIndex);
+    if (!wasAlive && aliveNow) withdrawDeathAnnouncement(changedIndex);
+    if (wasAlive && !aliveNow && !state.stats.endedAt) {
+      state.stats.seats[changedIndex].killedBy = killerOf(changedIndex, active);
+    }
+    if (!wasAlive && aliveNow) state.stats.seats[changedIndex].killedBy = null;
+    if (wasAlive && !aliveNow) {
+      var killer = killerOf(changedIndex, active);
+      recordTimeline({ type: 'out', seat: changedIndex, cause: outCause(seat), by: killer });
+    }
+    if (!wasAlive && aliveNow) {
+      // Back in: the elimination did not happen, as with the finishing order.
+      for (var e = state.stats.timeline.length - 1; e >= 0; e--) {
+        var event = state.stats.timeline[e];
+        if (event.type === 'out' && event.seat === changedIndex) {
+          state.stats.timeline.splice(e, 1);
+          break;
+        }
+      }
+    }
 
     var survivors = state.seats.map(function (seat, index) {
       return isAlive(seat) ? index : null;
     }).filter(function (index) { return index !== null; });
 
     if (survivors.length > 1) {
+      resumeGameStats();
       state.gameResultPrompted = false;
       cancelWinnerCelebration();
       var openDialog = document.getElementById('game-result-dialog');
@@ -1175,7 +2312,9 @@
     var wasAlive = isAlive(seat);
     var sound = 'click';
     if (kind === 'poison') {
+      var poisonBefore = seat.poison;
       seat.poison = Math.max(0, seat.poison + amount);
+      recordPoison(seatIndex, seat.poison - poisonBefore);
       if (amount > 0) sound = 'poison';
     } else if (kind === 'energy') {
       seat.energy = Math.max(0, seat.energy + amount);
@@ -1214,11 +2353,12 @@
        come back and drop straight out again without being asked. */
     if (!seat.out) seat.spared = !!lethalReason(seat);
 
+    var active = state.currentPlayer;
     // Handing the turn on is the point of removing someone mid-rotation.
     if (seat.out && state.currentPlayer === seatIndex) advanceTurn(1);
     render();
     updateTray(seatIndex);
-    updateGameOutcome(seatIndex, wasAlive);
+    updateGameOutcome(seatIndex, wasAlive, active);
     saveState();
   }
 
@@ -1235,9 +2375,21 @@
   }
 
   function runWinnerSequence(winnerIndex, requireLastStanding) {
-    cancelDrawSequence();
     closeTrays();
+    endGameStats();
     saveState();
+    // The last elimination's line is still being spoken: the drum roll follows it.
+    afterDeathAnnouncements(function () {
+      startWinnerSequence(winnerIndex, requireLastStanding);
+    });
+  }
+
+  function startWinnerSequence(winnerIndex, requireLastStanding) {
+    // Something changed while the elimination line played: a player brought
+    // back, a new game.
+    if (!state.gameResultPrompted || !isAlive(state.seats[winnerIndex])) return;
+    if (requireLastStanding && aliveSeatIndexes().length !== 1) return;
+    cancelDrawSequence();
     // Drum roll, reveal and the way home to the house lights: see cues.winner.
     winnerLightsOut = true;
     sendLightCue('winner', { seat: winnerIndex, reveal_in: winnerSoundSettings.reveal_at });
@@ -1248,7 +2400,10 @@
         }).filter(function (index) { return index !== null; });
         if (stillAlive.length !== 1 || stillAlive[0] !== winnerIndex) return;
       }
-      openGameResultDialog(winnerIndex, !requireLastStanding);
+      // Both sides of the table see how the game went before the form.
+      showGameRecap('win', finalRanking(winnerIndex, !requireLastStanding), function () {
+        openGameResultDialog(winnerIndex, !requireLastStanding);
+      });
     });
   }
 
@@ -1286,7 +2441,9 @@
       stopAudioLayers(drawLayeredAudio);
       hideAllSeatsCovered();
       renderHub();
-      openDrawResultDialog(survivors);
+      showGameRecap('draw', drawRanking(survivors), function () {
+        openDrawResultDialog(survivors);
+      });
     }
 
     playBaseAnnouncer('Draw.mp3', guarded(function () {
@@ -1316,6 +2473,7 @@
     if (drawSequence) {
       cancelDrawSequence();
       state.gameResultPrompted = false;
+      resumeGameStats();
       saveState();
       return;
     }
@@ -1334,6 +2492,7 @@
     var dialog = document.getElementById('game-result-dialog');
     if (dialog && dialog.open) dialog.close();
     state.gameResultPrompted = true;
+    endGameStats();
     saveState();
     enableHouseLights();
     runDrawSequence(survivors);
@@ -1385,6 +2544,7 @@
     }
     clearConfetti();
     hideAllSeatsCovered();
+    hideGameRecap();
     var overlay = document.getElementById('winner-takeover');
     if (!overlay) return;
     overlay.classList.remove('is-active', 'is-shaking', 'is-leaving');
@@ -1453,7 +2613,7 @@
     buildConfetti(seatColor(winnerIndex));
     /* This uses the effect pool instead of announcerVoice so the fanfare and
        a commander recording still playing can overlap. */
-    playSound('win', winnerSoundSettings.fanfare_volume / 100);
+    playSound('win', winnerSoundSettings.fanfare_volume / 100, winFanfareSkip);
 
     window.setTimeout(function () {
       if (!overlay.hidden) overlay.classList.add('is-shaking');
@@ -1547,6 +2707,12 @@
     form.dataset.outcome = isDraw ? 'draw' : 'win';
     document.getElementById('result-game-date').value = localGameDate();
     document.getElementById('game-result-status').textContent = '';
+    document.getElementById('game-result-status').classList.remove('is-error');
+    // Without the local server there is no leaderboard here: Drive leads.
+    var saveButton = form.querySelector('.result-dialog__save');
+    var sendButton = document.getElementById('game-result-send');
+    if (saveButton) saveButton.hidden = !serverAvailable;
+    if (sendButton) sendButton.classList.toggle('result-dialog__primary', !serverAvailable);
     rows.innerHTML = ranking.map(function (result) {
       var seat = state.seats[result.index];
       // A native <select> pops its option list in the browser's own UA
@@ -1563,6 +2729,12 @@
         '<input class="result-dialog__deck" maxlength="80" placeholder="Deck name" aria-label="Deck for ' + escapeHtml(seat.name) + '" value="' + escapeHtml(seat.deck || '') + '" required>' +
         '</div>';
     }).join('');
+
+    var statsBox = document.getElementById('game-result-stats');
+    if (statsBox) {
+      statsBox.innerHTML = '<p class="stats-summary">' + escapeHtml(gameSummaryText()) + '</p>' +
+        statsTableHtml(ranking.map(function (result) { return result.index; }));
+    }
 
     if (!dialog.open) dialog.showModal();
     var firstDeck = rows.querySelector('.result-dialog__deck');
@@ -1587,46 +2759,219 @@
         candidate.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       });
     });
+    var status = document.getElementById('game-result-status');
+    function setStatus(message, isError) {
+      status.textContent = message;
+      status.classList.toggle('is-error', !!isError);
+    }
+
+    /* Saving to this table's leaderboard needs the local server; the Drive
+       inbox and the download work anywhere. */
     form.addEventListener('submit', function (event) {
       event.preventDefault();
+      // Enter in a deck box submits even with Save hidden: send instead.
+      if (!serverAvailable) {
+        if (sendButton) sendButton.click();
+        return;
+      }
       var saveButton = form.querySelector('.result-dialog__save');
-      var status = document.getElementById('game-result-status');
-      var players = Array.prototype.map.call(form.querySelectorAll('[data-result-seat]'), function (row) {
-        var index = Number(row.dataset.resultSeat);
-        return {
-          rank: Number(row.dataset.rank),
-          name: state.seats[index].name,
-          deck: row.querySelector('.result-dialog__deck').value
-        };
-      });
+      var submission = resultSubmission(form);
 
       saveButton.disabled = true;
       saveButton.textContent = 'Saving…';
-      status.textContent = '';
+      setStatus('');
       window.fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: document.getElementById('result-game-date').value,
-          outcome: form.dataset.outcome || 'win',
-          players: players
-        })
+        body: JSON.stringify(Object.assign({}, submission.game, { replaces: submission.source.replaces || null }))
       }).then(function (response) {
         return response.json().then(function (result) {
           if (!response.ok || !result.ok) throw new Error(result.message || 'Could not save the result');
           return result;
         });
-      }).then(function () {
-        status.textContent = 'Game saved to the leaderboard.';
+      }).then(function (result) {
+        setStatus(result.duplicate ? 'Already on the leaderboard.' : 'Game saved to the leaderboard.');
         window.setTimeout(function () { dialog.close(); }, 900);
       }).catch(function (error) {
-        status.textContent = error.message;
-        status.classList.add('is-error');
+        setStatus(error.message, true);
       }).finally(function () {
         saveButton.disabled = false;
         saveButton.textContent = 'Save result';
       });
     });
+
+    var sendButton = document.getElementById('game-result-send');
+    var downloadButton = document.getElementById('game-result-download');
+    var shareButton = document.getElementById('game-result-share');
+
+    if (sendButton) {
+      sendButton.addEventListener('click', function () {
+        if (!form.reportValidity()) return;
+        var inbox = window.MtgGameInbox;
+        if (!inbox) { setStatus('Sending is not available on this page.', true); return; }
+        var submission = resultSubmission(form);
+        sendButton.disabled = true;
+        sendButton.textContent = 'Sending…';
+        setStatus('');
+        inbox.send(submission).then(function (result) {
+          if (result.ok) {
+            setStatus(result.duplicate ? 'Already in the Drive inbox.' : 'Sent to the Drive inbox.');
+          } else if (result.queued) {
+            setStatus(result.error + ' — kept on this device; it will send itself once it can.', true);
+          } else {
+            setStatus('The inbox refused it: ' + result.error + '. Download it instead.', true);
+          }
+        }).finally(function () {
+          sendButton.disabled = false;
+          sendButton.textContent = 'Send to Drive';
+        });
+      });
+    }
+
+    if (downloadButton) {
+      downloadButton.addEventListener('click', function () {
+        if (!form.reportValidity() || !window.MtgGameInbox) return;
+        window.MtgGameInbox.download(resultSubmission(form));
+        setStatus('Downloaded.');
+      });
+    }
+
+    if (shareButton) {
+      shareButton.hidden = !(window.MtgGameInbox && window.MtgGameInbox.canShareFile());
+      shareButton.addEventListener('click', function () {
+        if (!form.reportValidity()) return;
+        var sharing = window.MtgGameInbox && window.MtgGameInbox.share(resultSubmission(form));
+        if (!sharing) { setStatus('This browser cannot share files — use Download.', true); return; }
+        sharing.catch(function (error) {
+          if (error && error.name !== 'AbortError') setStatus('Could not share: ' + error.message, true);
+        });
+      });
+    }
+  }
+
+  /* ------------------------------------------------------- saved game -- */
+
+  var APP_VERSION = '2026-11-09';
+
+  function localTimestamp(date) {
+    var offset = -date.getTimezoneOffset();
+    var sign = offset >= 0 ? '+' : '-';
+    var pad = function (value) { return (value < 10 ? '0' : '') + value; };
+    var local = new Date(date.getTime() + offset * 60000).toISOString().slice(0, 19);
+    return local + sign + pad(Math.floor(Math.abs(offset) / 60)) + ':' + pad(Math.abs(offset) % 60);
+  }
+
+  function seatName(index) {
+    return TABLE_RING.indexOf(index) === -1 ? null : state.seats[index].name;
+  }
+
+  /* The whole game as the result window has it, in the format of
+     drive/README.md: the game_history.json entry, the final table, and the
+     timeline. Saving, sending and downloading all hand out this. */
+  function resultSubmission(form) {
+    var rows = Array.prototype.slice.call(form.querySelectorAll('[data-result-seat]'));
+    var deckBySeat = {};
+    var players = rows.map(function (row) {
+      var index = Number(row.dataset.resultSeat);
+      var deck = row.querySelector('.result-dialog__deck').value.trim();
+      deckBySeat[index] = deck;
+      return { name: state.seats[index].name, deck: deck, rank: Number(row.dataset.rank), stats: statsPayload(index) };
+    });
+    var outcome = form.dataset.outcome || 'win';
+    var date = document.getElementById('result-game-date').value;
+
+    /* A result handed out once and then changed (a deck renamed, a rank
+       moved) is a correction: it gets a new id and names the one it replaces,
+       because the inbox never overwrites. The same result again keeps its id,
+       so resending it is harmless. */
+    var stats = state.stats;
+    var fingerprint = JSON.stringify([date, outcome, players.map(function (player) {
+      return [player.name, player.deck, player.rank];
+    })]);
+    var replaces = null;
+    if (stats.handedOut && stats.handedOut.fingerprint !== fingerprint) {
+      replaces = stats.handedOut.id;
+      stats.gameId = newGameId();
+    }
+    stats.handedOut = { id: stats.gameId, fingerprint: fingerprint };
+    saveState();
+
+    var duration = Math.round(gameDurationMs() / 1000);
+    var game = {
+      id: stats.gameId,
+      date: date,
+      created_at: localTimestamp(new Date()),
+      outcome: outcome,
+      duration_seconds: duration,
+      starting_life: state.startingLife,
+      players: players
+    };
+
+    var turns = stats.timeline.filter(function (event) { return event.type === 'turn'; });
+    var firstPlayer = seatName(turns.length ? turns[0].seat : state.currentPlayer);
+    var survivors = aliveSeatIndexes();
+
+    var table = {
+      direction: state.direction,
+      first_player: firstPlayer,
+      ended_by: outcome === 'draw' ? 'draw' : (survivors.length <= 1 ? 'elimination' : 'declared'),
+      elimination_order: state.eliminationOrder.map(seatName),
+      monarch: seatName(state.monarch),
+      initiative: seatName(state.initiative),
+      daytime: state.daytime,
+      seats: state.seats.map(function (seat, index) {
+        var taken = {};
+        state.seats.forEach(function (other, dealer) {
+          if (dealer !== index) taken[other.name] = [seat.commander[dealer], seat.commander[dealer + 4]];
+        });
+        return {
+          seat: index,
+          name: seat.name,
+          deck: deckBySeat[index] || seat.deck || '',
+          deck_source: seat.deck ? 'preset' : 'blank',
+          commander_names: seat.twoCommanders ? seat.commanderNames.slice() : [seat.commanderNames[0] || ''],
+          color: seatColor(index),
+          life: seat.life,
+          poison: seat.poison,
+          energy: seat.energy,
+          experience: seat.experience,
+          commander_damage_taken: taken,
+          tax: seat.tax,
+          second_tax: seat.secondTax,
+          emblems: seat.emblems.slice(),
+          blessing: seat.blessing,
+          out: !isAlive(seat),
+          out_cause: outCause(seat)
+        };
+      })
+    };
+
+    var timeline = [{ t: 0, type: 'start', first_player: firstPlayer }];
+    stats.timeline.forEach(function (event) {
+      if (event.type === 'turn') {
+        timeline.push({ t: event.t, type: 'turn', turn: event.turn, player: seatName(event.seat),
+          seconds: event.seconds, life: event.life, poison: event.poison });
+      } else if (event.type === 'out') {
+        timeline.push({ t: event.t, type: 'out', player: seatName(event.seat), cause: event.cause, by: seatName(event.by) });
+      }
+    });
+    timeline.push({
+      t: duration, type: 'end', outcome: outcome,
+      winners: players.filter(function (player) { return player.rank === 1; }).map(function (player) { return player.name; })
+    });
+
+    var source = { app: serverAvailable ? 'table' : 'phone-tracker', app_version: APP_VERSION };
+    if (replaces) source.replaces = replaces;
+
+    return {
+      format: 'mtg-table-game',
+      version: 1,
+      source: source,
+      game: game,
+      table: table,
+      timeline: timeline,
+      new_decks: []
+    };
   }
 
   function setSeatColor(seatIndex, color) {
@@ -1752,7 +3097,7 @@
       '<span class="commander-card__flipper">' +
       '<span class="commander-card__face commander-card__face--back"></span>' +
       '<span class="commander-card__face commander-card__face--front"></span></span>' +
-      (burning ? '<video class="commander-fire-video" src="/Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>' : '') +
+      (burning ? '<video class="commander-fire-video" src="Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>' : '') +
       '</span>';
   }
 
@@ -2323,6 +3668,7 @@
       ' placeholder="Search ' + emblemList().length + ' emblems…" aria-label="Search emblems">' +
       '<div class="tray__results" data-emblem-results="1"></div>' +
       '</div>' +
+      '<div class="tray__stats" data-tray-stats="1"></div>' +
       '<div class="tray__actions">' +
       '<button class="tray__out" type="button" data-tray-out="out">Eliminate</button>' +
       '<button class="tray__out" type="button" data-tray-out="conceded">Concede</button>' +
@@ -2474,6 +3820,7 @@
 
     var clear = view.tray.querySelector('[data-tray-clear-image]');
     if (clear) clear.disabled = !state.seats[seatIndex].image;
+    renderTrayStats(seatIndex);
   }
 
   /* Colour is what separates emblems that share a symbol — every Chandra is a
@@ -2754,16 +4101,21 @@
   function advanceTurn(step) {
     // Which way round the screen the turn went, so the compass follows it.
     compass.motion = (state.direction === 'cw' ? 1 : -1) * (step < 0 ? -1 : 1);
-    setCurrentPlayer(nextAliveSeat(step));
+    setCurrentPlayer(nextAliveSeat(step), step < 0);
   }
 
-  function setCurrentPlayer(index) {
+  function setCurrentPlayer(index, back) {
     // Landing back on the seat that is already up — everyone else being out —
     // is not a turn change, so it stays silent and the clock keeps running; the
     // lights still refresh below.
     if (index !== state.currentPlayer) {
       playSound('turn');
-      state.turnStartedAt = Date.now();
+      // Passing back undoes the pass that was just made, clock and all.
+      if (state.stats.waiting) startGameClock();
+      if (!(back && reopenTurn(index))) {
+        closeTurn();
+        state.turnStartedAt = clockNow();
+      }
     }
     state.currentPlayer = index;
     render();
@@ -2854,8 +4206,9 @@
         overlay.classList.add('is-landed');
         overlay.style.setProperty('--accent', seatColor(winner));
         // The first turn of the game starts now, even if the pick landed on
-        // whoever the tracker already had as current.
-        state.turnStartedAt = Date.now();
+        // whoever the tracker already had as current, and so does the game.
+        markGameStart();
+        state.turnStartedAt = clockNow();
         setCurrentPlayer(winner);
         // setCurrentPlayer's own pushTurn only reaches the server when
         // "lights follow turn" is on — the reveal itself should always show
@@ -3885,6 +5238,10 @@
   }
 
   function postJSON(path, body, onResult) {
+    if (STATIC_SITE) {
+      if (onResult) window.setTimeout(function () { onResult(null); }, 0);
+      return;
+    }
     if (!window.fetch) return;
     window.fetch(path, {
       method: 'POST',
@@ -4016,11 +5373,16 @@
     });
   }
 
+  /* Whether the table's local server is behind this page. On a static host
+     (the phone tracker) it never is, so the result goes to Drive or a file. */
+  var serverAvailable = false;
+
   function syncHouseLights() {
-    if (!window.fetch) return;
+    if (STATIC_SITE || !window.fetch) return;
     window.fetch('/api/status', { cache: 'no-store' }).then(function (response) {
       return response.json();
     }).then(function (status) {
+      serverAvailable = !!(status && status.ok);
       setHouseLights(status && status.house_lights);
       // Before the seats re-render below, so they draw with these settings.
       syncCommanderFxSettings(status);
@@ -4038,7 +5400,8 @@
   /* A deck preset loaded on the lights page dresses the seat with its
      pictures. Only a change on the server replaces what is shown, so art
      dropped onto a panel here stays until the next preset; a picture the
-     server stops naming goes only if the seat is still showing it. */
+     server stops naming goes only if the seat is still showing it. Loading
+     a preset again counts as a change, so cleared art comes back with it. */
   function syncSeatPictures(seat, player) {
     var slots = {
       background_image: { holder: seat, key: 'image' },
@@ -4046,10 +5409,17 @@
       second_commander_image: { holder: seat.secondCommander, key: 'commanderImage' }
     };
     var changed = false;
+    var load = typeof player.preset_load === 'string' ? player.preset_load : '';
+    // A blank token is a server that has loaded nothing since it started.
+    var reloaded = !!load && load !== seat.tablePictures.preset_load;
+    if (reloaded) {
+      seat.tablePictures.preset_load = load;
+      changed = true;
+    }
     Object.keys(slots).forEach(function (field) {
       var wanted = typeof player[field] === 'string' ? player[field] : '';
       var before = seat.tablePictures[field];
-      if (wanted === before) return;
+      if (wanted === before && !(reloaded && wanted)) return;
       var slot = slots[field];
       var showing = slot.holder[slot.key];
       if (wanted) slot.holder[slot.key] = pictureUrl(wanted);
@@ -4114,6 +5484,20 @@
     if (saved) {
       Object.keys(winnerSoundSettings).forEach(function (key) {
         if (Number.isFinite(saved[key])) winnerSoundSettings[key] = saved[key];
+      });
+    }
+    var death = status.moment_settings && status.moment_settings.death_sound;
+    if (death) {
+      Object.keys(deathSoundSettings).forEach(function (key) {
+        if (typeof death[key] === typeof deathSoundSettings[key]) deathSoundSettings[key] = death[key];
+      });
+    }
+    if (status.announcer_death) {
+      ['intros', 'players'].forEach(function (key) {
+        var files = status.announcer_death[key];
+        if (Array.isArray(files)) {
+          deathSounds[key] = files.filter(function (file) { return typeof file === 'string'; });
+        }
       });
     }
     if (Array.isArray(status.players)) {
@@ -4213,6 +5597,39 @@
     }, 40);
   }
 
+  /* Ctrl+click (Cmd+click on a Mac) on a cover skips the entrance: every
+     plaque still down drops at once, with no drum roll, announcements or light
+     show, and the first player is picked as usual. Mid-sequence it cuts the
+     rest of it short. */
+  function skipEntrance() {
+    if (!state.entranceMode) return;
+    var covered = TABLE_RING.filter(function (index) { return !state.entranceRevealed[index]; });
+    if (!covered.length) return;
+    cancelEntranceSequence();
+    covered.forEach(function (index) {
+      var view = seatViews[index];
+      state.entranceRevealed[index] = true;
+      view.entrance.disabled = true;
+      view.el.classList.add('is-entrance-revealing');
+    });
+    saveState();
+    playSound('thud');
+    var token = {};
+    entranceSkip = token;
+    window.setTimeout(function () {
+      if (entranceSkip !== token) return;
+      entranceSkip = null;
+      covered.forEach(function (index) {
+        var view = seatViews[index];
+        view.el.classList.remove('is-entrance-covered', 'is-entrance-revealing');
+        view.entrance.setAttribute('aria-hidden', 'true');
+      });
+      syncEntranceStage();
+      render();
+      pickRandomFirstPlayer();
+    }, ENTRANCE_DROP_MS);
+  }
+
   function revealEntrance(seatIndex) {
     if (!state.entranceMode || state.entranceRevealed[seatIndex] || entranceSequence) return;
 
@@ -4224,7 +5641,6 @@
       crowdIndex: 0
     };
     entranceSequence = token;
-    seatViews.forEach(function (view) { view.entrance.disabled = true; });
     sendLightCue('entrance_start');
 
     playEntranceLayer('sound/drumroll.wav', false, null);
@@ -4365,6 +5781,7 @@
   function cancelEntranceSequence() {
     var token = entranceSequence;
     entranceSequence = null;
+    entranceSkip = null;
     if (token) token.timers.forEach(function (timer) { window.clearTimeout(timer); });
     // A show cut short puts the current player's lighting back.
     if (token) sendLightCue('release', { group: 'show', restore: true });
@@ -4398,6 +5815,9 @@
     state.entranceMode = !!enabled;
     if (enabled) {
       state.entranceRevealed = state.entranceRevealed.map(function () { return false; });
+      // Nobody is playing while the players are being announced: the clock
+      // waits for the first player to be picked once the last one is in.
+      waitForGameStart();
     }
     seatViews.forEach(function (view) {
       window.clearTimeout(view.entranceTimer);
@@ -4408,9 +5828,11 @@
     saveState();
   }
 
-  /* clearStyle also strips the table setup — seat colours and art. Reset Game
-     does that; switching the starting life mid-setup should not. */
-  function resetGame(clearStyle) {
+  /* A new game at the same table: life and counters back to the start, the
+     clock at 0:00 and stopped until the first player is picked. Seat colours,
+     art, sounds — whatever deck preset each seat has on — all stay. */
+  function resetGame() {
+    cancelDeathAnnouncements();
     cancelEntranceSequence();
     cancelDrawSequence();
     state.eliminationOrder = [];
@@ -4441,12 +5863,14 @@
       seat.emblems = [];
       seat.spared = false;
       seat.commanderRevealed = false;
-      if (clearStyle) {
-        seat.color = SEAT_DEFAULTS[index].accent;
-        seat.image = null;
-      }
     });
-    state.turnStartedAt = Date.now();
+    statBatches.forEach(function (batch) { if (batch) window.clearTimeout(batch.timer); });
+    statBatches = [null, null, null, null];
+    // Fresh stats come stopped at 0:00, waiting for the first player.
+    state.stats = freshStats();
+    state.turnStartedAt = state.stats.startedAt;
+    lastRecap = null;
+    hideGameRecap();
     closeTrays();
     seatViews.forEach(function (view) {
       view.pending = 0;
@@ -4461,7 +5885,7 @@
 
   function setStartingLife(life) {
     state.startingLife = life;
-    resetGame(false);
+    resetGame();
   }
 
   function setDirection(direction) {
@@ -4473,6 +5897,25 @@
   function setLightsFollowTurn(enabled) {
     state.lightsFollowTurn = enabled;
     render();
+    saveState();
+  }
+
+  /* The hub's Stop clock switch. Starting it again also starts a clock that
+     was waiting for the game to begin. */
+  function setClockStopped(stopped) {
+    if (stopped) pauseClock();
+    else resumeClock();
+    renderTurnClock();
+    refreshLiveStats();
+    renderHub();
+    saveState();
+  }
+
+  function resetClockToZero() {
+    resetClock();
+    renderTurnClock();
+    refreshLiveStats();
+    renderHub();
     saveState();
   }
 
@@ -4564,7 +6007,7 @@
     var entranceCovered = state.entranceMode && !state.entranceRevealed[index];
     view.el.classList.toggle('is-entrance-covered', entranceCovered);
     if (!view.el.classList.contains('is-entrance-revealing')) {
-      view.entrance.disabled = !entranceCovered || !!entranceSequence;
+      view.entrance.disabled = !entranceCovered;
       view.entrance.setAttribute('aria-hidden', String(!entranceCovered));
     }
     view.entrance.setAttribute('aria-label', 'Reveal ' + seat.name + "'s player panel");
@@ -4610,10 +6053,35 @@
 
   /* The active seat's badge counts up from when its turn began. Only that one
      seat's text changes, once a second; an empty clock hides itself. */
+  /* The hourglass beside the lightbulb: the same switch as the hub's Stop
+     clock, always in reach. */
+  function renderClockButton() {
+    var button = document.getElementById('quick-clock');
+    if (!button) return;
+    var ended = !!state.stats.endedAt;
+    var waiting = !ended && !!state.stats.waiting;
+    var stopped = !ended && !waiting && isClockStopped();
+    button.disabled = ended;
+    button.classList.toggle('is-stopped', stopped);
+    button.classList.toggle('is-waiting', waiting);
+    button.setAttribute('aria-pressed', String(stopped || waiting));
+    button.title = ended ? 'The game is over: the clock has stopped'
+      : waiting ? 'The clock is waiting for the game to start. Tap to start it now'
+      : stopped ? 'The clock is stopped. Tap to start it again'
+      : 'Stop the clock';
+    button.setAttribute('aria-label', button.title);
+  }
+
   function renderTurnClock() {
+    renderClockButton();
     var view = seatViews[state.currentPlayer];
     if (!view) return;
-    view.timer.textContent = state.turnClock ? formatClock(Date.now() - state.turnStartedAt) : '';
+    var stopped = isClockStopped();
+    view.timer.textContent = state.turnClock
+      ? (stopped ? '❚❚ ' : '') + formatClock(clockNow() - state.turnStartedAt) : '';
+    view.timer.classList.toggle('is-stopped', stopped);
+    view.timer.title = state.stats.waiting ? 'The clock starts when the game does'
+      : stopped ? 'Clock stopped' : 'Time on this turn';
   }
 
   function render() {
@@ -4763,6 +6231,9 @@
     });
     document.getElementById('quick-resend-lights').addEventListener('click', resendLights);
     document.getElementById('quick-house-lights').addEventListener('click', toggleHouseLights);
+    document.getElementById('quick-clock').addEventListener('click', function () {
+      if (!state.stats.endedAt) setClockStopped(!isClockStopped());
+    });
 
     panel.addEventListener('click', function (event) {
       // The switches have their label and track as children, so the tap can
@@ -4773,6 +6244,11 @@
       if (action === 'fullscreen') toggleFullscreen();
       if (action === 'lights-follow') setLightsFollowTurn(!state.lightsFollowTurn);
       if (action === 'turn-timer') setTurnClock(!state.turnClock);
+      if (action === 'clock-stop') setClockStopped(!isClockStopped());
+      if (action === 'clock-reset' &&
+          window.confirm('Reset the game clock to 0:00? Every player’s play time, turn count and turn times go back to zero. Damage, life and the rest are kept.')) {
+        resetClockToZero();
+      }
       if (action === 'entrance-mode') {
         setEntranceMode(!state.entranceMode);
         setHubOpen(false);
@@ -4786,9 +6262,31 @@
         setHubOpen(false);
         pickRandomFirstPlayer();
       }
+      if (action === 'game-stats') {
+        setHubOpen(false);
+        // After a game, the recap again; during one, the live table.
+        if (lastRecap && state.stats.endedAt) showGameRecap(lastRecap.outcome, lastRecap.ranking, null);
+        else openStatsDialog();
+      }
       if (action === 'declare-draw') {
         setHubOpen(false);
         declareDraw();
+      }
+      if (action === 'outbox-retry' && window.MtgGameInbox) {
+        control.disabled = true;
+        control.textContent = 'Sending…';
+        window.MtgGameInbox.retry().then(function (result) {
+          control.textContent = result.left ? 'Still unsent — try again' : 'All sent';
+        }).finally(function () {
+          control.disabled = false;
+          window.setTimeout(renderOutbox, 2500);
+        });
+      }
+      if (action === 'outbox-download' && window.MtgGameInbox) {
+        window.MtgGameInbox.pending().forEach(function (submission, index) {
+          // Browsers drop a burst of downloads; space them out.
+          window.setTimeout(function () { window.MtgGameInbox.download(submission); }, index * 400);
+        });
       }
       if (action === 'house-lights') toggleHouseLights();
       if (action === 'resend-lights') resendLights();
@@ -4801,10 +6299,24 @@
         restartServer();
       }
       if (action === 'reset' &&
-          window.confirm('Reset all life totals to ' + state.startingLife + ', and clear seat colours and art?')) {
-        resetGame(true);
+          window.confirm('Reset all life totals to ' + state.startingLife + ', put the clock back to 0:00 and turn on the house lights? Each seat keeps its deck preset.')) {
+        resetGame();
+        // Between games the room goes to plain working light; the server says
+        // which way it went, so the button stays honest.
+        postJSON('/api/lights/house', { on: true }, function (result) {
+          if (result && typeof result.house_lights === 'boolean') setHouseLights(result.house_lights);
+        });
       }
     });
+
+    var statsDialog = document.getElementById('stats-dialog');
+    if (statsDialog) {
+      document.getElementById('stats-close').addEventListener('click', function () { statsDialog.close(); });
+      // A tap on the dimmed table around it closes it too.
+      statsDialog.addEventListener('click', function (event) {
+        if (event.target === statsDialog) statsDialog.close();
+      });
+    }
 
     document.getElementById('coin-flip').addEventListener('click', function () { openCoinToss(false); });
     document.getElementById('coin-flip-two').addEventListener('click', function () { openCoinToss(true); });
@@ -4833,6 +6345,29 @@
     state.daytime = value === 'day' || value === 'night' ? value : null;
     renderHub();
     saveState();
+  }
+
+  /* Games that have not reached the Drive inbox yet: a row in the hub and a
+     dot on its button, until the inbox has them all. */
+  var unsentGames = 0;
+
+  function renderOutbox() {
+    var row = document.getElementById('outbox-row');
+    var retry = document.getElementById('outbox-retry');
+    var toggle = document.getElementById('hub-toggle');
+    if (row) row.hidden = unsentGames === 0;
+    if (retry && !retry.disabled) {
+      retry.textContent = 'Send ' + unsentGames + ' unsent game' + (unsentGames === 1 ? '' : 's');
+    }
+    if (toggle) toggle.classList.toggle('has-unsent', unsentGames > 0);
+  }
+
+  function bindOutbox() {
+    if (!window.MtgGameInbox) return;
+    window.MtgGameInbox.onChange(function (count) {
+      unsentGames = count;
+      renderOutbox();
+    });
   }
 
   function renderHub() {
@@ -4864,6 +6399,17 @@
     setSwitch(document.getElementById('lights-follow'), state.lightsFollowTurn);
     setSwitch(document.getElementById('entrance-mode'), state.entranceMode);
     setSwitch(document.getElementById('turn-timer'), state.turnClock);
+    var clockStop = document.getElementById('clock-stop');
+    if (clockStop) {
+      var stopped = isClockStopped();
+      setSwitch(clockStop, stopped);
+      clockStop.disabled = !!state.stats.endedAt;
+      clockStop.querySelector('.hub__action-text').textContent =
+        state.stats.waiting ? 'Clock waiting' : stopped ? 'Clock stopped' : 'Stop clock';
+      clockStop.title = state.stats.waiting
+        ? 'The clock starts when the first player is picked, the turn passes, or a life total changes. Switch off to start it now.'
+        : 'Stop every game timer — the turn badge, turn times and game time — until you switch it off again';
+    }
 
     var draw = document.getElementById('declare-draw');
     if (draw) {
@@ -4871,6 +6417,8 @@
       draw.classList.toggle('is-active', !!drawSequence);
       draw.setAttribute('aria-pressed', String(!!drawSequence));
     }
+
+    renderClockButton();
 
     setSwitch(document.getElementById('house-lights'), houseLights);
     var quickHouse = document.getElementById('quick-house-lights');
@@ -4918,6 +6466,8 @@
     document.addEventListener('keydown', function (event) {
       if (isTypingTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
       if (document.body.classList.contains('is-entrance-active')) return;
+      // A window over the table (stats, the result, a crop) owns the keys.
+      if (document.querySelector('dialog[open]') || isRecapShowing()) return;
 
       if (event.key === ' ' || event.key === 'Spacebar') {
         event.preventDefault();
@@ -4951,14 +6501,24 @@
   buildHub();
   bindImageCropDialog();
   bindGameResultDialog();
+  bindOutbox();
+  bindGameRecap();
   bindKeyboard();
   render();
 
   // Tell the server who is up and what the seats are called, so the lights page
   // shows the right names and highlight. Lights are left alone on a reload.
-  pushPlayerNames();
-  postJSON('/api/turn', { player: state.currentPlayer, apply_lights: false });
-  syncHouseLights();
-  window.setInterval(syncHouseLights, 5000);
+  if (STATIC_SITE) {
+    document.documentElement.classList.add('is-static');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-static-href]'), function (link) {
+      link.setAttribute('href', link.dataset.staticHref);
+    });
+  } else {
+    pushPlayerNames();
+    postJSON('/api/turn', { player: state.currentPlayer, apply_lights: false });
+    syncHouseLights();
+    window.setInterval(syncHouseLights, 5000);
+  }
   window.setInterval(renderTurnClock, 1000);
+  window.setInterval(refreshLiveStats, 1000);
 })();

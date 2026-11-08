@@ -17,11 +17,19 @@
       <!-- The turn compass: one arc per seat, pointing at its quadrant, built by
            js/app.js. A lit comet travels round it to whoever's turn it is. -->
       <div class="hub__compass" id="turn-compass" aria-hidden="true"></div>
-      <button class="hub__satellite hub__satellite--left" id="quick-house-lights" type="button"
+      <button class="hub__satellite hub__satellite--left" id="quick-house-lights" type="button" data-needs-server
               title="Toggle house lights" aria-label="Toggle house lights" aria-pressed="false">
         <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M9.2 18h5.6M10.2 21h3.6"/>
           <path class="hub__icon-bulb" d="M12 3a6 6 0 0 0-3.7 10.7c.7.6 1.1 1.4 1.2 2.3h5c.1-.9.5-1.7 1.2-2.3A6 6 0 0 0 12 3z"/>
+        </svg>
+      </button>
+      <button class="hub__satellite hub__satellite--left hub__satellite--outer hub__satellite--clock" id="quick-clock"
+              type="button" title="Stop the clock" aria-label="Stop the clock" aria-pressed="false">
+        <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 3h12M6 21h12"/>
+          <path d="M7.5 3c0 4.6 4.5 5.8 4.5 9s-4.5 4.4-4.5 9M16.5 3c0 4.6-4.5 5.8-4.5 9s4.5 4.4 4.5 9"/>
+          <path class="hub__icon-sand" d="M9.4 19.6c.9-1.7 1.8-2.4 2.6-2.4s1.7.7 2.6 2.4z"/>
         </svg>
       </button>
       <button class="hub__satellite hub__satellite--top hub__satellite--outermost" id="day-night-toggle" type="button" hidden
@@ -44,7 +52,7 @@
       <button class="hub__turn" id="turn-next" title="Next player" aria-label="Pass the turn to the next player">
         <span class="hub__turn-glyph" id="turn-glyph">&#8635;</span>
       </button>
-      <button class="hub__satellite hub__satellite--bottom" id="quick-resend-lights" type="button"
+      <button class="hub__satellite hub__satellite--bottom" id="quick-resend-lights" type="button" data-needs-server
               title="Resend the current lighting" aria-label="Resend the current lighting">&#10227;</button>
       <button class="hub__btn" id="hub-toggle" title="Table controls" aria-label="Table controls">
         <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -73,12 +81,28 @@
           </div>
           <div class="hub__row">
             <button class="hub__action" id="random-first" data-action="random-first" type="button"
-                    title="Spin through the players and randomly pick who goes first">Pick first player</button>          </div>
+                    title="Spin through the players and randomly pick who goes first">Pick first player</button>
+            <button class="hub__action" id="game-stats" data-action="game-stats" type="button"
+                    title="Turn times, damage, life gained and more for every player this game">Game stats</button>
+          </div>
+          <div class="hub__row">
+            <button class="hub__action hub__action--switch" id="clock-stop" data-action="clock-stop" type="button" aria-pressed="false">
+              <span class="hub__action-text">Stop clock</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+            <button class="hub__action" id="clock-reset" data-action="clock-reset" type="button"
+                    title="Put the game clock and every player's turn times back to zero">Reset clock</button>
+          </div>
+          <div class="hub__row" id="outbox-row" hidden>
+            <button class="hub__action hub__action--outbox" id="outbox-retry" data-action="outbox-retry" type="button"
+                    title="Games that have not reached the Drive inbox yet. They are kept on this device and retried automatically">Send unsent games</button>
+            <button class="hub__action" id="outbox-download" data-action="outbox-download" type="button"
+                    title="Save every unsent game as a .json file">Download them</button>
+          </div>
           <div class="hub__row">
             <button class="hub__action hub__action--draw" id="declare-draw" data-action="declare-draw" type="button"
                     title="End the game as a draw between all players still alive">Declare draw</button>
             <button class="hub__action hub__action--reset" data-action="reset" type="button"
-                    title="Every life total back to the start, and seat colours and art cleared">Reset game</button>
+                    title="Every life total back to the start, the clock stopped at 0:00 and the house lights on; each seat keeps its deck preset">Reset game</button>
           </div>
         </section>
 
@@ -110,7 +134,7 @@
           </div>
         </section>
 
-        <section class="hub__section" aria-labelledby="hub-section-lights">
+        <section class="hub__section" aria-labelledby="hub-section-lights" data-needs-server>
           <h3 class="hub__section-title" id="hub-section-lights">Lights</h3>
           <div class="hub__row">
             <button class="hub__action hub__action--switch" id="lights-follow" data-action="lights-follow" type="button" aria-pressed="true">
@@ -135,10 +159,10 @@
             <button class="hub__action" data-action="fullscreen" type="button">Fullscreen</button>
           </div>
           <div class="hub__row">
-            <a class="hub__action hub__action--lights" href="/lights" target="_blank" rel="noopener">Light controls &rarr;</a>
-            <a class="hub__action hub__action--lights" href="/leaderboard" target="_blank" rel="noopener">Leaderboard &rarr;</a>
+            <a class="hub__action hub__action--lights" href="/lights" target="_blank" rel="noopener" data-needs-server>Light controls &rarr;</a>
+            <a class="hub__action hub__action--lights" href="/leaderboard" data-static-href="../" target="_blank" rel="noopener">Leaderboard &rarr;</a>
           </div>
-          <div class="hub__row">
+          <div class="hub__row" data-needs-server>
             <button class="hub__action hub__action--stop" id="shutdown" data-action="shutdown" type="button"
                     title="Stop the local website on the table PC until it is started again">Turn off local server</button>
             <button class="hub__action hub__action--restart" id="restart-server" data-action="restart-server" type="button"
@@ -252,6 +276,46 @@
     </div>
   </section>
 
+  <!-- An eliminated player's title card: the entrance card above, burned away. -->
+  <section id="death-reveal" class="board-reveal death-reveal" hidden aria-hidden="true">
+    <div class="board-reveal__half board-reveal__half--top">
+      <div class="death-reveal__stage">
+        <div class="death-reveal__burn">
+          <div class="board-reveal__card">
+            <span class="board-reveal__art"></span>
+            <span class="board-reveal__name"></span>
+          </div>
+          <div class="death-reveal__front">
+            <span class="death-reveal__char"></span>
+            <video class="death-reveal__fire" src="Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="board-reveal__half board-reveal__half--bottom">
+      <div class="death-reveal__stage">
+        <div class="death-reveal__burn">
+          <div class="board-reveal__card">
+            <span class="board-reveal__art"></span>
+            <span class="board-reveal__name"></span>
+          </div>
+          <div class="death-reveal__front">
+            <span class="death-reveal__char"></span>
+            <video class="death-reveal__fire" src="Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- The fire video is flame on black. Blending it away (screen) needs
+         the page behind it, which a fixed overlay never sees, so the black
+         is turned into transparency instead: alpha from brightness. -->
+    <svg class="death-reveal__filters" width="0" height="0" aria-hidden="true" focusable="false">
+      <filter id="death-unscreen" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" values="1.5 0 0 0 0  0 1.5 0 0 0  0 0 1.5 0 0  1.5 1.5 1.5 0 0"/>
+      </filter>
+    </svg>
+  </section>
+
   <!-- Split top/bottom and rotated the same way as board-reveal, so the spin
        reads correctly from both long sides of the table, not just one. -->
   <section id="first-player-reveal" class="first-player-reveal" hidden aria-live="assertive" aria-label="Randomly choosing the first player">
@@ -333,6 +397,15 @@
     </div>
   </section>
 
+  <!-- End-of-game recap, between the celebration and the result form. The
+       screen lies flat between the players, so it is split: the far half is
+       turned to face the other side of the table. Filled by js/app.js. -->
+  <section id="game-recap" class="game-recap" hidden aria-label="Game recap">
+    <div class="game-recap__half game-recap__half--far" data-recap-half="far" aria-hidden="true"></div>
+    <div class="game-recap__divider" aria-hidden="true"></div>
+    <div class="game-recap__half game-recap__half--near" data-recap-half="near"></div>
+  </section>
+
   <dialog id="game-result-dialog" class="result-dialog" aria-labelledby="game-result-title">
     <form id="game-result-form" class="result-dialog__form">
       <div class="result-dialog__winner" aria-hidden="true">&#9813;</div>
@@ -342,17 +415,41 @@
       <label class="result-dialog__date">Game date<input id="result-game-date" type="date" required></label>
       <div class="result-dialog__head" aria-hidden="true"><span>Rank</span><span>Player</span><span>Deck</span></div>
       <div id="game-result-rows"></div>
+      <div id="game-result-stats" class="result-dialog__stats"></div>
       <div id="game-result-status" class="result-dialog__status" role="status" aria-live="polite"></div>
       <div class="result-dialog__actions">
         <button type="button" class="result-dialog__later" id="game-result-later">Not now</button>
-        <button type="submit" class="result-dialog__save">Save result</button>
+        <button type="button" class="result-dialog__alt" id="game-result-download"
+                title="Save the whole game as a .json file on this device">Download</button>
+        <button type="button" class="result-dialog__alt" id="game-result-share" hidden
+                title="Send the game file through WhatsApp, Telegram, email…">Share</button>
+        <button type="button" class="result-dialog__alt" id="game-result-send"
+                title="Send the whole game to the Google Drive inbox">Send to Drive</button>
+        <button type="submit" class="result-dialog__save" hidden>Save result</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="stats-dialog" class="result-dialog stats-dialog" aria-labelledby="stats-title">
+    <div class="result-dialog__form">
+      <span class="result-dialog__eyebrow">THIS GAME</span>
+      <h2 id="stats-title">Game stats</h2>
+      <p id="stats-summary" class="stats-summary"></p>
+      <div id="stats-table" class="result-dialog__stats"></div>
+      <p class="stats-note">Damage counts as dealt by whoever's turn it is; commander damage comes from the counters. Gold marks the highest in each row.</p>
+      <div class="result-dialog__actions">
+        <button type="button" class="result-dialog__save" id="stats-close">Close</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- Emblem data first: app.js reads window.MTG_EMBLEMS as it builds a tray. -->
   <script src="js/emblems.js"></script>
   <script src="js/commander-fx.js"></script>
+  <!-- Awards and records, shared with the leaderboard and the public site. -->
+  <script src="js/game-stats.js"></script>
+  <!-- Sends finished games to the Google Drive inbox (drive/inbox.gs). -->
+  <script src="js/game-inbox.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

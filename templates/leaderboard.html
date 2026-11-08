@@ -70,6 +70,22 @@
       </div>
     </section>
 
+    <section class="card records-card">
+      <div class="section-heading">
+        <div><span class="eyebrow">HALL OF RECORDS</span><h2>Records</h2></div>
+        <span class="muted">From games saved with the life tracker's statistics</span>
+      </div>
+      <div id="records-grid" class="records-grid"></div>
+    </section>
+
+    <section class="card player-stats-card">
+      <div class="section-heading">
+        <div><span class="eyebrow">PLAY STYLE</span><h2>Player statistics</h2></div>
+        <span class="muted">Averages per tracked game</span>
+      </div>
+      <div id="player-stats" class="table-wrap"></div>
+    </section>
+
     <section class="history-section">
       <div class="section-heading history-heading">
         <div><span class="eyebrow">ARCHIVE</span><h2>Game history</h2></div>
@@ -81,6 +97,8 @@
   <div id="status" role="status" aria-live="polite" hidden></div>
   </div>
  </div>
+  <!-- Awards and records, shared with the life tracker and the public site. -->
+  <script src="/js/game-stats.js"></script>
   <script src="{{ url_for('static', filename='leaderboard-core.js') }}"></script>
   <script src="{{ url_for('static', filename='leaderboard.js') }}"></script>
 </body>

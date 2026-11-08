@@ -6,9 +6,11 @@ The published site is the ``site/`` folder plus what it reads:
 site's overall volume in ``site/settings.json``, and the table's card
 animations (``js/commander-fx.js``) for the decks' commander cards, and
 the game statistics' awards and records (``js/game-stats.js``).
-Nothing else in the repository is copied, so the life tracker, the lights
-page, the table's other sounds and any picture or sound the roster does not
-mention stay off the public site.
+The life tracker goes to ``tracker/``: the table's ``index.html`` with its
+stylesheet, scripts, sounds and the few pictures the page itself uses, marked
+as having no table server (no lights; results go to the Google Drive inbox
+or a file). Nothing else in the repository is copied, so the lights page and
+any picture the roster does not mention stay off the public site.
 
 Pictures are re-encoded on the way out. The originals are multi-megabyte PNGs
 and the leaderboard shows a dozen of them at once.
@@ -44,6 +46,15 @@ SHARED_PAGE_FILES = {"commander-fx.js": "js/commander-fx.js", "game-stats.js": "
 # so each gets a ?v= of its contents: a new deploy is a new URL, never a stale
 # stylesheet under new markup.
 VERSIONED_FILES = ("site.css", "site.js", "commander-fx.js", "game-stats.js")
+# The life tracker, published at tracker/ so it can be opened from a phone
+# anywhere: the table's own page (index.html) with no server behind it. Its
+# files keep their repository paths, which the page refers to relatively.
+TRACKER_DIR = OUT_DIR / "tracker"
+TRACKER_SCRIPTS = ("js/emblems.js", "js/commander-fx.js", "js/game-stats.js", "js/game-inbox.js", "js/app.js")
+TRACKER_VERSIONED = ("css/style.css",) + TRACKER_SCRIPTS
+TRACKER_ASSETS = ("static/coin_heads.png", "static/coin_tails.png", "Backgrounds/Sigil.jpg",
+                  "Backgrounds/Commander/mtgback.jpg", "Backgrounds/Animations/Fire_trasparent.webm")
+TRACKER_SOUND_TYPES = {".mp3", ".wav", ".ogg", ".m4a"}
 # Longest edge, in pixels, of each published copy of a picture.
 IMAGE_SIZES = {"full": 1600, "thumb": 480}
 # Roster keys whose value is one picture, and those whose value is a list.
@@ -163,6 +174,33 @@ def publish_page():
     (OUT_DIR / "index.html").write_text(page, encoding="utf-8")
 
 
+def publish_tracker():
+    """Copy the life tracker into tracker/, marked as having no table server."""
+    for name in TRACKER_VERSIONED + TRACKER_ASSETS:
+        target = TRACKER_DIR / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(BASE_DIR / name, target)
+    sounds = [path for path in (BASE_DIR / "sound").rglob("*")
+              if path.is_file() and path.suffix.lower() in TRACKER_SOUND_TYPES]
+    for path in sounds:
+        target = TRACKER_DIR / path.relative_to(BASE_DIR)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+
+    page = (BASE_DIR / "index.html").read_text(encoding="utf-8")
+    for name in TRACKER_VERSIONED:
+        version = hashlib.sha256((TRACKER_DIR / name).read_bytes()).hexdigest()[:10]
+        page, count = re.subn(rf'(href|src)="{re.escape(name)}"', rf'\1="{name}?v={version}"', page)
+        if count != 1:
+            raise SystemExit(f"index.html: expected one reference to {name}, found {count}")
+    marker = '<script src="js/emblems.js'
+    if page.count(marker) != 1:
+        raise SystemExit("index.html: expected one js/emblems.js script to put the static flag before")
+    page = page.replace(marker, '<script>window.MTG_TABLE_STATIC = true;</script>\n  ' + marker)
+    (TRACKER_DIR / "index.html").write_text(page, encoding="utf-8")
+    return len(sounds)
+
+
 def main():
     if OUT_DIR.exists():
         shutil.rmtree(OUT_DIR)
@@ -174,9 +212,11 @@ def main():
     publish_intro()
     publish_mana_sounds()
     publish_settings()
+    tracker_sounds = publish_tracker()
     size = sum(file.stat().st_size for file in OUT_DIR.rglob("*") if file.is_file())
     print(f"Built {OUT_DIR.name}/: {len(roster['players'])} players and {len(roster['decks'])} decks "
-          f"in the roster, {len(published)} pictures, {len(published_sounds)} sounds, {size / 1_000_000:.1f} MB")
+          f"in the roster, {len(published)} pictures, {len(published_sounds)} sounds, "
+          f"and the tracker with {tracker_sounds} sounds, {size / 1_000_000:.1f} MB")
 
 
 if __name__ == "__main__":

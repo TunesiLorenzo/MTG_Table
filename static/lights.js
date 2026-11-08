@@ -562,6 +562,13 @@ const COMMANDER_FX_HINTS = {
   quake: "Every few seconds the card rumbles and dust falls. An eyes point adds glowing eyes.",
   heartbeat: "Focus on the heart; the art throbs around it and the edges flush red. An eyes point adds glowing eyes.",
   void: "Focus on the centre of the rift; the art twists around it. An eyes point adds glowing eyes.",
+  blood: "Veins creep in from the edges and drips run down the art. An eyes point adds glowing eyes.",
+  vines: "Vines and leaves grow in from the sides and bottom. An eyes point adds glowing eyes.",
+  time: "Focus where the clock should sit; its hand sweeps round it and ripples run out from it. An eyes point adds glowing eyes.",
+  rain: "Rain falls across the art and drops sit on the glass. An eyes point adds glowing eyes.",
+  mana: "Focus on what the five mana orbs should circle. An eyes point adds glowing eyes.",
+  cosmic: "Stars and a nebula fill the dark parts of the art. An eyes point adds glowing eyes.",
+  treasure: "Gold glints on the bright parts of the art and coins fall. An eyes point adds glowing eyes.",
   none: "The card stays still.",
 };
 const COMMANDER_FX_DEFAULT_HINT = "Moves the art window. An eyes point adds glowing eyes on top.";

@@ -114,15 +114,30 @@ MOMENTS = [
     # with no on/off switch or test ("settings_only").
     {"id": "winner_sound", "label": "Winner sequence", "tab": "sound", "settings_only": True,
      "hint": "The drum roll plays, the winner's background and commander sound land, their name is announced "
-             "over the commander sound, and the fanfare follows once the name has finished.",
+             "over the commander sound (which dips so it is never louder than the name), and the fanfare "
+             "follows the name's last word, ignoring the silence at the end of the recording. A negative "
+             "fanfare gap overlaps the last word.",
      "fields": [_seconds("reveal_at", "Background and commander sound at", 6.0, 1.0, 15.0),
                 _percent("drum_volume", "Drum roll volume", 100),
                 _percent("commander_volume", "Commander sound volume", 130, 0, 200),
                 _seconds("announce_delay", "Name starts after the commander sound by", 0.5, 0.0, 10.0),
                 _percent("announcer_volume", "Name volume", 100),
-                _seconds("fanfare_gap", "Fanfare after the name by", 0.3, 0.0, 5.0),
+                _percent("commander_under_name", "Commander sound under the name (% of the name's loudness)",
+                         60, 0, 100),
+                _seconds("fanfare_gap", "Fanfare after the name's last word by", 0.0, -2.0, 5.0),
                 _percent("fanfare_volume", "Fanfare volume", 100),
                 _seconds("celebration_hold", "Winner screen stays for", 5.6, 1.0, 20.0)]},
+    # Not a light cue: the announcer's line when a player is knocked out.
+    {"id": "death_sound", "label": "Elimination", "tab": "sound", "settings_only": True,
+     "hint": "A random line from sound/Announcer/Base/Death, then the player's own clip from "
+             "sound/Announcer/Players/Death, named after the player (Borgo.mp3). Their background sweeps in "
+             "like the entrance card and burns away as the name is called, with the commander burn's lighting. "
+             "On the last elimination the winner sequence waits for it to finish.",
+     "fields": [_toggle("announce", "Announce eliminations", True),
+                _toggle("burn", "Burn the player's background", True),
+                _toggle("conceded", "Concessions too", True),
+                _seconds("overlap", "Name starts before the line ends by", 0.4, 0.0, 2.0),
+                _percent("volume", "Announcer volume", 100)]},
     # Not a light cue either: how the tracker's coin toss behaves, on the
     # Settings tab. The lights take no part in the toss.
     {"id": "coin", "label": "Coin toss", "tab": "settings", "settings_only": True,
@@ -251,10 +266,18 @@ def _eased(value, seconds):
 # The chosen lights take the color, hold it, and drift back to their plan.
 # Every press renews it, so a held button keeps the color up.
 
+# A held +/- renews the flash every LIGHT_FLASH_RENEW_MS (150 ms, js/app.js),
+# plus however long the request takes. A shorter hold starts easing back between
+# renewals and jumps to the full color again on each one: a flicker at the
+# button's repeat rate.
+LIFE_HOLD_MIN = 0.25
+
+
 def life_flash(gained, settings):
     look = settings["heal" if gained else "damage"]
     step = _eased(_as_color(look["color"]), look["fade_in"])
-    return Cue({light: Track([(0.0, step)], look["fade_in"] + look["hold"], fade_out=look["fade_out"])
+    hold = max(look["hold"], LIFE_HOLD_MIN)
+    return Cue({light: Track([(0.0, step)], look["fade_in"] + hold, fade_out=look["fade_out"])
                 for light in look["lights"]}, group="flash", priority=FLASH)
 
 
