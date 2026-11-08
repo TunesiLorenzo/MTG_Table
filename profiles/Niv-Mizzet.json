@@ -1,0 +1,74 @@
+{
+  "name": "Ny",
+  "hue": 210,
+  "saturation": 85,
+  "brightness": 90,
+  "announcer_sound": "Ny_NivMizzet.mp3",
+  "commander_sound": "NivMizzet.wav",
+  "second_commander_sound": "",
+  "commander_name": "Niv-Mizzet",
+  "second_commander_name": "",
+  "two_commanders": false,
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "deck": "Niv-Mizzet",
+  "background_focus": "",
+  "background_image": "Backgrounds/Players/Niv-Mizzet.png",
+  "commander_image": "Backgrounds/Commander/Niv-Mizzet.jpg",
+  "second_commander_image": "",
+  "commander_fx": {
+    "effect": "storm",
+    "focus": "53% 31.1%",
+    "glow": "",
+    "area": "card"
+  },
+  "second_commander_fx": {
+    "effect": "foil",
+    "focus": "",
+    "glow": "",
+    "area": "art"
+  },
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 0,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 210,
+      "saturation": 26,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 210,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 210,
+      "saturation": 85,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    }
+  },
+  "saved_at": "2026-11-08T16:33:29"
+}

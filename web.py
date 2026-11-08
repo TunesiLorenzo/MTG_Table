@@ -143,7 +143,7 @@ SITE_VOLUME_DEFAULT = 100
 # commits: the files it shows, and the build script and workflow that make it.
 # Other code and the rest of the working tree are left for a normal commit.
 PUBLISH_PATHS = ("game_history.json", "site", "Backgrounds", "sound/Commander", "sound/Intro", "sound/Mana",
-                 "build_site.py", ".github/workflows/pages.yml")
+                 "build_site.py", ".github/workflows/pages.yml", *build_site.SHARED_PAGE_FILES.values())
 PUBLISH_BRANCH = "main"
 roster_lock = threading.Lock()
 publish_lock = threading.Lock()
@@ -193,6 +193,45 @@ DEFAULT_TARGETS = ["top_left", "center", "bottom_right"]
 LIGHT_RANGES = (("hue", 0, 360), ("saturation", 0, 100), ("brightness", 1, 100))
 DISPLAY_BRIGHTNESS_MIN = 20
 DISPLAY_BRIGHTNESS_MAX = 150
+# A seat's pictures on the table display: the panel background and each
+# commander's card, as paths from the repository root into Backgrounds.
+PLAYER_PICTURE_KEYS = ("background_image", "commander_image", "second_commander_image")
+# Each commander card's animation on the table display (js/commander-fx.js
+# draws them; its effect ids must match these). "focus" is the point the
+# effect centres on and "glow" an optional second one — glowing eyes, or the
+# mouth a breath leaves from — both as "x% y%" on the card picture. "area"
+# keeps the effect to the art window or lets it cover the whole card.
+COMMANDER_FX_EFFECTS = (
+    ("foil", "Foil shimmer"),
+    ("breath", "Bellows breath"),
+    ("dragon", "Dragon breath"),
+    ("arcane", "Arcane flow"),
+    ("embers", "Heat haze & embers"),
+    ("storm", "Storm"),
+    ("shadow", "Shadow creep"),
+    ("wind", "Wind sway"),
+    ("radiance", "Radiance"),
+    ("caustics", "Caustics"),
+    ("glint", "Artifact glint"),
+    ("eyes", "Glowing eyes"),
+    ("roar", "Roar"),
+    ("quake", "Quake"),
+    ("heartbeat", "Heartbeat"),
+    ("frost", "Frost"),
+    ("snow", "Snowfall"),
+    ("toxic", "Toxic"),
+    ("void", "Void rift"),
+    ("inferno", "Inferno"),
+    ("ghost", "Ghost"),
+    ("none", "No animation"),
+)
+COMMANDER_FX_LABELS = dict(COMMANDER_FX_EFFECTS)
+COMMANDER_FX_AREAS = ("art", "card")
+COMMANDER_FX_KEYS = ("commander_fx", "second_commander_fx")
+
+
+def default_commander_fx():
+    return {"effect": "foil", "focus": "", "glow": "", "area": "art"}
 
 
 def default_light(base, light_id):
@@ -216,10 +255,17 @@ def default_light(base, light_id):
 
 
 def default_player(base):
-    """A player: a base color used as the seed and swatch, plus a light plan."""
+    """A player: a base color used as the seed and swatch, plus a light plan.
+
+    The deck and its pictures make a saved profile a whole deck preset: the
+    pictures are paths into Backgrounds, the same ones the leaderboard roster
+    names, and the table display shows them on the seat.
+    """
     return dict(base, announcer_sound="", commander_sound="", second_commander_sound="",
                 commander_name="", second_commander_name="", two_commanders=False,
                 background_brightness=100, commander_brightness=70,
+                deck="", background_focus="", **{key: "" for key in PLAYER_PICTURE_KEYS},
+                **{key: default_commander_fx() for key in COMMANDER_FX_KEYS},
                 lights={light_id: default_light(base, light_id) for light_id in LIGHT_IDS})
 
 
@@ -335,29 +381,58 @@ def load_bulb_ips(saved_bulbs):
             controller.clear_ip()
 
 
-def apply_saved_player(target, saved):
+def known_or_blank(validate, value):
+    """A saved file name if it still exists, or "" when it has gone since.
+
+    A deleted or renamed file should make an old profile or roster entry
+    quiet or bare, rather than refuse to load or hand an unchecked path to
+    the browser.
+    """
+    try:
+        return validate(value)
+    except ValueError:
+        return ""
+
+
+def apply_deck_details(target, saved):
+    """Restore the deck half of a player: its name, its pictures and the crop."""
+    if isinstance(saved.get("deck"), str):
+        target["deck"] = re.sub(r"\s+", " ", saved["deck"]).strip()[:GAME_DECK_MAX]
+    for key in PLAYER_PICTURE_KEYS:
+        if key in saved:
+            target[key] = known_or_blank(validate_picture, saved.get(key))
+    if "background_focus" in saved:
+        target["background_focus"] = known_or_blank(clean_focus, saved.get("background_focus"))
+
+
+def apply_saved_player(target, saved, *, keep_name=False):
     """Restore one player from saved data, field by field, ignoring the rest.
 
     Shared by the config file and the per-player profiles, so a profile is
     exactly one player's entry out of the config and can be hand-edited the
-    same way.
+    same way. `keep_name` leaves the seat's name alone, which is what a
+    profile wants: the life tracker owns who is sitting where.
     """
     if not isinstance(saved, dict):
         return
-    if isinstance(saved.get("name"), str) and saved["name"].strip():
+    if not keep_name and isinstance(saved.get("name"), str) and saved["name"].strip():
         target["name"] = saved["name"].strip()[:18]
     if "announcer_sound" in saved:
-        # A deleted or renamed recording should make an old profile silent,
-        # rather than handing an unchecked path to the browser.
-        target["announcer_sound"] = validate_announcer_sound(saved.get("announcer_sound"))
+        target["announcer_sound"] = known_or_blank(validate_announcer_sound, saved.get("announcer_sound"))
     target["two_commanders"] = saved.get("two_commanders") is True
-    target["second_commander_sound"] = validate_commander_sound(saved.get("second_commander_sound", ""))
+    target["second_commander_sound"] = known_or_blank(validate_commander_sound, saved.get("second_commander_sound", ""))
     for key in ("commander_name", "second_commander_name"):
         value = saved.get(key)
         if isinstance(value, str):
             target[key] = value.strip()[:GAME_NAME_MAX]
     if "commander_sound" in saved:
-        target["commander_sound"] = validate_commander_sound(saved.get("commander_sound"))
+        target["commander_sound"] = known_or_blank(validate_commander_sound, saved.get("commander_sound"))
+    apply_deck_details(target, saved)
+    # A profile from before animations, or without one for this card, starts
+    # from the default rather than keeping the previous deck's.
+    for key in COMMANDER_FX_KEYS:
+        target[key] = default_commander_fx()
+        apply_commander_fx(target[key], saved.get(key))
     for key in ("background_brightness", "commander_brightness"):
         value = saved.get(key)
         if (isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -377,6 +452,43 @@ def apply_saved_player(target, saved):
     for light in target["lights"].values():
         light.update(hue=target["hue"], saturation=target["saturation"], brightness=target["brightness"])
     load_player_lights(target, saved.get("lights"))
+
+
+def apply_commander_fx(target, saved, *, strict=False):
+    """Merge a commander animation field by field.
+
+    Loading a file skips anything unrecognised; a change from the lights page
+    (`strict`) is refused instead, so a bad request says what was wrong.
+    """
+    if not isinstance(saved, dict):
+        if strict:
+            raise ValueError("A commander animation is a set of fields")
+        return
+
+    def effect(value):
+        if value not in COMMANDER_FX_LABELS:
+            raise ValueError(f"Unknown animation: {value}")
+        return value
+
+    def area(value):
+        if value not in COMMANDER_FX_AREAS:
+            raise ValueError("The animation covers the art or the whole card")
+        return value
+
+    def point(value):
+        try:
+            return clean_focus(value)
+        except ValueError:
+            raise ValueError("A point on the card is two percentages, like 50% 33%") from None
+
+    for key, check in (("effect", effect), ("focus", point), ("glow", point), ("area", area)):
+        if key not in saved:
+            continue
+        try:
+            target[key] = check(saved[key])
+        except ValueError:
+            if strict:
+                raise
 
 
 def load_player_lights(target, saved_lights):
@@ -710,13 +822,50 @@ def validate_commander_sound(value):
     return filename
 
 
-def list_profiles():
-    """Every saved profile, newest first. The file name is the profile name."""
+# Each profile's deck, read once per version of its file: the status poll lists
+# the profiles every few seconds.
+profile_deck_cache = {}
+
+
+def profile_deck(path, modified):
+    cached = profile_deck_cache.get(path)
+    if cached and cached[0] == modified:
+        return cached[1]
     try:
-        files = sorted(PROFILE_DIR.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        deck = saved.get("deck") if isinstance(saved, dict) and isinstance(saved.get("deck"), str) else ""
+    except (OSError, ValueError):
+        deck = ""
+    profile_deck_cache[path] = (modified, deck)
+    return deck
+
+
+def list_profiles():
+    """Every saved profile, newest first. The file name is the profile name.
+
+    `deck` is the leaderboard deck it is the preset for: the one it names, or
+    else the one its file is named after, like NivMizzet for Niv-Mizzet.
+    """
+    try:
+        files = sorted(((item, item.stat().st_mtime) for item in PROFILE_DIR.glob("*.json")),
+                       key=lambda pair: pair[1], reverse=True)
     except OSError:
         return []
-    return [{"name": item.stem, "saved": int(item.stat().st_mtime)} for item in files]
+    decks = {deck_key(name): name for name in load_roster()["decks"]}
+    profiles = []
+    for item, modified in files:
+        deck = profile_deck(item, modified) or decks.get(deck_key(item.stem), "")
+        profiles.append({"name": item.stem, "saved": int(modified), "deck": deck})
+    return profiles
+
+
+def list_roster_decks(profiles):
+    """The leaderboard's decks, each with the profile that is its preset, if any."""
+    presets = {}
+    for profile in profiles:
+        presets.setdefault(deck_key(profile["deck"]), profile["name"])
+    return [{"name": name, "profile": presets.get(deck_key(name), "")}
+            for name in sorted(load_roster()["decks"], key=str.casefold)]
 
 
 def player_index(value):
@@ -1103,6 +1252,63 @@ def list_roster_pictures():
                   if path.is_file() and path.suffix.lower() in ROSTER_PICTURE_EXTENSIONS)
 
 
+def validate_picture(value):
+    """A picture path a seat or roster entry may name, or "" for none."""
+    path = str(value or "").strip()
+    if path and path not in set(list_roster_pictures()):
+        raise ValueError(f"No such picture: {path}")
+    return path
+
+
+def deck_key(name):
+    """How a deck name is matched to a profile: "NivMizzet" is "Niv-Mizzet"."""
+    return re.sub(r"[^0-9a-z]+", "", str(name or "").casefold())
+
+
+def roster_deck(name):
+    """A leaderboard deck as (its name in the roster, its entry), or ("", {})."""
+    wanted = deck_key(name)
+    if not wanted:
+        return "", {}
+    decks = load_roster()["decks"]
+    # An exact match first, so two decks that only differ in punctuation stay apart.
+    for key in (key for key in decks if key.casefold() == str(name).strip().casefold()):
+        return key, decks[key]
+    return next(((key, entry) for key, entry in decks.items() if deck_key(key) == wanted), ("", {}))
+
+
+def short_commander_name(name):
+    """A commander as the damage tracker labels it: "Arcades", not "Arcades, the Strategist"."""
+    return name.split(",")[0].strip()[:GAME_NAME_MAX]
+
+
+def deck_details_from_roster(name, entry):
+    """What a leaderboard deck brings to a seat, in the shape a profile stores it.
+
+    A deck with two card pictures is a pair of partners written "A & B". The
+    lights, the entrance sound and the seat's name are not the deck's to set.
+    """
+    cards = [card for card in entry.get("cards") or [] if isinstance(card, str)]
+    commander = str(entry.get("commander") or "")
+    partners = [part.strip() for part in commander.split("&") if part.strip()]
+    two = len(cards) > 1
+    if not two or len(partners) != 2:
+        partners = [commander, ""]
+    return {
+        "deck": name,
+        "two_commanders": two,
+        "commander_name": short_commander_name(partners[0]),
+        "second_commander_name": short_commander_name(partners[1]) if two else "",
+        "commander_sound": entry.get("sound") or "",
+        # The roster has one sound per deck, so a partner pair shares it.
+        "second_commander_sound": "",
+        "background_image": entry.get("art") or "",
+        "background_focus": entry.get("art_focus") or "",
+        "commander_image": cards[0] if cards else "",
+        "second_commander_image": cards[1] if two else "",
+    }
+
+
 def roster_entry_from_payload(group, payload):
     """Validate one player's or deck's roster entry. Empty fields are left out."""
     pictures = set(list_roster_pictures())
@@ -1138,6 +1344,7 @@ def roster_entry_from_payload(group, payload):
         # No longer played: the deck keeps its page, art and sound, and the
         # site marks it with a banner.
         entry["discontinued"] = payload.get("discontinued") is True
+        entry["card_fx"] = clean_card_fx(payload.get("card_fx"), len(entry["cards"]))
     else:
         entry["portrait"] = picture(payload.get("portrait"))
         entry["background"] = picture(payload.get("background"))
@@ -1317,6 +1524,11 @@ def public_site_intro():
 
 @app.get("/public/<path:filename>")
 def public_site_asset(filename):
+    # Files the site shares with the table, like the card animations, live
+    # outside site/ and are copied in by build_site.py.
+    shared = build_site.SHARED_PAGE_FILES.get(filename)
+    if shared:
+        return send_from_directory(BASE_DIR / Path(shared).parent, Path(shared).name)
     return send_from_directory(SITE_DIR, filename)
 
 
@@ -1384,6 +1596,10 @@ def upload_roster_picture():
     It is only stored here; nothing uses it until a roster entry names it, and
     it reaches the public site with the next publish, like every picture.
     """
+    # The lights page sends a seat's background to Players and its card to
+    # Commander, the folders its menus list; the roster editor uses Uploads.
+    folder = {"players": ROSTER_PICTURE_DIR / "Players",
+              "commander": ROSTER_PICTURE_DIR / "Commander"}.get(request.form.get("folder"), ROSTER_UPLOAD_DIR)
     upload = request.files.get("picture")
     if not upload or not upload.filename:
         raise ValueError("Choose a picture to upload")
@@ -1406,10 +1622,10 @@ def upload_roster_picture():
             raise ValueError("That file is not a picture Pillow can read") from error
     stem = re.sub(r"[^A-Za-z0-9]+", "-", Path(upload.filename).stem).strip("-")[:60] or "picture"
     with roster_lock:
-        ROSTER_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        target, copy_number = ROSTER_UPLOAD_DIR / f"{stem}{suffix}", 2
+        folder.mkdir(parents=True, exist_ok=True)
+        target, copy_number = folder / f"{stem}{suffix}", 2
         while target.exists():
-            target, copy_number = ROSTER_UPLOAD_DIR / f"{stem}-{copy_number}{suffix}", copy_number + 1
+            target, copy_number = folder / f"{stem}-{copy_number}{suffix}", copy_number + 1
         target.write_bytes(data)
     path = target.relative_to(BASE_DIR).as_posix()
     return ok(f"Uploaded {path}", path=path, pictures=list_roster_pictures(), publish=publish_state())
@@ -1461,7 +1677,71 @@ def set_public_roster_entry():
     if group not in ROSTER_GROUPS:
         raise ValueError("Unknown roster group")
     name = clean_game_text(payload.get("name"), "Name", GAME_DECK_MAX)
-    entry = roster_entry_from_payload(group, payload.get("entry") or {})
+    roster = save_roster_entry(group, name, payload.get("entry") or {})
+    return ok(f"Saved {name}", roster=roster, publish=publish_state())
+
+
+def clean_card_fx(value, count):
+    """A deck's card animations for the public site: one per commander card,
+    in the shape the table keeps them (see COMMANDER_FX_EFFECTS), or [] for
+    none. Anything unrecognised in one falls back to that field's default."""
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for saved in value[:count]:
+        fx = default_commander_fx()
+        apply_commander_fx(fx, saved)
+        cleaned.append(fx)
+    # Without any effect the site shows the plain cards.
+    return cleaned if any(fx["effect"] != "none" for fx in cleaned) else []
+
+
+def player_card_fx(player):
+    """A seat's commander animations, one per card it shows."""
+    keys = ("commander_fx", "second_commander_fx") if player.get("two_commanders") else ("commander_fx",)
+    return [copy.deepcopy(player[key]) for key in keys if isinstance(player.get(key), dict)]
+
+
+def sync_roster_card_fx():
+    """Give each roster deck the card animations of its saved preset.
+
+    The effects are picked per seat on the lights page and kept in the deck's
+    preset, but the public site is built from the roster alone, so this copies
+    them over. A deck without a preset keeps whatever the roster has.
+    """
+    presets = {deck_key(profile["deck"]): profile["name"] for profile in reversed(list_profiles()) if profile["deck"]}
+    with roster_lock:
+        roster = load_roster()
+        changed = False
+        for name, entry in roster["decks"].items():
+            preset = presets.get(deck_key(name))
+            if not preset:
+                continue
+            try:
+                saved = json.loads(profile_path(preset).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(saved, dict):
+                continue
+            card_fx = clean_card_fx(player_card_fx(saved), len(entry.get("cards") or []))
+            if card_fx != (entry.get("card_fx") or []):
+                if card_fx:
+                    entry["card_fx"] = card_fx
+                else:
+                    entry.pop("card_fx", None)
+                changed = True
+        if changed:
+            write_json_file(ROSTER_FILE, roster)
+    return changed
+
+
+def save_roster_entry(group, name, payload):
+    """Validate and store one roster entry, an empty one removing it. Returns the roster."""
+    if group == "decks" and "card_fx" not in payload:
+        # The /public editor does not edit the animations: keep the saved ones.
+        saved = next((value for key, value in load_roster()["decks"].items() if key.casefold() == name.casefold()), {})
+        payload = {**payload, "card_fx": saved.get("card_fx") or []}
+    entry = roster_entry_from_payload(group, payload)
     # A deck saved with a commander gets what is missing from Scryfall: its
     # colours, and the card's own colours, which a new commander replaces. Out
     # of reach is no reason to refuse the save: they stay unknown.
@@ -1487,7 +1767,7 @@ def set_public_roster_entry():
         else:
             roster[group].pop(key, None)
         write_json_file(ROSTER_FILE, roster)
-    return ok(f"Saved {name}", roster=roster, publish=publish_state())
+    return roster
 
 
 @app.post("/api/public/publish")
@@ -1497,6 +1777,8 @@ def publish_public_site():
         branch = run_git("rev-parse", "--abbrev-ref", "HEAD")
         if branch != PUBLISH_BRANCH:
             raise RuntimeError(f"The site is published from {PUBLISH_BRANCH}, but this checkout is on {branch}")
+        # Presets saved before the roster carried their card animations.
+        sync_roster_card_fx()
         state = publish_state()
         if not state["changed"] and not state["unpushed"]:
             return ok("Nothing to publish: GitHub already has everything", publish=state)
@@ -1523,6 +1805,7 @@ def publish_public_site():
 # -----------------------------
 @app.get("/api/status")
 def status():
+    profiles = list_profiles()
     return jsonify({
         "ok": True,
         "bulb_ip": bulb.current_ip,
@@ -1539,13 +1822,17 @@ def status():
         "fade_seconds": table_state["fade_seconds"],
         # The page builds its effect menus from this rather than hard-coding them.
         "effects": [{"id": effect, "label": lighting.EFFECT_LABELS[effect]} for effect in lighting.EFFECTS],
+        "commander_fx_effects": [{"id": effect, "label": label} for effect, label in COMMANDER_FX_EFFECTS],
         "effect_seconds_min": lighting.EFFECT_SECONDS_MIN,
         "effect_seconds_max": lighting.EFFECT_SECONDS_MAX,
         "white_temp_min": lighting.WHITE_TEMP_MIN,
         "white_temp_max": lighting.WHITE_TEMP_MAX,
         "house_lights": house_lights,
         "house_temperature": HOUSE_TEMPERATURE,
-        "profiles": list_profiles(),
+        "profiles": profiles,
+        # Deck presets come from the saved profiles and the leaderboard roster.
+        "decks": list_roster_decks(profiles),
+        "pictures": list_roster_pictures(),
         "announcer_sounds": list_announcer_sounds(),
         "announcer_winner": announcer_winner_sound(),
         "crowd_sounds": list_crowd_sounds(),
@@ -1685,6 +1972,29 @@ def set_player_display(index):
               player=player_payload(index))
 
 
+@app.post("/api/players/<index>/commander-fx")
+def set_commander_fx(index):
+    """Change how one of this player's commander cards animates on the table.
+
+    The body carries any of effect, focus, glow and area, plus "slot": 2 for
+    the second commander of a partner pair.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    index = player_index(index)
+    key = "second_commander_fx" if payload.get("slot") == 2 else "commander_fx"
+    fields = {name: payload[name] for name in ("effect", "focus", "glow", "area") if name in payload}
+
+    with state_lock:
+        player = table_state["players"][index]
+        fx = dict(player[key])
+        apply_commander_fx(fx, fields, strict=True)
+        player[key] = fx
+        save_table_state()
+
+    return ok(f"{player['name']}'s commander animation: {COMMANDER_FX_LABELS[fx['effect']].lower()}",
+              player=player_payload(index))
+
+
 @app.post("/api/players/<index>/lights/<light_id>")
 def set_player_light(index, light_id):
     """Change one light in one player's plan: color, effect, or whether it runs."""
@@ -1810,7 +2120,7 @@ def save_player_profile(index):
 
     with state_lock:
         player = table_state["players"][index]
-        name = profile_name(payload.get("profile") or player["name"])
+        name = profile_name(payload.get("profile") or player["deck"] or player["name"])
         profile = copy.deepcopy(player)
         profile["saved_at"] = datetime.now().isoformat(timespec="seconds")
 
@@ -1818,13 +2128,19 @@ def save_player_profile(index):
         write_json_file(profile_path(name), profile)
     except OSError as error:
         raise RuntimeError(f"Could not write the profile: {error}") from error
+    # A deck on the leaderboard takes the preset's card animations with it.
+    sync_roster_card_fx()
 
     return ok(f"Saved {name} to {PROFILE_DIR.name}/{name}.json", profile=name, profiles=list_profiles())
 
 
 @app.post("/api/players/<index>/profile/load")
 def load_player_profile(index):
-    """Put a saved profile onto a player, lights, name and all."""
+    """Put a saved profile onto a player: lights, sounds, commanders and pictures.
+
+    A profile saved before profiles held a deck's pictures gets them from the
+    leaderboard deck it belongs to, so older presets show up dressed too.
+    """
     payload = request.get_json(force=True, silent=True) or {}
     index = player_index(index)
     name = profile_name(payload.get("profile"))
@@ -1836,9 +2152,17 @@ def load_player_profile(index):
         raise ValueError(f"No profile called {name}") from error
     except ValueError as error:
         raise ValueError(f"{name}.json is not readable: {error}") from error
+    if not isinstance(saved, dict):
+        raise ValueError(f"{name}.json is not a profile")
+
+    deck, entry = roster_deck(saved.get("deck") or name)
+    if entry:
+        from_roster = deck_details_from_roster(deck, entry)
+        missing = ("deck", "background_focus", *PLAYER_PICTURE_KEYS)
+        saved = {**{key: from_roster[key] for key in missing if key not in saved}, **saved}
 
     with state_lock:
-        apply_saved_player(table_state["players"][index], saved)
+        apply_saved_player(table_state["players"][index], saved, keep_name=True)
         save_table_state()
 
     applied = 0
@@ -1850,6 +2174,102 @@ def load_player_profile(index):
         players=players_payload(),
         lights_applied=applied,
     )
+
+
+@app.post("/api/players/<index>/deck/load")
+def load_roster_deck(index):
+    """Dress a seat as a leaderboard deck that has no preset of its own yet.
+
+    Its commanders, sound and pictures come from the roster; the seat keeps
+    its lights and entrance sound, ready to be tuned and saved as the preset.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    index = player_index(index)
+    deck, entry = roster_deck(payload.get("deck"))
+    if not deck:
+        raise ValueError(f"The leaderboard has no deck called {payload.get('deck')}")
+    details = deck_details_from_roster(deck, entry)
+
+    with state_lock:
+        player = table_state["players"][index]
+        apply_deck_details(player, details)
+        player["two_commanders"] = details["two_commanders"]
+        for key in ("commander_name", "second_commander_name"):
+            player[key] = details[key]
+        for key in ("commander_sound", "second_commander_sound"):
+            player[key] = known_or_blank(validate_commander_sound, details[key])
+        save_table_state()
+
+    return ok(f"Loaded the {deck} deck onto player {index + 1}. Set its lights, then save it as a preset",
+              player=player_payload(index), players=players_payload())
+
+
+@app.post("/api/players/<index>/deck")
+def set_player_deck(index):
+    """Set the deck a seat is playing, and the pictures the table display shows for it."""
+    payload = request.get_json(force=True, silent=True) or {}
+    index = player_index(index)
+    details = {}
+    if "deck" in payload:
+        details["deck"] = str(payload["deck"] or "")
+    for key in PLAYER_PICTURE_KEYS:
+        if key in payload:
+            details[key] = validate_picture(payload[key])
+    if "background_focus" in payload:
+        details["background_focus"] = clean_focus(payload["background_focus"])
+    # A new background was not cropped for.
+    if "background_image" in payload and "background_focus" not in payload:
+        details["background_focus"] = ""
+
+    with state_lock:
+        player = table_state["players"][index]
+        apply_deck_details(player, details)
+        save_table_state()
+    return ok(f"Saved {player['name']}'s deck", player=player_payload(index))
+
+
+@app.post("/api/players/<index>/deck/roster")
+def add_player_deck_to_roster(index):
+    """Write a seat's deck onto the leaderboard roster, ready for the next publish.
+
+    The pictures and sound replace the deck's; what only the roster editor
+    sets — its full commander name, colours, theme and the rest — is kept. A
+    deck new to the roster takes its commander from the seat's commander names.
+    """
+    index = player_index(index)
+    with state_lock:
+        player = copy.deepcopy(table_state["players"][index])
+    name = clean_game_text(player["deck"], "Deck name", GAME_DECK_MAX)
+    deck, entry = roster_deck(name)
+    deck = deck or name
+    entry = dict(entry)
+
+    if not entry.get("commander"):
+        names = [player["commander_name"]] + ([player["second_commander_name"]] if player["two_commanders"] else [])
+        entry["commander"] = " & ".join(part for part in names if part)
+    if player["background_image"]:
+        entry["art"] = player["background_image"]
+        entry["art_focus"] = player["background_focus"]
+    cards = [player[key] for key in ("commander_image", "second_commander_image")
+             if player[key] and (key == "commander_image" or player["two_commanders"])]
+    if cards:
+        entry["cards"] = cards
+    if player["commander_sound"]:
+        entry["sound"] = player["commander_sound"]
+    if cards:
+        entry["card_fx"] = player_card_fx(player)
+    roster = save_roster_entry("decks", deck, entry)
+
+    # Listed on its player's page too, played yet or not.
+    seat = player["name"]
+    owner = next((key for key in roster["players"] if key.casefold() == seat.casefold()), "")
+    if owner:
+        decks = list(roster["players"][owner].get("decks") or [])
+        if deck.casefold() not in {saved.casefold() for saved in decks}:
+            roster = save_roster_entry("players", owner, {**roster["players"][owner], "decks": decks + [deck]})
+
+    return ok(f"{deck} is on the leaderboard roster. Publish the site to put it online",
+              publish=publish_state())
 
 
 @app.post("/api/players/names")

@@ -517,7 +517,7 @@ function deckView(name) {
   const colors = deckColors(deck.name);
   const pictures = [
     ...(info.art ? [`<a class="deck-art" href="${escapeHtml(info.art.full)}" data-zoom="${escapeHtml(info.art.full)}"><img src="${escapeHtml(info.art.full)}" alt="${escapeHtml(deck.name)} art"></a>`] : []),
-    ...(info.cards || []).map((card) => `<a class="deck-printing" href="${escapeHtml(card.full)}" data-zoom="${escapeHtml(card.full)}"><img src="${escapeHtml(card.full)}" alt="${escapeHtml(info.commander || deck.name)} card" loading="lazy"></a>`),
+    ...(info.cards || []).map((card, index) => `<a class="deck-printing" href="${escapeHtml(card.full)}" data-zoom="${escapeHtml(card.full)}"${cardFxAttr((info.card_fx || [])[index])}><img src="${escapeHtml(card.full)}" alt="${escapeHtml(info.commander || deck.name)} card" loading="lazy"></a>`),
   ];
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
@@ -1465,6 +1465,36 @@ function inscribeGlyphs() {
   document.documentElement.style.setProperty("--glyph-band", svgUrl(line));
 }
 
+/* ------------------------------------------------------ card animations -- */
+
+/* A deck's commander cards move the way they do on the table: each with the
+   animation picked for it in the deck's preset on the lights page, drawn by
+   the table's own commander-fx.js (copied in by build_site.py). Without
+   WebGL, or for a visitor who asks for less motion, the plain card stays. */
+const CARD_FX_FPS = 30;
+const lessMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function cardFxAttr(fx) {
+  return fx && fx.effect && fx.effect !== "none" ? ` data-card-fx="${escapeHtml(JSON.stringify(fx))}"` : "";
+}
+
+/* The canvas lies over `host`'s picture; null when nothing animates. */
+function animateCard(host, image, fxJson) {
+  if (!fxJson || !window.CommanderFx || lessMotion.matches) return null;
+  let fx;
+  try { fx = JSON.parse(fxJson); } catch (error) { return null; }
+  return window.CommanderFx.attach(host, {
+    image, effect: fx.effect, focus: fx.focus, glow: fx.glow, area: fx.area, strength: 1, fps: CARD_FX_FPS,
+  });
+}
+
+/* A card thrown away with its page stops by itself (commander-fx.js). */
+function animateDeckCards() {
+  for (const link of app.querySelectorAll(".deck-printing[data-card-fx]")) {
+    animateCard(link, link.dataset.zoom, link.dataset.cardFx);
+  }
+}
+
 /* ----------------------------------------------------------------- zoom -- */
 
 /* A deck's art and card, and a player's photo, open large over the page
@@ -1474,14 +1504,17 @@ function inscribeGlyphs() {
    the file itself. */
 const lightbox = document.createElement("dialog");
 lightbox.className = "lightbox";
-lightbox.innerHTML = '<button type="button" class="lightbox-close" aria-label="Close">&times;</button><img alt="">';
+lightbox.innerHTML = '<button type="button" class="lightbox-close" aria-label="Close">&times;</button><span class="lightbox-frame"><img alt=""></span>';
 document.body.append(lightbox);
 const lightboxImage = lightbox.querySelector("img");
+let lightboxFx = null;
 
-function zoom(url, alt) {
+function zoom(url, alt, fxJson) {
   lightboxImage.src = url;
   lightboxImage.alt = alt || "";
   lightbox.showModal();
+  // A commander card keeps its animation when enlarged.
+  lightboxFx = animateCard(lightbox.querySelector(".lightbox-frame"), url, fxJson);
   /* An entry of its own, so going back closes the picture, not the page. */
   history.pushState({ ...history.state, zoom: true }, "");
 }
@@ -1490,13 +1523,15 @@ app.addEventListener("click", (event) => {
   const trigger = event.target.closest("[data-zoom]");
   if (!trigger || event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
-  zoom(trigger.dataset.zoom, trigger.dataset.zoomAlt || trigger.querySelector("img")?.alt);
+  zoom(trigger.dataset.zoom, trigger.dataset.zoomAlt || trigger.querySelector("img")?.alt, trigger.dataset.cardFx);
 });
 lightbox.addEventListener("click", (event) => {
   if (event.target !== lightboxImage) lightbox.close();
 });
 /* However it closed, step off the picture's history entry. */
 lightbox.addEventListener("close", () => {
+  lightboxFx?.destroy();
+  lightboxFx = null;
   lightboxImage.removeAttribute("src");
   if (history.state?.zoom) history.back();
 });
@@ -1518,6 +1553,7 @@ function route() {
   else applyTheme("");
   startSlides();
   startDeckSound();
+  animateDeckCards();
   revealOnScroll();
   afterRender();
 }
@@ -1567,6 +1603,10 @@ const INTRO_DEFAULTS = {
   chain: "", sound: "", thud: "", page: "", volume: 80, repeat: "always", rattle: 90, rattle_every: 0.7,
   pages: 18, shuffle_seconds: 1.8, glow_seconds: 2.5, flight_seconds: 1.6, rotation_speed: 2,
 };
+/* The chain plays the moment the lock is tapped, often before a first visit
+   has downloaded its file. The unlock waits this long for the chosen sound
+   rather than playing the built-in clinks in its place. */
+const INTRO_CHAIN_WAIT_MS = 4000;
 const introSettings = loadJson("intro.json").then((saved) => ({ ...INTRO_DEFAULTS, ...saved })).catch(() => ({ ...INTRO_DEFAULTS }));
 /* 1x is one turn in 240 seconds; the current 2x default is 120 seconds. */
 function applyIntroRotationSpeed(value) {
@@ -2444,7 +2484,11 @@ function playGrimoire(preview = null) {
         parts.hint.textContent = "Unlocking…";
         const context = introContext();
         const awake = context ? context.resume().catch(() => {}) : Promise.resolve();
-        Promise.all([awake, prepared]).then(async () => {
+        const chainReady = prepared.then((saved) => saved.chain && Promise.race([
+          introBuffer(saved.chain),
+          new Promise((resolve) => setTimeout(resolve, INTRO_CHAIN_WAIT_MS)),
+        ]));
+        Promise.all([awake, prepared, chainReady]).then(async () => {
           controller.signal.throwIfAborted();
           await unlockGrimoire(parts, settings, controller.signal);
           controller.signal.throwIfAborted();

@@ -231,6 +231,16 @@ counting the wins in a row, and stops at the first loss with how many were won
 ("Called heads · won 3, then lost"). Tapping the coin mid-run skips the pause
 before the next flip; tapping anywhere else puts the coin away and ends the run.
 
+For cards where another player flips too (Mana Clash and the like), press
+**Flip two coins** beside a landed coin, or the two-coin button just above
+the coin button to start with both. A grey coin, standing for the other
+player, is thrown in from across the table alongside the player's own, and both
+results are shown in their coins' colours, with "Both heads" or "Both tails"
+when they match and the round number from the second round on. Tap the grey
+coin to flip both again; tap the player's coin to take the grey one away and go
+back to flipping one coin as usual. The two coins are not counted in the
+heads and tails tally.
+
 The coin is struck in the colour of the player throwing it. Its two faces are
 the greyscale relief maps `static/coin_heads.png` (the planeswalker side) and
 `static/coin_tails.png` (the lettered side); replace them with any square
@@ -548,19 +558,38 @@ than the player's exact colour. *Pulse* and *Breathe* become the chip's
 crossfade, *Flicker* and *Blink* its blink. A **solid** strip is unaffected and
 still shows the exact colour.
 
-### Profiles — one file per person
+### Deck presets (profiles)
 
 Each player card has **Save as…** and a **Load** menu. *Save as…* writes that
-player's whole plan — name, base colour, and all four lights with their colours,
-whites, effects and speeds — to `profiles/<name>.json`. *Load* puts a saved
-profile onto **any seat**, so when someone different turns up you drop their
-profile into whichever chair they took.
+seat's whole preset to `profiles/<name>.json` (the name defaults to the deck):
+all four lights with their colours, whites, effects and speeds, the entrance
+sound, the commander names and sounds, and the deck with its pictures. *Load*
+puts a preset onto **any seat**, so whoever turns up with whatever deck, you drop
+it into whichever chair they took.
 
-They are plain JSON, one player's entry out of `table_config.json`, so you can
+The menu lists the saved presets first, then every deck on the leaderboard
+roster (`site/roster.json`, the same file the hosted site is built from) that has
+no preset yet. Loading one of those fills in its commander name(s), commander
+sound, background and commander card(s) from the roster and leaves the lights
+and entrance sound alone, so you set those and *Save as…* to make it a preset. A
+profile is matched to its leaderboard deck by its `deck` field, or else by file
+name, ignoring case and punctuation (`NivMizzet` is `Niv-Mizzet`). A profile
+saved before presets held pictures gets them from that deck.
+
+Each card's **Deck** box holds the deck name (prefilled in the result window at
+the end of the game) and its **Background** and **Commander card** pictures,
+picked from `Backgrounds/Players` and `Backgrounds/Commander` (not their subfolders) or uploaded into them. The table
+display shows them as soon as they change, and a picture dropped on a panel
+afterwards stays until the next preset. **Put on public leaderboard** writes the deck's
+pictures and commander sound onto the roster (and its commander, if the roster
+has none yet). It reaches the hosted site with the next *Publish* on `/public`,
+where the full commander name, colours and theme are still edited.
+
+Presets are plain JSON, one player's entry out of `table_config.json`, so you can
 copy them between machines, back them up, edit them in a text editor, or delete
 one by deleting the file. Saving under a name that already exists overwrites it.
-Loading also sets the player's name — though the tracker owns names, so renaming
-that seat on the tracker (or reloading the tracker page) wins afterwards.
+Loading leaves the seat's name alone: the tracker owns names. A sound or picture
+a preset names that has since been deleted loads as none.
 
 ### Player colors
 
@@ -578,18 +607,48 @@ here.
 Each seat has a small face-down card in its bottom-right corner, sized
 (`--commander-card-width` in `css/style.css`) to stay clear of the `+1`/`+5`
 buttons above it. Drop a card image directly onto it (dropping elsewhere on the
-seat still changes the player background). The first tap lifts the card toward the middle of the table, then
-starts its selected sound and begins flipping shortly after the movement starts.
-Once centered, it waits for the complete sound and flip before returning
-face-up. Tapping a revealed commander
-lifts it again, plays the shared `sound/Commander/Fire.mp3`, burns it away in the
-middle, and restores the small card face-down without a return flight. Commander
+seat still changes the player background), or pick one with a deck preset on the lights page. The first tap flies the card face down to the middle of the
+table. As it lands, a glowing diagonal seam cuts the screen in two and the card
+splits into a mirrored pair — one face-up copy for each side of the table —
+while its selected sound plays. Once the sound has finished the pair slides back
+together and the card returns home face-up. Tapping a revealed commander
+lifts it again, splits it the same way, plays the shared
+`sound/Commander/Fire.mp3`, burns both copies away in the middle, and restores
+the small card face-down without a return flight. Commander
 art is stored in that table browser and stays loaded between games.
 
 Optional reveal sounds go in `sound/Commander` (`.mp3`, `.wav`, `.ogg`, or
 `.m4a`). Choose one per player with **Commander sound** on the Lights page, next
 to the entrance-sound menu. `Fire.mp3` is reserved for the shared burn effect and
 does not appear in this menu. That choice is also included in saved profiles.
+
+### Commander animations
+
+Under each commander card picture, **Commander animation** picks how that card
+moves on the table: foil shimmer (the default), bellows breath, dragon breath,
+arcane flow, heat haze & embers, storm, shadow creep, wind sway, radiance,
+caustics, artifact glint, glowing eyes, roar (the card shakes while sound waves
+ripple out of the mouth), quake, heartbeat, frost, snowfall, toxic, void rift,
+inferno, ghost, or none. A live preview sits beside the
+menu. Choose **Place focus** or **Place eyes / mouth** and click the preview to
+set the points the effect works around — the chest that breathes, the source of
+the light, the mouth the breath leaves from, a pair of eyes to light up. **Art
+only** keeps the name and rules text still; **Whole card** lets the effect cover
+everything. The choice is saved with the deck preset, and a partner pair has
+one per card.
+
+Every reveal animates, on both mirrored copies. **Settings → Commander
+animations** decides whether the small face-up card at the seat keeps animating
+afterwards, and how strong every animation is. The effects are drawn by
+`js/commander-fx.js` with WebGL; a browser without it shows the still picture.
+
+The public website animates the same cards. A deck's page draws each commander
+card with the animation from that deck's preset, and keeps it when the card is
+enlarged; a visitor whose device asks for reduced motion sees the still card.
+The site is built from the roster alone, so the animations are copied into
+each roster deck's `card_fx` whenever a preset is saved and again before every
+*Publish*; a deck without a preset keeps what the roster has. The site always
+plays them at full strength, whatever the table's Settings say.
 
 *(These are the lights for a player's turn. The seat colour on the tracker is set
 separately, in that seat's tray.)*
@@ -638,6 +697,7 @@ from the built-in defaults.
 index.html          life tracker markup + seat template
 css/style.css       life tracker styles (layout, rotation, broadcast theme)
 js/app.js           life tracker state, persistence, interaction, sound
+js/commander-fx.js  commander card animations (WebGL), shared with the lights page
 sound/              click, heal, thud, poison, turn, and the user-supplied win
 
 templates/lights.html   light control page, both tabs
@@ -656,7 +716,7 @@ cues.py             what each game moment looks like on the lights
 serve.py            runs web.py and opens a browser
 table_config.json   saved light plans, names, and bulb IPs (created on use)
 game_history.json   completed game results (created on first saved game)
-profiles/           one saved light plan per person (created on first save)
+profiles/           one saved deck preset per file (created on first save)
 bulb_control.py     Tapo bulb driver: discovery, identify, setters
 bledom_led.py       ELK-BLEDOM strip driver: connect, solid color, power, effects
 ```

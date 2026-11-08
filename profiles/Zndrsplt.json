@@ -1,0 +1,74 @@
+{
+  "name": "Coach",
+  "hue": 45,
+  "saturation": 85,
+  "brightness": 90,
+  "announcer_sound": "Coach_Zndrsplt.mp3",
+  "commander_sound": "Zndrsplt.wav",
+  "second_commander_sound": "Okaun.wav",
+  "commander_name": "Zndrsplt, Eye of Wisdom",
+  "second_commander_name": "Okaun",
+  "two_commanders": true,
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "deck": "Zndrsplt",
+  "background_focus": "",
+  "background_image": "Backgrounds/Players/ZNDRSPLT.png",
+  "commander_image": "Backgrounds/Commander/Zndrsplt.jfif",
+  "second_commander_image": "Backgrounds/Commander/Okaun.jfif",
+  "commander_fx": {
+    "effect": "embers",
+    "focus": "45.9% 33.2%",
+    "glow": "80.8% 25.1%",
+    "area": "card"
+  },
+  "second_commander_fx": {
+    "effect": "embers",
+    "focus": "34.2% 36.2%",
+    "glow": "42.8% 20.8%",
+    "area": "card"
+  },
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 299,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 181,
+      "saturation": 32,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 121,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "cycle",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 238,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 2.0
+    }
+  },
+  "saved_at": "2026-11-08T16:33:31"
+}

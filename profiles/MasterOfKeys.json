@@ -1,0 +1,74 @@
+{
+  "name": "Borgo",
+  "hue": 135,
+  "saturation": 80,
+  "brightness": 90,
+  "announcer_sound": "Borgo_MasterOfKeys.mp3",
+  "commander_sound": "MasterOfKeys.wav",
+  "second_commander_sound": "",
+  "commander_name": "The Master Of Keys",
+  "second_commander_name": "",
+  "two_commanders": false,
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "deck": "MasterOfKeys",
+  "background_focus": "",
+  "background_image": "Backgrounds/Players/MasterOfKeys.png",
+  "commander_image": "Backgrounds/Commander/MasterOfKeys.webp",
+  "second_commander_image": "",
+  "commander_fx": {
+    "effect": "shadow",
+    "focus": "47.8% 36.3%",
+    "glow": "49% 21.7%",
+    "area": "card"
+  },
+  "second_commander_fx": {
+    "effect": "foil",
+    "focus": "",
+    "glow": "",
+    "area": "art"
+  },
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 296,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 179,
+      "saturation": 38,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 296,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 238,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 2.0
+    }
+  },
+  "saved_at": "2026-11-08T16:33:32"
+}

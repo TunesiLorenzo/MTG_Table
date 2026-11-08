@@ -1,0 +1,74 @@
+{
+  "name": "Borgo",
+  "hue": 135,
+  "saturation": 80,
+  "brightness": 90,
+  "announcer_sound": "Borgo_Jace.mp3",
+  "commander_sound": "Jace.wav",
+  "second_commander_sound": "",
+  "commander_name": "Jace",
+  "second_commander_name": "",
+  "two_commanders": false,
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "deck": "Jace",
+  "background_focus": "",
+  "background_image": "Backgrounds/Players/Jace.png",
+  "commander_image": "Backgrounds/Commander/JaceMultiverse.jpg",
+  "second_commander_image": "",
+  "commander_fx": {
+    "effect": "ghost",
+    "focus": "",
+    "glow": "43.7% 12.2%",
+    "area": "card"
+  },
+  "second_commander_fx": {
+    "effect": "foil",
+    "focus": "",
+    "glow": "",
+    "area": "art"
+  },
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 190,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 67,
+      "saturation": 19,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 187,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 238,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "pulse",
+      "effect_seconds": 2.0
+    }
+  },
+  "saved_at": "2026-11-08T16:37:28"
+}

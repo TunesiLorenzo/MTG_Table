@@ -24,8 +24,16 @@
           <path class="hub__icon-bulb" d="M12 3a6 6 0 0 0-3.7 10.7c.7.6 1.1 1.4 1.2 2.3h5c.1-.9.5-1.7 1.2-2.3A6 6 0 0 0 12 3z"/>
         </svg>
       </button>
-      <button class="hub__satellite hub__satellite--top hub__satellite--outer" id="day-night-toggle" type="button" hidden
+      <button class="hub__satellite hub__satellite--top hub__satellite--outermost" id="day-night-toggle" type="button" hidden
               title="Switch day and night" aria-label="Switch day and night">&#9789;</button>
+      <button class="hub__satellite hub__satellite--top hub__satellite--outer" id="coin-flip-two" type="button"
+              title="Flip two coins: yours and a grey one for another player"
+              aria-label="Flip two coins, yours and one for another player">
+        <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="9" cy="10" r="6"/>
+          <path d="M14.7 8a6 6 0 1 1-5.4 8"/>
+        </svg>
+      </button>
       <button class="hub__satellite hub__satellite--top" id="coin-flip" type="button"
               title="Flip a coin" aria-label="Flip a coin">
         <svg class="hub__icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -249,17 +257,20 @@
   <section id="first-player-reveal" class="first-player-reveal" hidden aria-live="assertive" aria-label="Randomly choosing the first player">
     <div class="first-player-reveal__half first-player-reveal__half--top">
       <span class="first-player-reveal__label">First player</span>
+      <span class="first-player-reveal__reel" aria-hidden="true"></span>
       <strong class="first-player-reveal__name"></strong>
     </div>
     <div class="first-player-reveal__half first-player-reveal__half--bottom">
       <span class="first-player-reveal__label">First player</span>
+      <span class="first-player-reveal__reel" aria-hidden="true"></span>
       <strong class="first-player-reveal__name"></strong>
     </div>
   </section>
 
-  <!-- The coin toss. One coin on the table, seen from above, so it reads the
-       same from every seat; the result, and the heads-or-tails question when
-       the coin is being called, are written towards both long sides. Heads
+  <!-- The coin toss. One coin on the table (two when another player flips
+       too), seen from above, so it reads the same from every seat; the
+       result, and the heads-or-tails question when the coin is being
+       called, are written towards both long sides. Heads
        is the planeswalker side and tails the lettered one; the faces are the
        relief maps in static/, coloured for the player by css/style.css. The
        coin's edge and the landing effects are built by js/app.js. -->
@@ -268,6 +279,9 @@
       <strong class="coin-toss__result"></strong>
       <span class="coin-toss__note"></span>
       <span class="coin-toss__hint">Tap the coin to flip again</span>
+      <span class="coin-toss__hint coin-toss__hint--duel">Tap the grey coin to flip both again, your own to flip it alone</span>
+      <button class="coin-toss__start-duel" type="button" data-start-duel
+              title="Flip a grey coin for another player beside yours">Flip two coins</button>
       <button class="coin-toss__start-run" type="button" data-start-run>Flip until lost</button>
       <div class="coin-toss__call" role="group" aria-label="Call the coin">
         <span class="coin-toss__ask">Call it</span>
@@ -281,6 +295,9 @@
       <strong class="coin-toss__result"></strong>
       <span class="coin-toss__note"></span>
       <span class="coin-toss__hint">Tap the coin to flip again</span>
+      <span class="coin-toss__hint coin-toss__hint--duel">Tap the grey coin to flip both again, your own to flip it alone</span>
+      <button class="coin-toss__start-duel" type="button" data-start-duel
+              title="Flip a grey coin for another player beside yours">Flip two coins</button>
       <button class="coin-toss__start-run" type="button" data-start-run>Flip until lost</button>
       <div class="coin-toss__call" role="group" aria-label="Call the coin">
         <span class="coin-toss__ask">Call it</span>
@@ -292,8 +309,14 @@
     </div>
     <div class="coin-toss__stage" aria-hidden="true">
       <div class="coin-toss__shadow"></div>
+      <div class="coin-toss__shadow coin-toss__shadow--other"></div>
       <div class="coin-toss__fx"></div>
       <div class="coin">
+        <span class="coin__face coin__face--heads"></span>
+        <span class="coin__face coin__face--tails"></span>
+      </div>
+      <!-- The second coin, for another player, shown only while two are flipped. -->
+      <div class="coin coin--other">
         <span class="coin__face coin__face--heads"></span>
         <span class="coin__face coin__face--tails"></span>
       </div>
@@ -329,6 +352,7 @@
 
   <!-- Emblem data first: app.js reads window.MTG_EMBLEMS as it builds a tray. -->
   <script src="js/emblems.js"></script>
+  <script src="js/commander-fx.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

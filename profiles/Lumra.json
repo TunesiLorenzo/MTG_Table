@@ -1,0 +1,74 @@
+{
+  "name": "Milli",
+  "hue": 0,
+  "saturation": 85,
+  "brightness": 90,
+  "announcer_sound": "Milli_Lumra.mp3",
+  "commander_sound": "Lumra.wav",
+  "second_commander_sound": "",
+  "commander_name": "Lumra",
+  "second_commander_name": "",
+  "two_commanders": false,
+  "background_brightness": 100,
+  "commander_brightness": 70,
+  "deck": "Lumra",
+  "background_focus": "",
+  "background_image": "Backgrounds/Players/Lumra.png",
+  "commander_image": "Backgrounds/Commander/Lumra.jpg",
+  "second_commander_image": "",
+  "commander_fx": {
+    "effect": "quake",
+    "focus": "36.4% 29.4%",
+    "glow": "",
+    "area": "art"
+  },
+  "second_commander_fx": {
+    "effect": "foil",
+    "focus": "",
+    "glow": "",
+    "area": "art"
+  },
+  "lights": {
+    "top_left": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 107,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    },
+    "center": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 67,
+      "saturation": 20,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "none",
+      "effect_seconds": 2.0
+    },
+    "bottom_right": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 107,
+      "saturation": 100,
+      "brightness": 90,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    },
+    "strip": {
+      "enabled": true,
+      "mode": "color",
+      "hue": 130,
+      "saturation": 100,
+      "brightness": 80,
+      "temperature": 2700,
+      "effect": "breathe",
+      "effect_seconds": 2.0
+    }
+  },
+  "saved_at": "2026-11-08T16:33:28"
+}

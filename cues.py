@@ -136,6 +136,13 @@ MOMENTS = [
                 _percent("volume", "Sound volume", 100),
                 _toggle("effects", "Landing ring, table jolt and sparks", True),
                 _toggle("call", "Call heads or tails before each flip", False)]},
+    # Not a light cue: the commander card animations (each commander's own is
+    # chosen with its card on the Players & effects tab).
+    {"id": "commander_fx", "label": "Commander animations", "tab": "settings", "settings_only": True,
+     "hint": "Each commander's animation is picked with its card on the Players & effects tab. It always plays "
+             "during the reveal; this decides whether the small face-up card at the seat keeps animating too.",
+     "fields": [_toggle("always", "Keep animating the small card at the seat", False),
+                _percent("strength", "Animation strength", 100, 0, 200)]},
 ]
 _MOMENTS = {moment["id"]: moment for moment in MOMENTS}
 

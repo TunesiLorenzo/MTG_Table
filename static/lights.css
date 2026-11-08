@@ -203,3 +203,55 @@ button.danger { background: #50243c; border-color: #81405e; }
 }
 
 .plan-announcer[hidden] { display: none; }
+/* A plan's deck: its name and the pictures the table display shows for it. */
+.plan-deck { margin-top: 10px; padding: 8px 11px 10px; border: 1px solid #342d44; border-radius: 12px; background: #100d1980; }
+.plan-deck .plan-announcer:first-child { margin-top: 0; }
+.plan-deck input[type="text"] { min-width: 0; min-height: 34px; padding: 0 8px; font-size: .75rem; }
+.plan-picture { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 5px 7px; margin-top: 9px; color: #aaa2b8; font-size: .74rem; }
+/* The label has a line to itself, so the menu has room for the file name. */
+.plan-picture > span { grid-column: 1 / -1; }
+.plan-picture[hidden] { display: none; }
+.plan-picture select { min-width: 0; min-height: 34px; padding: 0 8px; font-size: .75rem; }
+/* The column stays when there is no picture, so the menus line up. */
+.plan-thumb { grid-column: 1; width: 34px; height: 34px; border-radius: 6px; object-fit: cover; border: 1px solid #4b425e; background: #07090d; }
+.plan-thumb[hidden] { display: block; visibility: hidden; }
+.plan-upload { display: inline-flex; align-items: center; min-height: 34px; padding: 0 9px; border: 1px solid #4b425e; border-radius: 9px; background: #171122; color: #d8d2e6; font-size: .72rem; cursor: pointer; }
+.plan-roster { width: 100%; min-height: 32px; margin-top: 10px; font-size: .72rem; }
+
+/* A commander card's animation: effect and coverage, then a live preview to
+   click the focus (and eyes / mouth) onto. */
+.plan-fx { display: grid; gap: 6px; margin-top: 7px; padding: 8px; border: 1px solid #2c2539; border-radius: 10px; background: #0b0912; color: #aaa2b8; font-size: .74rem; }
+.plan-fx[hidden] { display: none; }
+.plan-fx-controls { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.plan-fx select { min-width: 0; min-height: 34px; padding: 0 8px; font-size: .75rem; }
+.plan-fx-body { display: grid; grid-template-columns: 112px 1fr; gap: 9px; align-items: start; }
+.plan-fx-stage { position: relative; width: 112px; aspect-ratio: 5 / 7; border-radius: 6px; overflow: hidden; border: 1px solid #4b425e; background: #07090d; cursor: crosshair; touch-action: manipulation; }
+.plan-fx-face { position: absolute; inset: 0; background: center / cover no-repeat; }
+.plan-fx-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 6px; text-align: center; color: #6f6882; font-size: .68rem; }
+.plan-fx-empty[hidden] { display: none; }
+.plan-fx-marker { position: absolute; z-index: 2; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1.5px #000a, 0 0 8px #000; pointer-events: none; }
+.plan-fx-marker[hidden] { display: none; }
+.plan-fx-marker--focus, .plan-fx-dot--focus { background: #ffb765; }
+.plan-fx-marker--glow, .plan-fx-dot--glow { background: #6fc3ff; }
+.plan-fx-side { display: grid; gap: 6px; }
+.plan-fx-side button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; font-size: .72rem; text-align: left; }
+.plan-fx-side .plan-white[aria-pressed="true"] { color: #f4efff; border-color: #a593d6; background: #2a2140; }
+.plan-fx-dot { flex: none; width: 10px; height: 10px; border: 1.5px solid #fff; border-radius: 50%; }
+.plan-fx-hint { color: #8a839c; font-size: .68rem; line-height: 1.35; }
+
+/* The larger animation preview: the card as big as the screen allows, with
+   the same menus and point buttons as the editor row. */
+.fx-dialog { width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid #4b425e; border-radius: 16px; background: #120e1c; color: #d8d2e6; box-shadow: 0 24px 80px #000c; }
+.fx-dialog::backdrop { background: #05030acc; backdrop-filter: blur(3px); }
+.fx-dialog__frame { display: grid; gap: 10px; justify-items: center; padding: 14px 16px 16px; }
+.fx-dialog__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; width: 100%; }
+.fx-dialog__head h2 { margin: 2px 0 0; font-size: 1.15rem; }
+.fx-dialog .plan-fx-controls { width: 100%; }
+.fx-dialog select { min-width: 0; min-height: 36px; padding: 0 8px; font-size: .8rem; }
+/* As tall as the window leaves room for, keeping the card's 5:7 shape. */
+.plan-fx-stage.fx-dialog__stage { width: min(100%, calc((100dvh - 290px) * 5 / 7)); min-width: 180px; border-radius: 12px; }
+.fx-dialog__stage .plan-fx-marker { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+.fx-dialog__points { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.fx-dialog__points button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; font-size: .74rem; }
+.fx-dialog__points .plan-white[aria-pressed="true"] { color: #f4efff; border-color: #a593d6; background: #2a2140; }
+.fx-dialog .plan-fx-hint { max-width: 520px; text-align: center; }

@@ -393,11 +393,16 @@ let players = [];
 let currentPlayer = 0;
 let lightCatalog = [];
 let effectCatalog = [{ id: "none", label: "Solid" }];
+/* Commander card animations, as the server lists them (web.py COMMANDER_FX_EFFECTS). */
+let commanderFxCatalog = [{ id: "foil", label: "Foil shimmer" }];
 let effectSecondsMin = 0.4;
 let effectSecondsMax = 20;
 let whiteTempMin = WHITE_TEMP_MIN;
 let whiteTempMax = WHITE_TEMP_MAX;
 let profileCatalog = [];
+/* The leaderboard's decks, each with the profile that is its preset, if any. */
+let deckCatalog = [];
+let pictureCatalog = [];
 let announcerCatalog = [];
 let commanderSoundCatalog = [];
 let renderedPlayerKey = "";
@@ -499,11 +504,304 @@ function commanderSoundOptions(selected) {
   )).join("");
 }
 
+/* Pictures are the same Backgrounds files the leaderboard roster uses, so a
+   deck looks the same on the table as on its leaderboard page. */
+/* Backgrounds come from Backgrounds/Players and cards from
+   Backgrounds/Commander, each folder's own files only (not VoltiBase). */
+const PICTURE_FOLDERS = {
+  background_image: "Backgrounds/Players/",
+  commander_image: "Backgrounds/Commander/",
+  second_commander_image: "Backgrounds/Commander/",
+};
+
+function pictureOptions(field, selected) {
+  const folder = PICTURE_FOLDERS[field];
+  const inFolder = pictureCatalog.filter((path) => path.startsWith(folder) && !path.slice(folder.length).includes("/"));
+  const none = `<option value=""${selected ? "" : " selected"}>No picture</option>`;
+  // A picture the seat names from elsewhere (an older preset, the roster)
+  // still shows, so the menu does not silently claim something else is chosen.
+  const files = selected && !inFolder.includes(selected) ? [selected, ...inFolder] : inFolder;
+  return none + files.map((path) => {
+    const label = path.startsWith(folder) ? path.slice(folder.length) : path.replace(/^Backgrounds\//, "");
+    return `<option value="${escapeHtml(path)}"${path === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+}
+
+function pictureUrl(path) {
+  return "/" + path.split("/").map(encodeURIComponent).join("/");
+}
+
+function pictureRowMarkup(index, field, label) {
+  const key = `${index}:${field}`;
+  const player = players[index] || {};
+  const hidden = field === "second_commander_image" && !player.two_commanders;
+  return `
+    <div class="plan-picture" data-picture-row="${key}" ${hidden ? "hidden" : ""}>
+      <span data-picture-label="${key}">${label}</span>
+      <img class="plan-thumb" data-picture-thumb="${key}" alt="" loading="lazy" hidden>
+      <select data-picture="${key}" aria-label="${escapeHtml(label)}">${pictureOptions(field, player[field] || "")}</select>
+      <label class="secondary plan-upload" title="Upload a picture into ${PICTURE_FOLDERS[field].slice(0, -1)} and use it here">
+        Upload<input type="file" accept=".jpg,.jpeg,.jfif,.png,.webp,image/*" data-picture-upload="${key}" hidden>
+      </label>
+    </div>`;
+}
+
+/* --- Commander animations: an effect per commander card, previewed live --- */
+
+/* Each animation's own card, and the picture it animates. */
+const COMMANDER_FX_FIELDS = ["commander_fx", "second_commander_fx"];
+const COMMANDER_FX_IMAGE = { commander_fx: "commander_image", second_commander_fx: "second_commander_image" };
+/* What the two points mean for each effect, shown beside the preview. */
+const COMMANDER_FX_HINTS = {
+  breath: "Focus on the chest, which swells as it breathes. The eyes / mouth point is where each breath leaves as mist.",
+  dragon: "Focus on the chest, which swells as it breathes. The eyes / mouth point is where the fire leaves.",
+  radiance: "Focus where the light comes from. An eyes point adds glowing eyes.",
+  eyes: "Focus on the eyes; a second point adds another glow.",
+  foil: "Sweeps the whole card. An eyes point adds glowing eyes.",
+  roar: "Every few seconds the card shakes and sound waves ripple out of the eyes / mouth point (the focus, if that is not placed).",
+  quake: "Every few seconds the card rumbles and dust falls. An eyes point adds glowing eyes.",
+  heartbeat: "Focus on the heart; the art throbs around it and the edges flush red. An eyes point adds glowing eyes.",
+  void: "Focus on the centre of the rift; the art twists around it. An eyes point adds glowing eyes.",
+  none: "The card stays still.",
+};
+const COMMANDER_FX_DEFAULT_HINT = "Moves the art window. An eyes point adds glowing eyes on top.";
+/* The table's default focus when none is placed (js/commander-fx.js). */
+const COMMANDER_FX_DEFAULT_FOCUS = [0.5, 0.33];
+/* Which point a click on each preview places. */
+const commanderFxPointMode = {};
+/* Live preview handles from js/commander-fx.js, by "index:field". */
+let commanderFxPreviews = {};
+
+function commanderFxOf(player, field) {
+  return Object.assign({ effect: "foil", focus: "", glow: "", area: "art" }, (player || {})[field] || {});
+}
+
+function commanderFxOptions(selected) {
+  return commanderFxCatalog.map((effect) => (
+    `<option value="${effect.id}"${effect.id === selected ? " selected" : ""}>${escapeHtml(effect.label)}</option>`
+  )).join("");
+}
+
+function commanderFxRowMarkup(index, field) {
+  const key = `${index}:${field}`;
+  const player = players[index] || {};
+  const fx = commanderFxOf(player, field);
+  const hidden = field === "second_commander_fx" && !player.two_commanders;
+  const mode = commanderFxPointMode[key] || "focus";
+  return `
+    <div class="plan-fx" data-fx-row="${key}" ${hidden ? "hidden" : ""}>
+      <span data-fx-label="${key}">Animation</span>
+      <div class="plan-fx-controls">
+        <select data-fx-effect="${key}" aria-label="Commander animation">${commanderFxOptions(fx.effect)}</select>
+        <select data-fx-area="${key}" aria-label="What the animation covers">
+          <option value="art"${fx.area === "art" ? " selected" : ""}>Art only</option>
+          <option value="card"${fx.area === "card" ? " selected" : ""}>Whole card</option>
+        </select>
+      </div>
+      <div class="plan-fx-body">
+        ${commanderFxStageMarkup(key, "")}
+        <div class="plan-fx-side">
+          <button class="plan-white" type="button" data-fx-point="${key}" data-point="focus"
+            aria-pressed="${mode === "focus"}"><i class="plan-fx-dot plan-fx-dot--focus"></i>Place focus</button>
+          <button class="plan-white" type="button" data-fx-point="${key}" data-point="glow"
+            aria-pressed="${mode === "glow"}"><i class="plan-fx-dot plan-fx-dot--glow"></i>Place eyes / mouth</button>
+          <button class="secondary" type="button" data-fx-clear="${key}">Remove eyes / mouth</button>
+          <button class="secondary" type="button" data-fx-enlarge="${key}">Larger preview</button>
+          <small class="plan-fx-hint" data-fx-hint="${key}"></small>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* The same stage the editor row uses: the card, its two point markers, and a
+   note when there is no picture. */
+function commanderFxStageMarkup(key, className) {
+  return `
+    <div class="plan-fx-stage ${className}" data-fx-stage="${key}" title="Click to place the chosen point">
+      <div class="plan-fx-face" data-fx-face="${key}"></div>
+      <i class="plan-fx-marker plan-fx-marker--focus" data-fx-marker="${key}:focus" hidden></i>
+      <i class="plan-fx-marker plan-fx-marker--glow" data-fx-marker="${key}:glow" hidden></i>
+      <span class="plan-fx-empty" data-fx-empty="${key}">No card picture</span>
+    </div>`;
+}
+
+function commanderFxStrength() {
+  const saved = momentSettings.commander_fx;
+  return saved && Number.isFinite(saved.strength) ? saved.strength / 100 : 1;
+}
+
+/* Writes one commander's animation into a set of controls — the editor row
+   or the larger preview — and returns that set's preview handle, created,
+   updated or dropped to match. Never touches a menu that is being used. */
+function paintCommanderFx(root, key, preview, fps) {
+  const [rawIndex, field] = key.split(":");
+  const player = players[rawIndex] || {};
+  const fx = commanderFxOf(player, field);
+  setUnlessHeld(root.querySelector(`[data-fx-effect="${key}"]`), fx.effect);
+  setUnlessHeld(root.querySelector(`[data-fx-area="${key}"]`), fx.area);
+  root.querySelector(`[data-fx-hint="${key}"]`).textContent = COMMANDER_FX_HINTS[fx.effect] || COMMANDER_FX_DEFAULT_HINT;
+  const mode = commanderFxPointMode[key] || "focus";
+  root.querySelectorAll(`[data-fx-point="${key}"]`).forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.point === mode));
+  });
+
+  const picture = player[COMMANDER_FX_IMAGE[field]] || "";
+  const image = picture ? pictureUrl(picture) : "";
+  const face = root.querySelector(`[data-fx-face="${key}"]`);
+  const background = image ? `url("${image}")` : "";
+  if (face.style.backgroundImage !== background) face.style.backgroundImage = background;
+  root.querySelector(`[data-fx-empty="${key}"]`).hidden = !!image;
+
+  const animate = image && fx.effect !== "none" && window.CommanderFx;
+  if (!animate) {
+    if (preview) preview.destroy();
+    preview = null;
+  } else {
+    const options = { image, effect: fx.effect, focus: fx.focus, glow: fx.glow, area: fx.area,
+                      strength: commanderFxStrength(), fps };
+    if (preview) preview.update(options);
+    else preview = window.CommanderFx.attach(face, options);
+  }
+  placeCommanderFxMarkers(root, key, fx, image ? preview : undefined);
+  return preview;
+}
+
+/* Written on every poll. */
+function updateCommanderFxRow(index, field) {
+  const key = `${index}:${field}`;
+  const row = document.querySelector(`[data-fx-row="${key}"]`);
+  if (!row) return;
+  const player = players[index] || {};
+  const second = field === "second_commander_fx";
+  row.hidden = second && !player.two_commanders;
+  row.querySelector(`[data-fx-label="${key}"]`).textContent =
+    player.two_commanders ? `Commander ${second ? 2 : 1} animation` : "Commander animation";
+  if (row.hidden) {
+    if (commanderFxPreviews[key]) commanderFxPreviews[key].destroy();
+    delete commanderFxPreviews[key];
+  } else {
+    const preview = paintCommanderFx(row, key, commanderFxPreviews[key], 30);
+    if (preview) commanderFxPreviews[key] = preview;
+    else delete commanderFxPreviews[key];
+  }
+  if (commanderFxDialogKey === key) paintCommanderFxDialog();
+}
+
+/* --- The larger preview: one dialog, opened for one commander at a time --- */
+let commanderFxDialog = null;
+let commanderFxDialogKey = null;
+let commanderFxDialogPreview = null;
+
+function commanderFxDialogElement() {
+  if (commanderFxDialog) return commanderFxDialog;
+  commanderFxDialog = document.createElement("dialog");
+  commanderFxDialog.className = "fx-dialog";
+  commanderFxDialog.setAttribute("aria-labelledby", "fx-dialog-title");
+  document.body.appendChild(commanderFxDialog);
+  commanderFxDialog.addEventListener("close", () => {
+    if (commanderFxDialogPreview) commanderFxDialogPreview.destroy();
+    commanderFxDialogPreview = null;
+    commanderFxDialogKey = null;
+  });
+  // A click on the dimmed backdrop (the dialog box itself, outside its frame) closes it.
+  commanderFxDialog.addEventListener("click", (event) => {
+    if (event.target === commanderFxDialog || event.target.closest("[data-fx-dialog-close]")) {
+      commanderFxDialog.close();
+      return;
+    }
+    handleCommanderFxClick(event, commanderFxDialog);
+  });
+  commanderFxDialog.addEventListener("change", (event) => handleCommanderFxChange(event));
+  return commanderFxDialog;
+}
+
+function openCommanderFxDialog(key) {
+  const dialog = commanderFxDialogElement();
+  if (commanderFxDialogPreview) commanderFxDialogPreview.destroy();
+  commanderFxDialogPreview = null;
+  commanderFxDialogKey = key;
+  const [rawIndex, field] = key.split(":");
+  const player = players[rawIndex] || {};
+  const fx = commanderFxOf(player, field);
+  const second = field === "second_commander_fx";
+  const commander = (second ? player.second_commander_name : player.commander_name)
+    || (player.two_commanders ? `Commander ${second ? 2 : 1}` : "Commander");
+  dialog.innerHTML = `
+    <div class="fx-dialog__frame">
+      <header class="fx-dialog__head">
+        <div><span class="eyebrow">${escapeHtml(player.name || "")}</span>
+          <h2 id="fx-dialog-title">${escapeHtml(commander)}</h2></div>
+        <button class="secondary" type="button" data-fx-dialog-close>Close</button>
+      </header>
+      <div class="plan-fx-controls">
+        <select data-fx-effect="${key}" aria-label="Commander animation">${commanderFxOptions(fx.effect)}</select>
+        <select data-fx-area="${key}" aria-label="What the animation covers">
+          <option value="art">Art only</option>
+          <option value="card">Whole card</option>
+        </select>
+      </div>
+      ${commanderFxStageMarkup(key, "fx-dialog__stage")}
+      <div class="fx-dialog__points">
+        <button class="plan-white" type="button" data-fx-point="${key}" data-point="focus">
+          <i class="plan-fx-dot plan-fx-dot--focus"></i>Place focus</button>
+        <button class="plan-white" type="button" data-fx-point="${key}" data-point="glow">
+          <i class="plan-fx-dot plan-fx-dot--glow"></i>Place eyes / mouth</button>
+        <button class="secondary" type="button" data-fx-clear="${key}">Remove eyes / mouth</button>
+      </div>
+      <small class="plan-fx-hint" data-fx-hint="${key}"></small>
+      <small class="plan-fx-hint" data-fx-strength></small>
+    </div>`;
+  dialog.showModal();
+  paintCommanderFxDialog();
+}
+
+function paintCommanderFxDialog() {
+  if (!commanderFxDialog || !commanderFxDialogKey) return;
+  // Full frame rate here: this is where an effect is judged.
+  commanderFxDialogPreview = paintCommanderFx(commanderFxDialog, commanderFxDialogKey, commanderFxDialogPreview, 60);
+  commanderFxDialog.querySelector("[data-fx-strength]").textContent =
+    `Shown at ${Math.round(commanderFxStrength() * 100)}% strength, as on the table — change it under Settings → Commander animations.`;
+}
+
+/* "x% y%" on the picture, as fractions. */
+function commanderFxPoint(text) {
+  const match = /^\s*([\d.]+)%\s+([\d.]+)%\s*$/.exec(text || "");
+  return match ? [+match[1] / 100, +match[2] / 100] : null;
+}
+
+/* `preview` is undefined when there is no picture (no markers at all), and
+   null when there is one but nothing animating it (picture = box). */
+function placeCommanderFxMarkers(root, key, fx, preview) {
+  ["focus", "glow"].forEach((point) => {
+    const marker = root.querySelector(`[data-fx-marker="${key}:${point}"]`);
+    // An unplaced focus is shown where the animation puts it by default.
+    const at = commanderFxPoint(fx[point]) || (point === "focus" ? COMMANDER_FX_DEFAULT_FOCUS : null);
+    marker.hidden = preview === undefined || !at;
+    if (marker.hidden) return;
+    const box = preview ? preview.imageToBox(at[0], at[1]) : at;
+    marker.style.left = `${clamp(box[0], 0, 1) * 100}%`;
+    marker.style.top = `${clamp(box[1], 0, 1) * 100}%`;
+  });
+}
+
+async function saveCommanderFx(key, patch, message) {
+  const [rawIndex, field] = key.split(":");
+  const index = +rawIndex;
+  const player = players[index];
+  if (!player) return;
+  // Show it straight away; the poll is up to four seconds behind.
+  player[field] = Object.assign(commanderFxOf(player, field), patch);
+  updateCommanderFxRow(index, field);
+  await post(`/api/players/${index}/commander-fx`,
+    Object.assign({ slot: field === "second_commander_fx" ? 2 : 1 }, patch), message);
+}
+
 function buildPlanEditor() {
   // One structure per player and light; a rename or a recolor does not change it.
   const key = JSON.stringify([players.length, lightCatalog.map((l) => l.id), effectCatalog.map((e) => e.id),
                               announcerCatalog.map((sound) => sound.file),
                               commanderSoundCatalog.map((sound) => sound.file),
+                              pictureCatalog, commanderFxCatalog.map((effect) => effect.id),
                               whiteTempMin, whiteTempMax]);
   if (key === planBuiltKey) return;
   planBuiltKey = key;
@@ -518,10 +816,10 @@ function buildPlanEditor() {
       </header>
       <div class="plan-profile">
         <button class="secondary" type="button" data-profile-save="${index}"
-                title="Write this player's whole plan out to the profiles folder">Save as…</button>
-        <select data-profile-pick="${index}" aria-label="Saved profiles"></select>
+                title="Save lights, sounds, commanders and pictures as a preset in the profiles folder">Save as…</button>
+        <select data-profile-pick="${index}" aria-label="Deck presets"></select>
         <button class="secondary" type="button" data-profile-load="${index}"
-                title="Put the chosen profile on this player">Load</button>
+                title="Put the chosen preset or leaderboard deck on this player">Load</button>
       </div>
       <label class="plan-announcer">
         <span>Entrance sound</span>
@@ -548,37 +846,98 @@ function buildPlanEditor() {
         <span>Commander 2 name</span><input type="text" maxlength="40" data-second-commander-name="${index}"
           value="${escapeHtml(player.second_commander_name || "")}" placeholder="Commander 2">
       </label>
+      <div class="plan-deck">
+        <label class="plan-announcer">
+          <span>Deck</span>
+          <input type="text" maxlength="80" data-deck-name="${index}" list="deck-names"
+            value="${escapeHtml(player.deck || "")}" placeholder="Deck name, as on the leaderboard">
+        </label>
+        ${pictureRowMarkup(index, "background_image", "Background")}
+        ${pictureRowMarkup(index, "commander_image", player.two_commanders ? "Commander 1 card" : "Commander card")}
+        ${commanderFxRowMarkup(index, "commander_fx")}
+        ${pictureRowMarkup(index, "second_commander_image", "Commander 2 card")}
+        ${commanderFxRowMarkup(index, "second_commander_fx")}
+        <button class="secondary plan-roster" type="button" data-deck-roster="${index}"
+          title="Give this deck a page on the public leaderboard site with these pictures and sound. It goes online with the next Publish on /public">Put on public leaderboard</button>
+      </div>
       ${lightCatalog.map((light) => planLightMarkup(index, light)).join("")}
     </article>`).join("");
-  // These menus were just thrown away with the rest of the card.
+  // These menus were just thrown away with the rest of the card, and so
+  // were the animated previews (their canvases stop with their elements).
   renderedProfileKey = "";
+  commanderFxPreviews = {};
   renderProfileMenus();
 }
 
-/* --- Profiles: one file per person, so a table adapts to who turns up --- */
+/* --- Deck presets: a saved profile per deck, or a leaderboard deck to start one --- */
 
 /* Rebuilt only when the set of files changes, so an open menu is not yanked
-   shut by the poll. Each menu keeps whatever the user had chosen. */
+   shut by the poll. Each menu keeps whatever the user had chosen. A
+   leaderboard deck with a preset is listed once, as its preset. */
+function presetKey(name) {
+  return String(name || "").toLowerCase().replace(/[^0-9a-z]+/g, "");
+}
+
+/* The menu entry for what the seat is playing: its preset, or else its
+   leaderboard deck. */
+function presetValueFor(player) {
+  const deck = presetKey(player && player.deck);
+  if (!deck) return "";
+  const profile = profileCatalog.find((item) => presetKey(item.deck) === deck) ||
+    profileCatalog.find((item) => presetKey(item.name) === deck);
+  if (profile) return `profile:${profile.name}`;
+  const listed = deckCatalog.find((item) => presetKey(item.name) === deck);
+  return listed ? (listed.profile ? `profile:${listed.profile}` : `deck:${listed.name}`) : "";
+}
+
+/* Each menu shows what its seat is playing, until it is used to pick another. */
+function syncPresetMenus() {
+  players.forEach((player, index) => {
+    const menu = document.querySelector(`[data-profile-pick="${index}"]`);
+    if (!menu || menu.dataset.picked || document.activeElement === menu) return;
+    const value = presetValueFor(player);
+    menu.value = [...menu.options].some((option) => option.value === value) ? value : "";
+  });
+}
+
 function renderProfileMenus() {
   const menus = document.querySelectorAll("[data-profile-pick]");
   if (!menus.length) return;
-  const key = JSON.stringify(profileCatalog.map((profile) => profile.name));
+  const key = JSON.stringify([profileCatalog.map((profile) => [profile.name, profile.deck]), deckCatalog]);
   if (key === renderedProfileKey) return;
   renderedProfileKey = key;
+
+  const presets = profileCatalog.map((profile) => {
+    const label = profile.deck && profile.deck !== profile.name ? `${profile.name} (${profile.deck})` : profile.name;
+    return `<option value="profile:${escapeHtml(profile.name)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  const decks = deckCatalog.filter((deck) => !deck.profile)
+    .map((deck) => `<option value="deck:${escapeHtml(deck.name)}">${escapeHtml(deck.name)}</option>`).join("");
+  const markup = `<option value="">Choose a preset…</option>` +
+    (presets ? `<optgroup label="Saved presets">${presets}</optgroup>` : "") +
+    (decks ? `<optgroup label="Leaderboard decks, no preset yet">${decks}</optgroup>` : "");
 
   menus.forEach((menu) => {
     if (document.activeElement === menu) return;
     const chosen = menu.value;
-    menu.innerHTML = profileCatalog.length
-      ? profileCatalog.map((profile) => `<option value="${escapeHtml(profile.name)}">${escapeHtml(profile.name)}</option>`).join("")
-      : `<option value="">No profiles saved yet</option>`;
-    if (chosen && profileCatalog.some((profile) => profile.name === chosen)) menu.value = chosen;
+    menu.innerHTML = markup;
+    if (chosen && [...menu.options].some((option) => option.value === chosen)) menu.value = chosen;
   });
+  syncPresetMenus();
+
+  let names = document.getElementById("deck-names");
+  if (!names) {
+    names = document.createElement("datalist");
+    names.id = "deck-names";
+    document.body.appendChild(names);
+  }
+  names.innerHTML = deckCatalog.map((deck) => `<option value="${escapeHtml(deck.name)}"></option>`).join("");
 }
 
 async function saveProfile(index) {
   const player = players[index] || {};
-  const name = window.prompt("Save this player's lights as:", player.name || `Player ${index + 1}`);
+  const name = window.prompt("Save this preset (lights, sounds, commanders and pictures) as:",
+    player.deck || player.name || `Player ${index + 1}`);
   if (name === null) return;
   await post(`/api/players/${index}/profile`, { profile: name }, `Saving ${name}…`);
   // A new file means a new menu, whoever it belongs to.
@@ -587,14 +946,41 @@ async function saveProfile(index) {
 
 async function loadProfile(index) {
   const menu = document.querySelector(`[data-profile-pick="${index}"]`);
-  const name = menu && menu.value;
+  const value = (menu && menu.value) || "";
+  const [kind, ...rest] = value.split(":");
+  const name = rest.join(":");
   if (!name) {
-    setStatus("Save a profile first, then it will be in this list.", "error");
+    setStatus("Choose a saved preset or a leaderboard deck first.", "error");
     return;
   }
-  await post(`/api/players/${index}/profile/load`, { profile: name }, `Loading ${name}…`);
+  if (kind === "deck") {
+    await post(`/api/players/${index}/deck/load`, { deck: name }, `Loading the ${name} deck…`);
+  } else {
+    await post(`/api/players/${index}/profile/load`, { profile: name }, `Loading ${name}…`);
+  }
+  // The menu goes back to showing what the seat now plays.
+  if (menu) delete menu.dataset.picked;
   // The plan editor is written from `players`, which the reply just replaced.
   renderedPlayerKey = "";
+}
+
+async function uploadPicture(key, input) {
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  const [rawIndex, field] = key.split(":");
+  const form = new FormData();
+  form.append("picture", file);
+  form.append("folder", field === "background_image" ? "players" : "commander");
+  setStatus(`Uploading ${file.name}…`, "busy");
+  try {
+    const result = await fetch("/api/public/pictures", { method: "POST", body: form }).then((r) => r.json());
+    if (!result.ok) throw new Error(result.message || "Upload failed");
+    pictureCatalog = result.pictures || pictureCatalog;
+    await post(`/api/players/${rawIndex}/deck`, { [field]: result.path }, `Using ${result.path}…`);
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
 }
 
 function planLightMarkup(index, light) {
@@ -654,6 +1040,29 @@ function updatePlanEditor() {
     setUnlessHeld(document.querySelector(`[data-commander-name="${index}"]`), player.commander_name || "");
     setUnlessHeld(document.querySelector(`[data-second-sound="${index}"]`), player.second_commander_sound || "");
     setUnlessHeld(document.querySelector(`[data-second-commander-name="${index}"]`), player.second_commander_name || "");
+    setUnlessHeld(document.querySelector(`[data-deck-name="${index}"]`), player.deck || "");
+    ["background_image", "commander_image", "second_commander_image"].forEach((field) => {
+      const key = `${index}:${field}`;
+      const value = player[field] || "";
+      const menu = document.querySelector(`[data-picture="${key}"]`);
+      if (menu && document.activeElement !== menu) {
+        if (![...menu.options].some((option) => option.value === value)) menu.innerHTML = pictureOptions(field, value);
+        menu.value = value;
+      }
+      const thumb = document.querySelector(`[data-picture-thumb="${key}"]`);
+      if (thumb) {
+        thumb.hidden = !value;
+        const src = value ? pictureUrl(value) : "";
+        if (thumb.getAttribute("src") !== src) {
+          if (src) thumb.setAttribute("src", src);
+          else thumb.removeAttribute("src");
+        }
+      }
+    });
+    document.querySelector(`[data-picture-row="${index}:second_commander_image"]`).hidden = !player.two_commanders;
+    COMMANDER_FX_FIELDS.forEach((field) => updateCommanderFxRow(index, field));
+    document.querySelector(`[data-picture-label="${index}:commander_image"]`).textContent =
+      player.two_commanders ? "Commander 1 card" : "Commander card";
 
     const running = (player.targets || []).map((id) => {
       const light = (player.lights || {})[id] || {};
@@ -923,11 +1332,16 @@ async function refreshStatus() {
       currentPlayer = state.current_player;
       lightCatalog = state.lights || [];
       if (Array.isArray(state.effects) && state.effects.length) effectCatalog = state.effects;
+      if (Array.isArray(state.commander_fx_effects) && state.commander_fx_effects.length) {
+        commanderFxCatalog = state.commander_fx_effects;
+      }
       if (Number.isFinite(state.effect_seconds_min)) effectSecondsMin = state.effect_seconds_min;
       if (Number.isFinite(state.effect_seconds_max)) effectSecondsMax = state.effect_seconds_max;
       if (Number.isFinite(state.white_temp_min)) whiteTempMin = state.white_temp_min;
       if (Number.isFinite(state.white_temp_max)) whiteTempMax = state.white_temp_max;
       if (Array.isArray(state.profiles)) profileCatalog = state.profiles;
+      if (Array.isArray(state.decks)) deckCatalog = state.decks;
+      if (Array.isArray(state.pictures)) pictureCatalog = state.pictures;
       if (Array.isArray(state.announcer_sounds)) announcerCatalog = state.announcer_sounds;
       if (Array.isArray(state.commander_sounds)) commanderSoundCatalog = state.commander_sounds;
       renderPlayers();
@@ -935,6 +1349,7 @@ async function refreshStatus() {
       buildPlanEditor();
       updatePlanEditor();
       renderProfileMenus();
+      syncPresetMenus();
     }
     if (Array.isArray(state.moments) && state.moment_settings) {
       momentCatalog = state.moments;
@@ -1077,6 +1492,19 @@ document.addEventListener("click", async (event) => {
   const profileLoad = event.target.closest("[data-profile-load]");
   if (profileLoad) {
     await loadProfile(+profileLoad.dataset.profileLoad);
+    return;
+  }
+  const deckRoster = event.target.closest("[data-deck-roster]");
+  if (deckRoster) {
+    const player = players[+deckRoster.dataset.deckRoster] || {};
+    if (!player.deck) {
+      setStatus("Give the deck a name first.", "error");
+      return;
+    }
+    if (window.confirm(`Give ${player.deck} a page on the public leaderboard with this background, commander card and sound? It goes online when you next press Publish on /public.`)) {
+      await post(`/api/players/${deckRoster.dataset.deckRoster}/deck/roster`, {}, `Adding ${player.deck} to the leaderboard…`);
+      renderedProfileKey = "";
+    }
     return;
   }
   const planWhite = event.target.closest("[data-plan-white]");
@@ -1255,6 +1683,63 @@ playerList.addEventListener("change", async (event) => {
 const planGrid = $("#plan-grid");
 
 planGrid.addEventListener("pointerdown", () => { planInteracting = true; });
+
+/* Commander animation points: pick which point, then click the card. Shared
+   by the editor rows and the larger preview (`root` is whichever was used). */
+async function handleCommanderFxClick(event, root) {
+  const enlarge = event.target.closest("[data-fx-enlarge]");
+  if (enlarge) {
+    openCommanderFxDialog(enlarge.dataset.fxEnlarge);
+    return;
+  }
+  const pick = event.target.closest("[data-fx-point]");
+  if (pick) {
+    const key = pick.dataset.fxPoint;
+    commanderFxPointMode[key] = pick.dataset.point;
+    // Both places show the same choice.
+    document.querySelectorAll(`[data-fx-point="${key}"]`).forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.point === pick.dataset.point));
+    });
+    return;
+  }
+  const clear = event.target.closest("[data-fx-clear]");
+  if (clear) {
+    await saveCommanderFx(clear.dataset.fxClear, { glow: "" }, "Removing the eyes / mouth point…");
+    return;
+  }
+  const stage = event.target.closest("[data-fx-stage]");
+  if (stage) {
+    const key = stage.dataset.fxStage;
+    const [rawIndex, field] = key.split(":");
+    if (!(players[rawIndex] || {})[COMMANDER_FX_IMAGE[field]]) return;
+    const rect = stage.getBoundingClientRect();
+    let at = [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
+    const preview = root === commanderFxDialog ? commanderFxDialogPreview : commanderFxPreviews[key];
+    if (preview) at = preview.boxToImage(at[0], at[1]);
+    const point = commanderFxPointMode[key] || "focus";
+    const value = `${(clamp(at[0], 0, 1) * 100).toFixed(1)}% ${(clamp(at[1], 0, 1) * 100).toFixed(1)}%`;
+    await saveCommanderFx(key, { [point]: value },
+      point === "focus" ? "Saving the animation's focus…" : "Saving the eyes / mouth point…");
+  }
+}
+
+/* The animation and coverage menus, in the editor rows or the larger preview.
+   Returns true when the event was one of them. */
+async function handleCommanderFxChange(event) {
+  const fxEffect = event.target.dataset.fxEffect;
+  if (fxEffect) {
+    await saveCommanderFx(fxEffect, { effect: event.target.value }, "Saving the commander animation…");
+    return true;
+  }
+  const fxArea = event.target.dataset.fxArea;
+  if (fxArea) {
+    await saveCommanderFx(fxArea, { area: event.target.value }, "Saving what the animation covers…");
+    return true;
+  }
+  return false;
+}
+
+planGrid.addEventListener("click", (event) => handleCommanderFxClick(event, planGrid));
 ["pointerup", "pointercancel"].forEach((type) => {
   document.addEventListener(type, () => { planInteracting = false; });
 });
@@ -1277,6 +1762,29 @@ planGrid.addEventListener("input", (event) => {
 });
 
 planGrid.addEventListener("change", async (event) => {
+  if (await handleCommanderFxChange(event)) return;
+  if (event.target.dataset.profilePick !== undefined) {
+    event.target.dataset.picked = "1";
+    return;
+  }
+  const upload = event.target.dataset.pictureUpload;
+  if (upload) {
+    await uploadPicture(upload, event.target);
+    return;
+  }
+  const picture = event.target.dataset.picture;
+  if (picture) {
+    const [rawIndex, field] = picture.split(":");
+    if (players[rawIndex]) players[rawIndex][field] = event.target.value;
+    await post(`/api/players/${rawIndex}/deck`, { [field]: event.target.value }, "Saving this picture…");
+    return;
+  }
+  const deckName = event.target.dataset.deckName;
+  if (deckName !== undefined) {
+    if (players[deckName]) players[deckName].deck = event.target.value.trim();
+    await post(`/api/players/${deckName}/deck`, { deck: event.target.value }, "Saving the deck name…");
+    return;
+  }
   const announcer = event.target.dataset.announcerSound;
   if (announcer !== undefined) {
     const index = +announcer;

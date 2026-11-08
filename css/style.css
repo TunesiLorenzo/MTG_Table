@@ -221,6 +221,12 @@ html, body {
 }
 .commander-card.is-face-up .commander-card__flipper,
 .commander-flight.is-face-up .commander-card__flipper { transform: rotateY(180deg); }
+/* The far-side copy flips over its horizontal axis instead. Its container is
+   turned 180°, and rotateZ(180deg) turns its back upright again so the stacked
+   pair looks like a single card; rotateX(180) · rotateZ(180) = rotateY(180),
+   so face up it rests exactly like card A, just upside down on screen. */
+.commander-flight .commander-flight__card--b .commander-card__flipper { transform: rotateX(0deg) rotateZ(180deg); }
+.commander-flight.is-face-up .commander-flight__card--b .commander-card__flipper { transform: rotateX(180deg) rotateZ(180deg); }
 .commander-card__face {
   position: absolute;
   inset: 0;
@@ -239,6 +245,17 @@ html, body {
 /* Counter the table display's brightness boost on the parked mini cards. */
 .commander-card .commander-card__face { filter: brightness(var(--commander-brightness, .7)); }
 .commander-card__face--back { background-image: url("/Backgrounds/Commander/mtgback.jpg"); }
+/* The animated copy of the card (js/commander-fx.js) lies over the face's own
+   picture, inside the face, so it flips, dims and burns with it. Until its
+   frames arrive it is transparent and the plain picture shows. */
+.commander-fx {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 .commander-card__face--front {
   background-image: var(--commander-image);
   transform: rotateY(180deg);
@@ -267,10 +284,191 @@ html, body {
   pointer-events: none;
   filter: brightness(var(--commander-brightness, .7)) drop-shadow(0 1.4vmin 2.2vmin #000d);
   transform-origin: center;
+}
+/* The flight holds a stacked pair (A = the owner's side, B = the far side)
+   that slides apart in the seat's frame once it reaches the middle. */
+.commander-flight__card {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: .5vmin;
+  perspective: 80vmin;
   /* The burning card slides down past this box's own bottom edge — that
      edge is the mask. Whatever crosses it is simply clipped away, so the
      "vanish" never needs its own timeline to stay in sync with the slide. */
   overflow: hidden;
+}
+.commander-flight__card--b { transform: rotate(180deg); }
+
+/* Split screen behind the pair: a glowing diagonal seam with one tinted half
+   per side of the table. The plane is an oversized square turned to the
+   seat's rotation plus the seam's lean, so its two halves are the two sides
+   of that diagonal; each half widens toward the side that reads its card. */
+.commander-split {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* The seam's light is drawn over the cards (.commander-flight is 240): it
+   is the cut through the card, not a backdrop behind it. */
+.commander-split--light { z-index: 260; }
+.commander-split__plane {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 300vmax;
+  height: 300vmax;
+  transform: translate(-50%, -50%) rotate(var(--split-angle, 0deg));
+}
+.commander-split__half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  opacity: 0;
+  transition: opacity var(--split-ms, 600ms) ease, transform var(--split-ms, 600ms) cubic-bezier(.2,.8,.2,1);
+}
+.commander-split__half--a {
+  left: 50%;
+  transform: translateX(-2vmin);
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--split-accent) 38%, transparent),
+    color-mix(in srgb, var(--split-accent) 12%, transparent) 9vmin,
+    transparent 48vmin);
+}
+.commander-split__half--b {
+  right: 50%;
+  transform: translateX(2vmin);
+  background: linear-gradient(to left,
+    color-mix(in srgb, var(--split-accent) 38%, transparent),
+    color-mix(in srgb, var(--split-accent) 12%, transparent) 9vmin,
+    transparent 48vmin);
+}
+/* Everything luminous lives in one layer that fades as a whole, so closing
+   never cuts a running flare or glint off mid-animation. Screen blending
+   makes it read as light on the dimmed board rather than paint over it. */
+.commander-split__light {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  mix-blend-mode: screen;
+  transition: opacity var(--split-ms, 600ms) ease;
+}
+/* The seam itself: soft-edged and tinted rather than a hard white line,
+   brightest at the centre and fading out before the screen's corners. */
+.commander-split__seam {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1.2vmin;
+  height: 100%;
+  margin-left: -.6vmin;
+  background: linear-gradient(to bottom,
+    transparent 31%,
+    color-mix(in srgb, var(--split-accent) 55%, transparent) 42%,
+    color-mix(in srgb, var(--split-accent) 55%, #fff) 50%,
+    color-mix(in srgb, var(--split-accent) 55%, transparent) 58%,
+    transparent 69%);
+  filter: blur(.35vmin) drop-shadow(0 0 1.6vmin var(--split-accent));
+  transform: scaleY(0);
+  /* Fast, so the line has visibly slashed through the card before the two
+     halves have travelled far apart. */
+  transition: transform calc(var(--split-ms, 600ms) * .45) cubic-bezier(.1,.9,.2,1);
+}
+/* Wide haze around the seam that breathes slowly while the pair is shown. */
+.commander-split__bloom {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 24vmin;
+  height: 100%;
+  margin-left: -12vmin;
+  background: linear-gradient(to right,
+    transparent,
+    color-mix(in srgb, var(--split-accent) 26%, transparent) 50%,
+    transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 32%, #000 45%, #000 55%, transparent 68%);
+  mask-image: linear-gradient(to bottom, transparent 32%, #000 45%, #000 55%, transparent 68%);
+  filter: blur(2vmin);
+  transform: scaleX(.15);
+  transition: transform calc(var(--split-ms, 600ms) * 1.6) cubic-bezier(.16,.84,.24,1);
+  animation: commander-split-breathe 3.2s ease-in-out var(--split-ms, 600ms) infinite alternate;
+}
+/* A burst of light where the card comes apart, settling to a soft glow. */
+.commander-split__flare {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80vmin;
+  height: 80vmin;
+  margin: -40vmin 0 0 -40vmin;
+  border-radius: 50%;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--split-accent) 40%, #fff),
+    color-mix(in srgb, var(--split-accent) 45%, transparent) 22%,
+    color-mix(in srgb, var(--split-accent) 12%, transparent) 55%,
+    transparent);
+  opacity: 0;
+  animation: commander-split-flare calc(var(--split-ms, 600ms) * 2.4) cubic-bezier(.2,.7,.3,1) forwards;
+}
+/* Anamorphic streak across the seam, flashing once as it opens. */
+.commander-split__streak {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150vmin;
+  height: .7vmin;
+  margin: -.35vmin 0 0 -75vmin;
+  border-radius: 50%;
+  background: linear-gradient(to right,
+    transparent,
+    color-mix(in srgb, var(--split-accent) 50%, transparent) 30%,
+    color-mix(in srgb, var(--split-accent) 30%, #fff) 50%,
+    color-mix(in srgb, var(--split-accent) 50%, transparent) 70%,
+    transparent);
+  filter: blur(.25vmin) drop-shadow(0 0 1.2vmin var(--split-accent));
+  opacity: 0;
+  animation: commander-split-streak calc(var(--split-ms, 600ms) * 2) cubic-bezier(.2,.7,.3,1) forwards;
+}
+/* A highlight that travels slowly along the seam while the pair is shown. */
+.commander-split__glint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3vmin;
+  height: 30vmin;
+  margin: -15vmin 0 0 -1.5vmin;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--split-accent) 35%, #fff), transparent);
+  filter: blur(.5vmin);
+  opacity: 0;
+  animation: commander-split-glint 4.2s cubic-bezier(.45,0,.55,1) var(--split-ms, 600ms) infinite backwards;
+}
+.commander-split.is-open .commander-split__half { opacity: 1; transform: translateX(0); }
+/* Snaps on with the cut; closing keeps the full, gentler fade. */
+.commander-split.is-open .commander-split__light { opacity: 1; transition-duration: calc(var(--split-ms, 600ms) * .2); }
+.commander-split.is-open .commander-split__seam { transform: scaleY(1); }
+.commander-split.is-open .commander-split__bloom { transform: scaleX(1); }
+@keyframes commander-split-flare {
+  0% { opacity: 0; transform: scale(.25); }
+  22% { opacity: 1; transform: scale(1); }
+  100% { opacity: .12; transform: scale(1.3); }
+}
+@keyframes commander-split-streak {
+  0% { opacity: 0; transform: scaleX(.1); }
+  20% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1.25); }
+}
+@keyframes commander-split-breathe {
+  from { opacity: 1; }
+  to { opacity: .6; }
+}
+@keyframes commander-split-glint {
+  0% { opacity: 0; transform: translateY(-60vmax); }
+  20%, 80% { opacity: .9; }
+  100% { opacity: 0; transform: translateY(60vmax); }
 }
 
 /* The whole board dims behind the card, not just the seat it flew from —
@@ -320,8 +518,8 @@ html, body {
   72% { opacity: .92; filter: brightness(.42) sepia(1) saturate(.6) contrast(1.9); }
   100% { opacity: 0; filter: brightness(.18) sepia(1); }
 }
-/* Slides the card fully past .commander-flight's own (unmoved) bottom
-   edge, which — since the flight box now clips its overflow — is the mask
+/* Slides the card fully past its .commander-flight__card's own (unmoved)
+   bottom edge, which — since that box clips its overflow — is the mask
    that erases the card as it descends. Linear and unclipped by keyframe
    stops in between, so the motion never jerks. */
 @keyframes commander-sink {
@@ -1822,8 +2020,9 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .hub__turn { position: relative; z-index: 1; }
 .hub__satellite[hidden] { display: none; }
 .hub__satellite--top { bottom: calc(100% + .8vmin); }
-/* A second button stacked beyond the first on the same side. */
+/* A second and a third button stacked beyond the first on the same side. */
 .hub__satellite--top.hub__satellite--outer { bottom: calc(100% + 6.2vmin); }
+.hub__satellite--top.hub__satellite--outermost { bottom: calc(100% + 11.6vmin); }
 .hub__satellite--bottom { top: calc(100% + .8vmin); }
 .hub__satellite--left {
   top: 50%;
@@ -2033,28 +2232,40 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* Sweep in, then hold until JS adds .is-leaving (once the announcement is
+   over), then sweep out. The out duration matches BOARD_REVEAL_EXIT_MS. */
 .board-reveal.is-active .board-reveal__card {
-  animation: board-reveal-sweep 4000ms both;
+  animation: board-reveal-in 760ms both;
 }
-@keyframes board-reveal-sweep {
+.board-reveal.is-active.is-leaving .board-reveal__card {
+  animation: board-reveal-out 1100ms both;
+}
+@keyframes board-reveal-in {
   0% {
     opacity: 0;
     transform: translateX(-115vw) skewX(-5deg) scale(.96);
     filter: blur(.55vmin) brightness(.72);
     animation-timing-function: cubic-bezier(.12, .78, .2, 1);
   }
-  13% {
+  68% {
     opacity: 1;
     transform: translateX(2.2vw) skewX(1deg) scale(1.01);
     filter: blur(0) brightness(1.08);
     animation-timing-function: cubic-bezier(.2, .8, .25, 1);
   }
-  19%, 72% {
+  100% {
     opacity: 1;
     transform: translateX(0) skewX(0) scale(1);
     filter: blur(0) brightness(1);
   }
-  72% { animation-timing-function: cubic-bezier(.55, .02, .88, .28); }
+}
+@keyframes board-reveal-out {
+  0% {
+    opacity: 1;
+    transform: translateX(0) skewX(0) scale(1);
+    filter: blur(0) brightness(1);
+    animation-timing-function: cubic-bezier(.55, .02, .88, .28);
+  }
   100% {
     opacity: 0;
     transform: translateX(-92vw) skewX(-3deg) scale(.97);
@@ -2119,6 +2330,55 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   white-space: nowrap;
 }
 .first-player-reveal__roll { display: inline-block; }
+/* The background reel: a framed window, shaped like a seat, that each tick
+   rolls the next player's background into (js/app.js) as the old one drops
+   out underneath. */
+.first-player-reveal__reel {
+  position: relative;
+  height: 26vmin;
+  max-width: 88vw;
+  aspect-ratio: var(--reel-aspect, 16 / 9);
+  overflow: hidden;
+  background: #070504;
+  border: .36vmin solid color-mix(in srgb, var(--tick, #7b879d) 75%, #fff);
+  border-radius: 1.2vmin;
+  box-shadow:
+    0 0 0 .22vmin #0b0806,
+    0 1.4vmin 4vmin #000c,
+    0 0 3vmin color-mix(in srgb, var(--tick, #7b879d) 35%, transparent),
+    inset 0 0 4vmin #000b;
+}
+.first-player-reveal__frame {
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(in srgb, var(--frame-color, #7b879d) 40%, #0b0806);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: brightness(var(--frame-brightness, 1));
+}
+/* Motion blur while spinning; the inner shadow keeps the edges dark so the
+   frames read as passing behind glass. */
+.first-player-reveal__reel::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(#000a, transparent 22% 78%, #000a);
+  pointer-events: none;
+  transition: opacity 300ms;
+}
+.first-player-reveal.is-landed .first-player-reveal__reel {
+  border-color: var(--accent, var(--ink));
+  box-shadow:
+    0 0 0 .22vmin #0b0806,
+    0 1.4vmin 4vmin #000c,
+    0 0 5vmin color-mix(in srgb, var(--accent, transparent) 60%, transparent),
+    inset 0 0 2vmin #0008;
+  animation: first-player-land 800ms var(--ease-spring) both;
+}
+.first-player-reveal.is-landed .first-player-reveal__reel::after { opacity: 0; }
 /* The winner's own seat colour lands with them, the same touch the winner
    takeover uses — it reads as a confirmation, not just a stop. */
 .first-player-reveal.is-landed .first-player-reveal__label { color: var(--accent, var(--ink)); }
@@ -2157,6 +2417,8 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
    turn it is. */
 .coin-toss {
   --coin-accent: #f3c95a;
+  /* The second coin, for another player: plain silver, nobody's colour. */
+  --coin-other: #dfe3ea;
   /* Set by js/app.js from the coin size on the lights page's Settings tab. */
   --coin-size: 22vmin;
   position: fixed;
@@ -2295,6 +2557,43 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .coin-toss.is-calling .coin-toss__start-run { display: none; }
 .coin-toss.is-running .coin-toss__hint { visibility: hidden; }
 
+/* Two coins: the way in mirrors Flip until lost on the other side of the
+   result. While both are down the result is two words, each in its coin's
+   colour, and neither way in shows. */
+.coin-toss__start-duel {
+  position: absolute;
+  top: calc(33vmin + clamp(2rem, 8vmin, 6rem) / 2);
+  right: calc(50% + 21vmin);
+  translate: 0 -50%;
+  padding: 1.2vmin 2.4vmin;
+  color: var(--ink);
+  background: transparent;
+  border: .25vmin dashed color-mix(in srgb, var(--coin-other) 70%, #fff);
+  border-radius: 1.4vmin;
+  font-family: var(--font-display);
+  font-size: 2.2vmin;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: scale 140ms var(--ease-out);
+}
+.coin-toss__start-duel:active { scale: .95; }
+.coin-toss.is-landed:not(.is-running):not(.is-duel) .coin-toss__start-duel { opacity: 1; pointer-events: auto; transition: opacity 400ms 900ms; }
+.coin-toss.is-calling .coin-toss__start-duel,
+.coin-toss.is-duel .coin-toss__start-run { display: none; }
+.coin-toss__hint--duel,
+.coin-toss.is-duel .coin-toss__hint:not(.coin-toss__hint--duel) { display: none; }
+.coin-toss.is-duel .coin-toss__hint--duel { display: inline; }
+.coin-toss.is-duel .coin-toss__result { display: flex; gap: .9em; }
+.coin-toss__word--theirs {
+  color: var(--coin-other);
+  text-shadow: 0 0 4vmin color-mix(in srgb, var(--coin-other) 45%, transparent), 0 .3vmin .6vmin #000c;
+}
+
 .coin-toss__stage {
   position: absolute;
   inset: 0;
@@ -2338,6 +2637,14 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   background: #fff6d0;
   box-shadow: 0 0 1.2vmin .3vmin var(--coin-accent);
 }
+.coin-toss__fx .is-other { --coin-accent: var(--coin-other); }
+/* Out of sight until two coins are flipped. Hidden rather than faded: a
+   coin with any opacity on it would be flattened out of its 3D. */
+.coin--other,
+.coin-toss__shadow--other { visibility: hidden; }
+.coin-toss.is-duel .coin--other,
+.coin-toss.is-duel .coin-toss__shadow--other { visibility: visible; }
+.coin--other { --coin-accent: var(--coin-other); }
 .coin {
   --coin-depth: calc(var(--coin-size) * .08);
   position: relative;
@@ -2585,7 +2892,8 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 
 @media (prefers-reduced-motion: reduce) {
   .seat__entrance { animation-duration: 1ms !important; }
-  .board-reveal.is-active .board-reveal__card {
+  .board-reveal.is-active .board-reveal__card,
+  .board-reveal.is-active.is-leaving .board-reveal__card {
     animation: none !important;
     opacity: 1;
     transform: none;
@@ -2617,6 +2925,7 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   .hub__panel,
   .first-player-reveal__name,
   .first-player-reveal__name::after,
+  .first-player-reveal__reel,
   .coin-toss__result { animation: none !important; }
   .hub__compass .hub__comet { transition: none !important; }
 }

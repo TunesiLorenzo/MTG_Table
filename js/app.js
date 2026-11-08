@@ -74,9 +74,18 @@
      enough source detail that the center card still reads as printed art. */
   var COMMANDER_IMAGE_MAX_EDGE = 1400;
   var COMMANDER_MOVE_MS = 1700;
-  /* Let the card visibly leave its seat before it starts turning over. */
-  var COMMANDER_FLIP_DELAY_MS = 100;
   var COMMANDER_FLIP_MS = 650;
+  /* The single card arrives face down and comes apart into a mirrored pair —
+     one face-up copy for each side of the table. The split (and the flip
+     inside it) starts this long before the fly-in lands, so it reads as one
+     continuous motion rather than "arrive, pause, split". */
+  var COMMANDER_SPLIT_LEAD_MS = 350;
+  var COMMANDER_SPLIT_MS = 820;
+  var COMMANDER_BURN_SPLIT_MS = 600;
+  var COMMANDER_MERGE_MS = 520;
+  /* How far the dividing seam leans off the seat's vertical, in degrees. The
+     lean makes each half of the screen widen toward the side that reads it. */
+  var COMMANDER_SPLIT_TILT = 18;
   var COMMANDER_BURN_MS = 6200;
   var COMMANDER_FIRE_VOLUME = 0.4;
   /* Enlarges only the centered animated copy; the parked mini-card keeps its
@@ -93,10 +102,17 @@
   var AUDIO_WAKE_MS = 500;
   /* A long stop for a clip that never reports ending. */
   var ANNOUNCER_MAX_MS = 20000;
+  /* The title card stays up for at least BOARD_REVEAL_MS, and in any case
+     until the player's announcement has finished; it then slides out over
+     BOARD_REVEAL_EXIT_MS (matching board-reveal-out in CSS). */
   var BOARD_REVEAL_MS = 4000;
+  var BOARD_REVEAL_EXIT_MS = 1100;
   var ENTRANCE_INTRO_MS = 4000;
   var ENTRANCE_DROP_MS = 900;
   var ENTRANCE_OVERLAP_MS = 1000;
+  /* The crowd starts this long before the announcement ends, silent, and
+     fades up to CROWD_VOLUME by the time the last word lands. */
+  var ENTRANCE_CROWD_LEAD_MS = 2500;
   var CROWD_VOLUME = 0.55;
   /* 120Hz sits inside the passband small/Bluetooth speakers actually
      reproduce — 25Hz was sub-bass that many drivers roll off before an
@@ -148,6 +164,7 @@
   var seatViews = [];
   var winnerCelebrationTimer = null;
   var boardRevealTimer = null;
+  var boardRevealShown = 0;
   var entranceSequence = null;
   var entranceLayeredAudio = [];
   var winnerLayeredAudio = [];
@@ -158,6 +175,13 @@
   var announcerSounds = ['', '', '', ''];
   var crowdSounds = [];
   var commanderSounds = ['', '', '', ''];
+  /* Each seat's two commander animations ({effect, focus, glow, area}) and
+     the Settings tab's choices for them; drawn by js/commander-fx.js. */
+  var commanderFx = [[null, null], [null, null], [null, null], [null, null]];
+  var commanderFxSettings = { always: false, strength: 100 };
+  /* The reveal pair animates at full rate; the parked mini cards are small
+     and many, so they are held to this. */
+  var COMMANDER_FX_PARKED_FPS = 30;
   var displayBrightness = [
     { background: 100, commander: 70 },
     { background: 100, commander: 70 },
@@ -327,17 +351,19 @@
     var finished = false;
     var leadFinished = false;
 
-    function finishLead() {
+    // `leadDone(remainingSeconds)` hears how much of the clip is still to
+    // play, so a follow-on sound can time a fade to the clip's last word.
+    function finishLead(remaining) {
       if (leadFinished) return;
       leadFinished = true;
-      if (leadDone) leadDone();
+      if (leadDone) leadDone(remaining || 0);
     }
 
     function finish(ok) {
       if (finished) return;
       finished = true;
       window.clearTimeout(guard);
-      finishLead();
+      finishLead(0);
       if (done) done(ok !== false);
     }
 
@@ -352,9 +378,9 @@
     audio.volume = typeof volume === 'number' ? Math.max(0, Math.min(1, volume)) : 1;
     if (typeof leadSeconds === 'number' && leadDone) {
       audio.addEventListener('timeupdate', function () {
-        if (Number.isFinite(audio.duration) && audio.duration - audio.currentTime <= leadSeconds) {
-          finishLead();
-        }
+        if (!Number.isFinite(audio.duration)) return;
+        var remaining = audio.duration - audio.currentTime;
+        if (remaining <= leadSeconds) finishLead(Math.max(0, remaining));
       });
     }
     audio.addEventListener('ended', function () { finish(true); });
@@ -604,11 +630,30 @@
           outReason: 'out',
           color: seat.accent,
           image: null,
+          // Where the background is centred: set by a deck preset's crop,
+          // empty for a picture dropped and cropped here.
+          imageFocus: '',
           commanderImage: null,
-          commanderRevealed: false
+          commanderRevealed: false,
+          // The deck preset loaded on the lights page, for the result window.
+          deck: '',
+          // The pictures the server last handed this seat. Only a change to
+          // them replaces the art, so a picture dropped here afterwards stays.
+          tablePictures: { background_image: '', commander_image: '', second_commander_image: '' }
         };
       })
     };
+  }
+
+  /* A dropped picture is kept as a data URL; a deck preset's is a file in
+     Backgrounds, served by the same server as this page. */
+  function isSeatPicture(value) {
+    return typeof value === 'string' &&
+      (value.slice(0, 11) === 'data:image/' || value.slice(0, 13) === '/Backgrounds/');
+  }
+
+  function pictureUrl(path) {
+    return path ? '/' + path.split('/').map(encodeURIComponent).join('/') : null;
   }
 
   function loadState() {
@@ -679,16 +724,24 @@
             seat.outReason = savedSeat.outReason;
           }
           if (/^#[0-9a-f]{6}$/i.test(savedSeat.color || '')) seat.color = savedSeat.color;
-          if (typeof savedSeat.image === 'string' && savedSeat.image.slice(0, 11) === 'data:image/') {
+          if (isSeatPicture(savedSeat.image)) {
             seat.image = savedSeat.image;
+            if (typeof savedSeat.imageFocus === 'string') seat.imageFocus = savedSeat.imageFocus;
+          }
+          if (typeof savedSeat.deck === 'string') seat.deck = savedSeat.deck;
+          if (savedSeat.tablePictures && typeof savedSeat.tablePictures === 'object') {
+            Object.keys(seat.tablePictures).forEach(function (key) {
+              var value = savedSeat.tablePictures[key];
+              if (typeof value === 'string') seat.tablePictures[key] = value;
+            });
           }
           seat.twoCommanders = savedSeat.twoCommanders === true;
           var second = savedSeat.secondCommander;
-          if (second && typeof second.commanderImage === 'string' && second.commanderImage.indexOf('data:image/') === 0) {
+          if (second && isSeatPicture(second.commanderImage)) {
             seat.secondCommander.commanderImage = second.commanderImage;
             seat.secondCommander.commanderRevealed = second.commanderRevealed === true;
           }
-          if (typeof savedSeat.commanderImage === 'string' && savedSeat.commanderImage.slice(0, 11) === 'data:image/') {
+          if (isSeatPicture(savedSeat.commanderImage)) {
             seat.commanderImage = savedSeat.commanderImage;
           }
           if (typeof savedSeat.commanderRevealed === 'boolean') {
@@ -1507,7 +1560,7 @@
       return '<div class="result-dialog__row" data-result-seat="' + result.index + '" data-rank="' + result.rank + '">' +
         '<div class="result-dialog__rank" role="radiogroup" aria-label="Ranking for ' + escapeHtml(seat.name) + '">' + buttons + '</div>' +
         '<span class="result-dialog__player" style="--player-color:' + seatColor(result.index) + '">' + escapeHtml(seat.name) + '</span>' +
-        '<input class="result-dialog__deck" maxlength="80" placeholder="Deck name" aria-label="Deck for ' + escapeHtml(seat.name) + '" required>' +
+        '<input class="result-dialog__deck" maxlength="80" placeholder="Deck name" aria-label="Deck for ' + escapeHtml(seat.name) + '" value="' + escapeHtml(seat.deck || '') + '" required>' +
         '</div>';
     }).join('');
 
@@ -1584,7 +1637,9 @@
 
   function setSeatImage(seatIndex, dataUrl) {
     var previous = state.seats[seatIndex].image;
+    var previousFocus = state.seats[seatIndex].imageFocus;
     state.seats[seatIndex].image = dataUrl;
+    state.seats[seatIndex].imageFocus = '';
     render();
     updateTray(seatIndex);
 
@@ -1592,6 +1647,7 @@
       // The picture was too big to keep; put the seat back as it was rather
       // than leaving an image that vanishes on the next reload.
       state.seats[seatIndex].image = previous;
+      state.seats[seatIndex].imageFocus = previousFocus;
       render();
       updateTray(seatIndex);
       window.alert('That image is too large to store. Try a smaller one.');
@@ -1679,6 +1735,104 @@
     if (dim) dim.classList.toggle('is-active', active);
   }
 
+  /* Calls done once, after it has itself been called `count` times. */
+  function afterAll(count, done) {
+    return function () {
+      count--;
+      if (count === 0) done();
+    };
+  }
+
+  /* One card of the flying pair. Card B sits in a container turned 180° so it
+     reads from the far side of the table; its flipper starts with a matching
+     rotateZ(180deg) so, face down and stacked under A, its back still looks
+     identical to A's. */
+  function commanderFlightCardHtml(side, burning) {
+    return '<span class="commander-flight__card commander-flight__card--' + side + '">' +
+      '<span class="commander-card__flipper">' +
+      '<span class="commander-card__face commander-card__face--back"></span>' +
+      '<span class="commander-card__face commander-card__face--front"></span></span>' +
+      (burning ? '<video class="commander-fire-video" src="/Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>' : '') +
+      '</span>';
+  }
+
+  /* Each card of the pair is clipped to its own side of the seam, so the
+     seam reads as a real cut through the screen: the stacked card is sliced
+     along the diagonal and each copy only becomes whole once it has slid
+     clear of it. The seam is fixed in the seat's frame at x = -y·tan(tilt)
+     (through the centre); in a card's own box, slid out by tx, that is
+     x = w/2 - (y - h/2)·tan(tilt) - tx. Thanks to the pair's point symmetry
+     the same polygon works for card B inside its 180°-turned container. */
+  function commanderSplitClip(geom, tx) {
+    function edgeX(y) { return geom.w / 2 - (y - geom.h / 2) * geom.tan - tx; }
+    var top = -geom.h;
+    var bottom = 2 * geom.h;
+    var far = 10 * geom.w;
+    return 'polygon(' + edgeX(top) + 'px ' + top + 'px, ' + far + 'px ' + top + 'px, ' +
+      far + 'px ' + bottom + 'px, ' + edgeX(bottom) + 'px ' + bottom + 'px)';
+  }
+
+  /* Slides the pair between stacked (0) and split (±half) in the seat's own
+     frame. The flight is already rotated to the seat, so translateX here is
+     "sideways" from that player's chair on every seat. B is always held to
+     its side of the seam; A is too unless clipA is false — on the way home A
+     slides back whole over the seam while B is swallowed by it. */
+  function moveCommanderPair(flight, geom, fromHalf, toHalf, duration, easing, clipA, done) {
+    var finished = afterAll(2, done);
+    var a = [
+      { transform: 'translateX(' + fromHalf + 'px)' },
+      { transform: 'translateX(' + toHalf + 'px)' }
+    ];
+    if (clipA) {
+      a[0].clipPath = commanderSplitClip(geom, fromHalf);
+      a[1].clipPath = commanderSplitClip(geom, toHalf);
+    }
+    animateCommanderPhase(flight.querySelector('.commander-flight__card--a'), a, duration, easing, finished);
+    animateCommanderPhase(flight.querySelector('.commander-flight__card--b'), [
+      { transform: 'translateX(' + -fromHalf + 'px) rotate(180deg)', clipPath: commanderSplitClip(geom, fromHalf) },
+      { transform: 'translateX(' + -toHalf + 'px) rotate(180deg)', clipPath: commanderSplitClip(geom, toHalf) }
+    ], duration, easing, finished);
+  }
+
+  /* The diagonal split screen, in two layers around the flying pair: the
+     tinted halves sit under the cards, while the seam and its light sit on
+     top of them, so the line visibly cuts through the card. */
+  function openCommanderSplit(rotationDeg, accent, duration) {
+    function layer(className, inner) {
+      var el = document.createElement('div');
+      el.className = className;
+      el.style.setProperty('--split-angle', (rotationDeg + COMMANDER_SPLIT_TILT) + 'deg');
+      el.style.setProperty('--split-accent', accent);
+      el.style.setProperty('--split-ms', duration + 'ms');
+      el.innerHTML = '<span class="commander-split__plane">' + inner + '</span>';
+      document.body.appendChild(el);
+      return el;
+    }
+    var layers = [
+      layer('commander-split',
+        '<span class="commander-split__half commander-split__half--a"></span>' +
+        '<span class="commander-split__half commander-split__half--b"></span>'),
+      layer('commander-split commander-split--light',
+        '<span class="commander-split__light">' +
+        '<span class="commander-split__bloom"></span>' +
+        '<span class="commander-split__flare"></span>' +
+        '<span class="commander-split__streak"></span>' +
+        '<span class="commander-split__seam"></span>' +
+        '<span class="commander-split__glint"></span></span>')
+    ];
+    void layers[0].offsetWidth;
+    layers.forEach(function (el) { el.classList.add('is-open'); });
+    return layers;
+  }
+
+  function closeCommanderSplit(layers, duration) {
+    if (!layers) return;
+    layers.forEach(function (el) {
+      el.style.setProperty('--split-ms', duration + 'ms');
+      el.classList.remove('is-open');
+    });
+  }
+
   /* A body-level copy can cross rotated seat boundaries without being clipped.
      The real card is hidden for the flight and updated only as it lands. */
   function animateCommander(seatIndex, second) {
@@ -1695,14 +1849,27 @@
     commanderAnimating[seatIndex] = true;
     var revealing = !seat.commanderRevealed;
     var rect = view.commander.getBoundingClientRect();
+    var rotationDeg = state.seats[seatIndex].rotation;
     var flight = document.createElement('div');
     flight.className = 'commander-flight' + (revealing ? '' : ' is-face-up');
     // The player panel is the reveal's bounding box. Preserve the card's 5:7
-    // ratio and use the largest undistorted size that fits that panel.
+    // ratio and use the largest undistorted size that fits that panel — then
+    // shrink if needed so the split pair, side by side in the seat's frame,
+    // still fits the screen. The gap clears the leaning seam at the cards'
+    // corners (h/2 · tan(tilt)) plus a small margin.
     var panelWidth = view.inner.clientWidth;
     var panelHeight = view.inner.clientHeight;
-    var revealWidth = Math.min(panelWidth, panelHeight * 5 / 7) * COMMANDER_REVEAL_SCALE;
+    var sideways = ((rotationDeg % 180) + 180) % 180 === 90;
+    var spanX = sideways ? window.innerHeight : window.innerWidth;
+    var spanY = sideways ? window.innerWidth : window.innerHeight;
+    var gapRatio = 0.7 * Math.tan(COMMANDER_SPLIT_TILT * Math.PI / 180) + 0.06;
+    var revealWidth = Math.min(
+      Math.min(panelWidth, panelHeight * 5 / 7) * COMMANDER_REVEAL_SCALE,
+      spanX * 0.94 / (2 + 2 * gapRatio),
+      spanY * 0.9 * 5 / 7);
     var revealHeight = revealWidth * 7 / 5;
+    var half = revealWidth * (0.5 + gapRatio);
+    var splitGeom = { w: revealWidth, h: revealHeight, tan: Math.tan(COMMANDER_SPLIT_TILT * Math.PI / 180) };
     // offsetWidth stays in the card's own coordinate system; rect.width swaps
     // with height on the 90°/270° seats and would make those flights jump size.
     var edgeScale = view.commander.offsetWidth / revealWidth;
@@ -1710,11 +1877,20 @@
     flight.style.height = revealHeight + 'px';
     flight.style.setProperty('--commander-brightness', displayBrightness[seatIndex].commander / 100);
     flight.style.setProperty('--commander-image', 'url("' + seat.commanderImage + '")');
-    flight.innerHTML = '<span class="commander-card__flipper">' +
-      '<span class="commander-card__face commander-card__face--back"></span>' +
-      '<span class="commander-card__face commander-card__face--front"></span></span>' +
-      (revealing ? '' : '<video class="commander-fire-video" src="/Backgrounds/Animations/Fire_trasparent.webm" muted playsinline preload="auto"></video>');
+    // B first so A — the copy facing the player who owns it — is on top while
+    // the two are stacked and look like one card.
+    flight.innerHTML = commanderFlightCardHtml('b', !revealing) + commanderFlightCardHtml('a', !revealing);
     document.body.appendChild(flight);
+    // Both copies animate, on one clock, so the mirrored pair stays in step.
+    // The reveal always animates; Settings only decides about the seat card.
+    var commanderFxShown = commanderFxFor(seatIndex, second);
+    var flightFx = [];
+    if (window.CommanderFx && commanderFxShown.effect !== 'none' && commanderFxSettings.strength > 0) {
+      Array.prototype.forEach.call(flight.querySelectorAll('.commander-card__face--front'), function (face) {
+        var handle = window.CommanderFx.attach(face, commanderFxOptions(commanderFxShown, seat.commanderImage, 60));
+        if (handle) flightFx.push(handle);
+      });
+    }
     view.commander.style.visibility = 'hidden';
     // The flying card is meant to be the only thing worth looking at — dim
     // the whole board for as long as it's in the air, on both the reveal
@@ -1723,49 +1899,67 @@
 
     var dx = rect.left + rect.width / 2 - window.innerWidth / 2;
     var dy = rect.top + rect.height / 2 - window.innerHeight / 2;
-    var rotation = state.seats[seatIndex].rotation + 'deg';
+    var rotation = rotationDeg + 'deg';
     var edge = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) rotate(' + rotation + ') scale(' + edgeScale + ')';
     var center = 'translate(-50%, -50%) rotate(' + rotation + ') scale(1)';
-    var flipper = flight.querySelector('.commander-card__flipper');
+    var accent = seatColor(seatIndex);
+    var split = null;
+    function finishFlight(revealed) {
+      seat.commanderRevealed = revealed;
+      saveState();
+      renderSeat(seatIndex);
+      view.commander.style.visibility = '';
+      setCommanderDim(false);
+      flightFx.forEach(function (handle) { handle.destroy(); });
+      flight.remove();
+      if (split) split.forEach(function (el) { el.remove(); });
+      commanderAnimating[seatIndex] = false;
+    }
     if (revealing) {
       sendLightCue('commander_reveal', { seat: seatIndex });
-      /* The flight starts first, then the flip and sound overlap its trip in.
-         Moving back is gated on all three, so a long reveal clip leaves the
-         face-up card parked in the center until the clip has ended. */
-      var pending = 3;
-      function revealPartFinished() {
-        pending--;
-        if (pending !== 0) return;
+      /* One face-down card flies in. Just before it lands it comes apart into
+         two: A flips over its vertical axis toward its owner, B over its
+         horizontal axis toward the far side — which leaves B's face turned
+         180° from A's, readable from across the table — while the seam opens
+         between them. Going home waits on the landing, the split and the
+         sound, so a long clip keeps the pair parked until it has ended. */
+      var revealPartFinished = afterAll(3, function () {
         // The room comes back up as the card lands home.
-        sendLightCue('release', { group: 'commander', in: COMMANDER_MOVE_MS / 1000 });
-        animateCommanderPhase(flight, [
-          { transform: center },
-          { transform: edge }
-        ], COMMANDER_MOVE_MS, 'cubic-bezier(.55,.05,.35,1)', function () {
-          seat.commanderRevealed = true;
-          saveState();
-          renderSeat(seatIndex);
-          view.commander.style.visibility = '';
-          setCommanderDim(false);
-          flight.remove();
-          commanderAnimating[seatIndex] = false;
+        sendLightCue('release', { group: 'commander', in: (COMMANDER_MERGE_MS + COMMANDER_MOVE_MS) / 1000 });
+        closeCommanderSplit(split, COMMANDER_MERGE_MS);
+        moveCommanderPair(flight, splitGeom, half, 0, COMMANDER_MERGE_MS, 'cubic-bezier(.5,0,.3,1)', false, function () {
+          animateCommanderPhase(flight, [
+            { transform: center },
+            { transform: edge }
+          ], COMMANDER_MOVE_MS, 'cubic-bezier(.55,.05,.35,1)', function () {
+            finishFlight(true);
+          });
         });
-      }
+      });
       animateCommanderPhase(flight, [
         { transform: edge },
         { transform: center }
       ], COMMANDER_MOVE_MS, 'cubic-bezier(.22,.7,.25,1)', revealPartFinished);
       window.setTimeout(function () {
-        animateCommanderPhase(flipper, [
+        var splitFinished = afterAll(3, revealPartFinished);
+        split = openCommanderSplit(rotationDeg, accent, COMMANDER_SPLIT_MS);
+        moveCommanderPair(flight, splitGeom, 0, half, COMMANDER_SPLIT_MS, 'cubic-bezier(.34,1.2,.44,1)', true, splitFinished);
+        animateCommanderPhase(flight.querySelector('.commander-flight__card--a .commander-card__flipper'), [
           { transform: 'rotateY(0deg)' },
           { transform: 'rotateY(180deg)' }
-        ], COMMANDER_FLIP_MS, 'ease-in-out', revealPartFinished);
+        ], COMMANDER_FLIP_MS, 'ease-in-out', splitFinished);
+        animateCommanderPhase(flight.querySelector('.commander-flight__card--b .commander-card__flipper'), [
+          { transform: 'rotateX(0deg) rotateZ(180deg)' },
+          { transform: 'rotateX(180deg) rotateZ(180deg)' }
+        ], COMMANDER_FLIP_MS, 'ease-in-out', splitFinished);
         if (second) playOneShot(state.seats[seatIndex].secondCommanderSound ? 'sound/Commander/' + encodeURIComponent(state.seats[seatIndex].secondCommanderSound) : '', revealPartFinished);
         else playCommanderSound(seatIndex, revealPartFinished);
-      }, COMMANDER_FLIP_DELAY_MS);
+      }, Math.max(0, COMMANDER_MOVE_MS - COMMANDER_SPLIT_LEAD_MS));
     } else {
-      /* A revealed commander does not fly home. It reaches the middle, burns
-         away there, and the face-down mini card reappears only at the end. */
+      /* A revealed commander does not fly home. It reaches the middle face up,
+         comes apart into the same mirrored pair, both burn away there, and
+         the face-down mini card reappears only at the end. */
+      var arriveMs = Math.round(COMMANDER_BURN_MS * COMMANDER_BURN_ARRIVE);
       sendLightCue('commander_burn', {
         seat: seatIndex,
         fire_at: COMMANDER_BURN_MS * COMMANDER_BURN_ARRIVE / 1000,
@@ -1779,10 +1973,13 @@
         { transform: center, opacity: 0, offset: 1 }
       ], { duration: COMMANDER_BURN_MS, easing: 'cubic-bezier(.22,.7,.25,1)', fill: 'forwards' });
       window.setTimeout(function () {
+        split = openCommanderSplit(rotationDeg, accent, COMMANDER_BURN_SPLIT_MS);
+        moveCommanderPair(flight, splitGeom, 0, half, COMMANDER_BURN_SPLIT_MS, 'cubic-bezier(.34,1.2,.44,1)', true, function () {});
+      }, Math.max(0, arriveMs - COMMANDER_SPLIT_LEAD_MS));
+      window.setTimeout(function () {
         playOneShot('sound/Commander/Fire.mp3', null, COMMANDER_FIRE_VOLUME);
         flight.classList.add('is-burning');
-        var fireVideo = flight.querySelector('.commander-fire-video');
-        if (fireVideo) {
+        Array.prototype.forEach.call(flight.querySelectorAll('.commander-fire-video'), function (fireVideo) {
           function startFireVideo() {
             /* Sped up to finish alongside the (shorter, delayed) sink-and-burn
                instead of the old flat five-second burn window. */
@@ -1795,16 +1992,14 @@
           }
           if (fireVideo.readyState >= 1) startFireVideo();
           else fireVideo.addEventListener('loadedmetadata', startFireVideo, { once: true });
-        }
-      }, Math.round(COMMANDER_BURN_MS * COMMANDER_BURN_ARRIVE));
+        });
+      }, arriveMs);
+      // The seam fades with the ashes rather than outliving the cards.
       window.setTimeout(function () {
-        seat.commanderRevealed = false;
-        saveState();
-        renderSeat(seatIndex);
-        view.commander.style.visibility = '';
-        setCommanderDim(false);
-        flight.remove();
-        commanderAnimating[seatIndex] = false;
+        closeCommanderSplit(split, Math.round(COMMANDER_BURN_MS * 0.1));
+      }, Math.round(COMMANDER_BURN_MS * 0.9));
+      window.setTimeout(function () {
+        finishFlight(false);
       }, COMMANDER_BURN_MS + 30);
     }
   }
@@ -2605,6 +2800,7 @@
     var overlay = document.getElementById('first-player-reveal');
     if (!overlay) return;
     var nameEls = overlay.querySelectorAll('.first-player-reveal__name');
+    var reelEls = overlay.querySelectorAll('.first-player-reveal__reel');
 
     window.clearTimeout(firstPickTimer);
     var winner = eligible[Math.floor(Math.random() * eligible.length)];
@@ -2624,6 +2820,12 @@
 
     overlay.classList.remove('is-landed');
     overlay.style.removeProperty('--accent');
+    // Every quadrant is the same shape, so the reel window takes the winner's.
+    var seatBox = seatViews[winner] && seatViews[winner].el.getBoundingClientRect();
+    if (seatBox && seatBox.width && seatBox.height) {
+      overlay.style.setProperty('--reel-aspect', seatBox.width + ' / ' + seatBox.height);
+    }
+    reelEls.forEach(function (reel) { reel.textContent = ''; });
     overlay.hidden = false;
     overlay.classList.remove('is-active');
     void overlay.offsetWidth;
@@ -2642,6 +2844,9 @@
           { translate: '0 -60%', opacity: 0.2 },
           { translate: '0 0', opacity: 1 }
         ], { duration: Math.max(40, Math.min(160, gap * 0.8)), easing: 'cubic-bezier(.2, .7, .3, 1)' });
+      });
+      reelEls.forEach(function (reel) {
+        rollReelFrame(reel, order[step], Math.max(50, Math.min(220, gap * 0.9)));
       });
       playSound('click');
       step++;
@@ -2677,6 +2882,39 @@
     tick();
   }
 
+  /* One tick of the background reel: the seat's background rolls down into
+     the window while whatever was showing drops out below it. A seat with no
+     background shows its colour instead. */
+  function rollReelFrame(reel, seatIndex, duration) {
+    var seat = state.seats[seatIndex];
+    var frame = document.createElement('span');
+    frame.className = 'first-player-reveal__frame';
+    frame.style.setProperty('--frame-color', seatColor(seatIndex));
+    frame.style.setProperty('--frame-brightness',
+      displayBrightness[seatIndex] ? displayBrightness[seatIndex].background / 100 : 1);
+    if (seat.image) frame.style.backgroundImage = 'url("' + seat.image + '")';
+
+    // Frames still on their way out from the tick before are done with.
+    Array.prototype.forEach.call(reel.querySelectorAll('.is-leaving'), function (old) {
+      old.remove();
+    });
+    var outgoing = Array.prototype.slice.call(reel.children);
+    reel.appendChild(frame);
+
+    var easing = 'cubic-bezier(.25, .6, .35, 1)';
+    play(frame, [
+      { translate: '0 -100%', filter: 'brightness(' + frame.style.getPropertyValue('--frame-brightness') + ') blur(.4vmin)' },
+      { translate: '0 0', filter: 'brightness(' + frame.style.getPropertyValue('--frame-brightness') + ') blur(0)' }
+    ], { duration: duration, easing: easing });
+    outgoing.forEach(function (old) {
+      old.classList.add('is-leaving');
+      var leaving = play(old, [{ translate: '0 0' }, { translate: '0 100%' }],
+        { duration: duration, easing: easing, fill: 'forwards' });
+      if (leaving) leaving.onfinish = function () { old.remove(); };
+      else old.remove();
+    });
+  }
+
   /* The coin toss is simulated rather than played back: only the throw is
      random, and where the coin goes, how it bounces and which side it settles
      on all follow from that. Lengths are in vmin, so it plays the same on any
@@ -2694,14 +2932,18 @@
      ones, which is what makes it sound like metal. */
   var COIN_PARTIALS = [1, 1.52, 2.41, 3.37];
   var coinToss = {
-    dom: null, frame: null, timer: null, whoosh: null,
+    dom: null, frame: null, timer: null, whooshes: [],
     landed: false, calling: false,
     coin: null,          // the last coin thrown, lying where it stopped
     heads: 0, tails: 0,  // the tally since the coin was brought out
     /* Flipping until a flip is lost, for cards that say so: `runArmed` while
        Until lost is pressed in the call, then `run` holds the one call made
        and the wins so far until the losing flip ends it. */
-    runArmed: false, run: null
+    runArmed: false, run: null,
+    /* Two coins at once, for cards where another player flips too: `other`
+       is the grey coin, standing for them, and `duel` counts the rounds
+       while both are on the table. */
+    other: null, duel: null
   };
   // How long a won flip of a run stays on show before the next throw.
   var COIN_RUN_PAUSE = 1300;
@@ -2886,17 +3128,20 @@
     whoosh.filter.frequency.setTargetAtTime(500 + spin * 30 + Math.abs(coin.vz) * 3, now, 0.03);
   }
 
+  /* Every coin in the air has its own rush, so two coins flutter apart. */
   function stopCoinWhoosh() {
-    var whoosh = coinToss.whoosh;
-    coinToss.whoosh = null;
-    if (!whoosh) return;
-    try {
-      var now = audioContext.currentTime;
-      whoosh.gain.gain.setTargetAtTime(0, now, 0.03);
-      whoosh.source.stop(now + 0.3);
-    } catch (err) {
-      /* Already stopped. */
-    }
+    var whooshes = coinToss.whooshes;
+    coinToss.whooshes = [];
+    whooshes.forEach(function (whoosh) {
+      if (!whoosh) return;
+      try {
+        var now = audioContext.currentTime;
+        whoosh.gain.gain.setTargetAtTime(0, now, 0.03);
+        whoosh.source.stop(now + 0.3);
+      } catch (err) {
+        /* Already stopped. */
+      }
+    });
   }
 
   /* --- Coin physics --- */
@@ -2926,11 +3171,15 @@
   }
 
   /* Flicks it up: towards the middle of the table from wherever it lies, give
-     or take, and anywhere at all from the middle. */
-  function throwCoin(coin) {
-    var away = Math.sqrt(coin.x * coin.x + coin.y * coin.y);
+     or take, and anywhere at all from the middle. `target` aims it somewhere
+     else instead, which keeps two coins to their own sides. */
+  function throwCoin(coin, target) {
+    var to = target || { x: 0, y: 0 };
+    var dx = to.x - coin.x;
+    var dy = to.y - coin.y;
+    var away = Math.sqrt(dx * dx + dy * dy);
     var heading = away > 4
-      ? Math.atan2(-coin.y, -coin.x) + (Math.random() - 0.5) * 1.2
+      ? Math.atan2(dy, dx) + (Math.random() - 0.5) * (target ? 0.6 : 1.2)
       : Math.random() * Math.PI * 2;
     var speed = Math.max(22, away / 1.6) * (0.7 + Math.random() * 0.6);
     coin.vx = Math.cos(heading) * speed;
@@ -3060,26 +3309,68 @@
     }
   }
 
+  /* Two coins on the table knock into each other rather than overlap. In the
+     air one simply passes over the other. A coin already at rest stays put
+     and the moving one glances off it. Returns how hard they met, 0 to 0.5. */
+  function knockCoins(a, b, radius) {
+    if (a.z > radius * 0.5 || b.z > radius * 0.5) return 0;
+    var dx = b.x - a.x;
+    var dy = b.y - a.y;
+    var gap = Math.sqrt(dx * dx + dy * dy);
+    var reach = radius * 2;
+    if (gap >= reach) return 0;
+    var nx = 1, ny = 0;
+    if (gap > 0.001) {
+      nx = dx / gap;
+      ny = dy / gap;
+    }
+    // Both coming to rest in the same step, overlapping, they share the push.
+    var pushA = a.resting && !b.resting ? 0 : 1;
+    var pushB = b.resting && !a.resting ? 0 : 1;
+    var overlap = reach - gap;
+    a.x -= nx * overlap * pushA / (pushA + pushB);
+    a.y -= ny * overlap * pushA / (pushA + pushB);
+    b.x += nx * overlap * pushB / (pushA + pushB);
+    b.y += ny * overlap * pushB / (pushA + pushB);
+    var closing = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (closing >= 0) return 0;
+    var share = -1.6 * closing / (pushA + pushB);
+    a.vx -= nx * share * pushA;
+    a.vy -= ny * share * pushA;
+    b.vx += nx * share * pushB;
+    b.vy += ny * share * pushB;
+    return Math.min(0.5, -closing / 60);
+  }
+
   /* --- Coin on screen --- */
 
+  /* The overlay, and one view per coin: the player's first, the grey one
+     second. */
   function coinDom() {
     if (coinToss.dom) return coinToss.dom;
     var overlay = document.getElementById('coin-toss');
     if (!overlay) return null;
-    var coinEl = overlay.querySelector('.coin');
-    for (var layer = 1; layer <= COIN_EDGE_LAYERS; layer++) {
-      var edge = document.createElement('span');
-      edge.className = 'coin__edge';
-      edge.style.transform = 'translateZ(calc(var(--coin-depth) * ' +
-        (layer / (COIN_EDGE_LAYERS + 1) - 0.5) + '))';
-      coinEl.appendChild(edge);
-    }
+    var views = [];
+    overlay.querySelectorAll('.coin').forEach(function (coinEl, index) {
+      for (var layer = 1; layer <= COIN_EDGE_LAYERS; layer++) {
+        var edge = document.createElement('span');
+        edge.className = 'coin__edge';
+        edge.style.transform = 'translateZ(calc(var(--coin-depth) * ' +
+          (layer / (COIN_EDGE_LAYERS + 1) - 0.5) + '))';
+        coinEl.appendChild(edge);
+      }
+      views.push({
+        coin: coinEl,
+        heads: coinEl.querySelector('.coin__face--heads'),
+        tails: coinEl.querySelector('.coin__face--tails'),
+        shadow: overlay.querySelectorAll('.coin-toss__shadow')[index],
+        // Marks the landing effects of the grey coin, so they are grey too.
+        tone: coinEl.classList.contains('coin--other') ? ' is-other' : ''
+      });
+    });
     coinToss.dom = {
       overlay: overlay,
-      coin: coinEl,
-      heads: overlay.querySelector('.coin__face--heads'),
-      tails: overlay.querySelector('.coin__face--tails'),
-      shadow: overlay.querySelector('.coin-toss__shadow'),
+      views: views,
       fx: overlay.querySelector('.coin-toss__fx'),
       results: overlay.querySelectorAll('.coin-toss__result'),
       notes: overlay.querySelectorAll('.coin-toss__note')
@@ -3117,6 +3408,16 @@
     };
   }
 
+  /* Where the grey coin comes in from: the far side of the table from the
+     player's own, since it stands for somebody else. */
+  function coinOtherStart(table) {
+    var mine = coinStart(table);
+    var far = Math.sqrt(mine.x * mine.x + mine.y * mine.y);
+    if (far < 4) return { x: table.bounds.x * 0.8, y: 0 };
+    return { x: -mine.x, y: -mine.y };
+  }
+
+  /* `dom` is one coin's view: the coin, its two faces and its shadow. */
   function poseCoin(dom, coin, table) {
     var unit = table.unit;
     // Tilted on the table it stands on its rim, so its centre is that much
@@ -3172,9 +3473,9 @@
 
   /* Coming down: a ring of dust thrown out along the table, and for the first
      and hardest landing the table itself jumping under it. */
-  function coinLanding(dom, coin, unit, first) {
+  function coinLanding(dom, coin, unit, first, tone) {
     var at = 'translate(' + (coin.x * unit).toFixed(1) + 'px, ' + (coin.y * unit).toFixed(1) + 'px) ';
-    coinEffect(dom, 'coin-toss__ring', [
+    coinEffect(dom, 'coin-toss__ring' + (tone || ''), [
       { transform: at + 'scale(.8)', opacity: 0.25 + 0.55 * coin.landing },
       { transform: at + 'scale(' + (1.5 + 1.3 * coin.landing).toFixed(2) + ')', opacity: 0 }
     ], 300 + 300 * coin.landing);
@@ -3190,7 +3491,7 @@
   }
 
   /* Lying still at last: a few sparks off the rim. */
-  function coinSparks(dom, coin, table) {
+  function coinSparks(dom, coin, table, tone) {
     var unit = table.unit;
     var x = coin.x * unit;
     var y = coin.y * unit;
@@ -3198,7 +3499,7 @@
       var way = Math.random() * Math.PI * 2;
       var near = table.radius * unit * 0.9;
       var far = near + (5 + Math.random() * 9) * unit;
-      coinEffect(dom, 'coin-toss__spark', [
+      coinEffect(dom, 'coin-toss__spark' + (tone || ''), [
         { transform: 'translate(' + (x + Math.cos(way) * near).toFixed(1) + 'px, ' +
             (y + Math.sin(way) * near).toFixed(1) + 'px) scale(1)', opacity: 1 },
         { transform: 'translate(' + (x + Math.cos(way) * far).toFixed(1) + 'px, ' +
@@ -3211,8 +3512,9 @@
 
   /* The coin button: brings the coin out by whoever's turn it is, struck in
      their colour, and throws it, or waits to be told heads or tails first when
-     the Settings tab says the coin is called. */
-  function openCoinToss() {
+     the Settings tab says the coin is called. `two` throws the grey coin for
+     another player alongside it straight away, which is never called. */
+  function openCoinToss(two) {
     var dom = coinDom();
     if (!dom) return;
     var table = coinTable();
@@ -3225,17 +3527,19 @@
     coinToss.coin = placeCoin(coinStart(table), null);
     coinToss.landed = coinToss.calling = false;
     coinToss.run = null;
+    coinToss.duel = null;
 
     dom.overlay.style.setProperty('--coin-accent', seatColor(state.currentPlayer));
     dom.overlay.style.setProperty('--coin-size', table.radius * 2 + 'vmin');
-    dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost', 'is-running');
+    dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost', 'is-running', 'is-duel');
     dom.overlay.hidden = false;
     dom.overlay.classList.remove('is-active');
-    poseCoin(dom, coinToss.coin, table);
+    poseCoin(dom.views[0], coinToss.coin, table);
     void dom.overlay.offsetWidth;
     dom.overlay.classList.add('is-active');
 
-    if (coinSettings.call) askCoinCall();
+    if (two === true) startCoinDuel();
+    else if (coinSettings.call) askCoinCall();
     else tossCoin(null);
   }
 
@@ -3260,12 +3564,67 @@
     });
   }
 
-  /* Throws the coin from where it lies and follows it until it is still.
-     `call` is 'heads' or 'tails' when somebody called it, and null otherwise. */
+  /* Two coins: the player's, thrown from where it lies, and a grey one for
+     another player, thrown in from across the table. */
+  function startCoinDuel() {
+    var dom = coinDom();
+    var table = coinTable();
+    coinToss.run = null;
+    coinToss.duel = { rounds: 0 };
+    coinToss.other = placeCoin(coinOtherStart(table), null);
+    poseCoin(dom.views[1], coinToss.other, table);
+    dom.overlay.classList.remove('is-running');
+    dom.overlay.classList.add('is-duel');
+    tossCoin(null);
+  }
+
+  /* Back to the player's coin alone; the grey one leaves the table. */
+  function leaveCoinDuel() {
+    coinToss.duel = null;
+    coinDom().overlay.classList.remove('is-duel');
+  }
+
+  function coinFace(coin) {
+    return Math.round(coin.tilt / Math.PI) % 2 === 0 ? 'heads' : 'tails';
+  }
+
+  /* Both results, written towards each long side in the order that side sees
+     the coins lying, each in its coin's colour. Under them, whether the two
+     came up the same, and which round this is. */
+  function showCoinDuel(dom, mine, theirs) {
+    var duel = coinToss.duel;
+    var faces = { mine: coinFace(mine), theirs: coinFace(theirs) };
+    var notes = [];
+    duel.rounds++;
+    if (faces.mine === faces.theirs) notes.push('Both ' + faces.mine);
+    if (duel.rounds > 1) notes.push('Round ' + duel.rounds);
+    var mineLeft = mine.x <= theirs.x;
+    dom.results.forEach(function (label) {
+      // The top half is turned round, so its left is the screen's right.
+      var turned = !!label.closest('.coin-toss__half--top');
+      var order = mineLeft !== turned ? ['mine', 'theirs'] : ['theirs', 'mine'];
+      label.textContent = '';
+      order.forEach(function (whose) {
+        var word = document.createElement('span');
+        word.className = 'coin-toss__word coin-toss__word--' + whose;
+        word.textContent = faces[whose] === 'heads' ? 'Heads' : 'Tails';
+        label.appendChild(word);
+      });
+    });
+    dom.notes.forEach(function (note) { note.textContent = notes.join(' · '); });
+  }
+
+  /* Throws the coin from where it lies and follows it until it is still, and
+     the grey coin with it while there are two. `call` is 'heads' or 'tails'
+     when somebody called it, and null otherwise. */
   function tossCoin(call) {
     var dom = coinDom();
     var table = coinTable();
+    var duel = coinToss.duel;
     var coin = coinToss.coin = placeCoin(coinToss.coin, coinToss.coin);
+    var coins = [coin];
+    if (duel) coins.push(coinToss.other = placeCoin(coinToss.other, coinToss.other));
+    var settled = coins.map(function () { return false; });
     var landings = 0;
 
     window.cancelAnimationFrame(coinToss.frame);
@@ -3276,12 +3635,37 @@
     dom.results.forEach(function (label) { label.textContent = ''; });
     dom.notes.forEach(function (note) { note.textContent = ''; });
 
+    function still() {
+      return coins.every(function (one) { return one.resting; });
+    }
+
+    /* One step for every coin still moving, then the two kept apart. */
+    function advance(marks) {
+      coins.forEach(function (one, index) {
+        if (one.resting) return;
+        stepCoin(one, COIN_STEP, table.bounds);
+        marks.knock = Math.max(marks.knock, one.impact);
+        marks.landing[index] = Math.max(marks.landing[index], one.landing);
+      });
+      if (coins.length > 1) marks.knock = Math.max(marks.knock, knockCoins(coins[0], coins[1], table.radius));
+    }
+
+    function freshMarks() {
+      return { knock: 0, landing: coins.map(function () { return 0; }) };
+    }
+
     function land() {
-      var heads = Math.round(coin.tilt / Math.PI) % 2 === 0;
-      var notes = [];
       coinToss.frame = null;
       coinToss.landed = true;
       stopCoinWhoosh();
+      if (duel) {
+        showCoinDuel(dom, coin, coins[1]);
+        dom.overlay.classList.add('is-landed');
+        if (coinOption('hold')) coinToss.timer = window.setTimeout(closeCoinToss, coinOption('hold'));
+        return;
+      }
+      var heads = coinFace(coin) === 'heads';
+      var notes = [];
       coinToss[heads ? 'heads' : 'tails']++;
       var run = coinToss.run;
       var won = !!call && call === (heads ? 'heads' : 'tails');
@@ -3319,19 +3703,28 @@
       if (coinOption('hold')) coinToss.timer = window.setTimeout(closeCoinToss, coinOption('hold'));
     }
 
-    throwCoin(coin);
+    if (duel) {
+      // Each to its own side of the middle, so they come to lie side by side:
+      // the player's coin to whichever side it is already on.
+      var apart = Math.min(table.bounds.x, table.radius * 1.6);
+      var side = coin.x <= coins[1].x ? -1 : 1;
+      throwCoin(coin, { x: side * apart, y: 0 });
+      throwCoin(coins[1], { x: -side * apart, y: 0 });
+    } else {
+      throwCoin(coin);
+    }
     // The ring of the flick that sends it up.
     coinClink(0.7);
 
     if (prefersReducedMotion()) {
       // The same toss, just not shown: only where it ends up.
-      while (!coin.resting) stepCoin(coin, COIN_STEP, table.bounds);
-      poseCoin(dom, coin, table);
+      while (!still()) advance(freshMarks());
+      coins.forEach(function (one, index) { poseCoin(dom.views[index], one, table); });
       land();
       return;
     }
 
-    coinToss.whoosh = startCoinWhoosh();
+    coinToss.whooshes = coins.map(function () { return startCoinWhoosh(); });
     var last = window.performance.now();
     var owed = 0;
     function frame(now) {
@@ -3339,23 +3732,26 @@
       // tab picks up where it was rather than leaping ahead.
       owed += Math.min(0.05, Math.max(0, now - last) / 1000);
       last = now;
-      var knock = 0;
-      var landing = 0;
-      while (owed >= COIN_STEP && !coin.resting) {
-        stepCoin(coin, COIN_STEP, table.bounds);
-        knock = Math.max(knock, coin.impact);
-        landing = Math.max(landing, coin.landing);
+      var marks = freshMarks();
+      while (owed >= COIN_STEP && !still()) {
+        advance(marks);
         owed -= COIN_STEP;
       }
-      if (knock > 0.04) coinClink(knock);
-      if (landing > 0.2 && coinSettings.effects) {
-        coin.landing = landing;
-        coinLanding(dom, coin, table.unit, ++landings === 1);
-      }
-      tuneCoinWhoosh(coinToss.whoosh, coin);
-      poseCoin(dom, coin, table);
-      if (coin.resting) {
-        if (coinSettings.effects) coinSparks(dom, coin, table);
+      if (marks.knock > 0.04) coinClink(marks.knock);
+      coins.forEach(function (one, index) {
+        var view = dom.views[index];
+        if (marks.landing[index] > 0.2 && coinSettings.effects) {
+          one.landing = marks.landing[index];
+          coinLanding(dom, one, table.unit, ++landings === 1, view.tone);
+        }
+        tuneCoinWhoosh(coinToss.whooshes[index], one);
+        poseCoin(view, one, table);
+        if (one.resting && !settled[index]) {
+          settled[index] = true;
+          if (coinSettings.effects) coinSparks(dom, one, table, view.tone);
+        }
+      });
+      if (still()) {
         land();
         return;
       }
@@ -3364,9 +3760,36 @@
     coinToss.frame = window.requestAnimationFrame(frame);
   }
 
-  /* A tap on the landed coin throws it again; anywhere else puts it away. */
+  /* Which coin a tap is on, if any: 0 for the player's, 1 for the grey one.
+     Where their boxes overlap, the nearer centre wins. */
+  function coinTapped(dom, event) {
+    var count = coinToss.duel ? 2 : 1;
+    var best = -1;
+    var bestDistance = Infinity;
+    for (var index = 0; index < count; index++) {
+      var box = dom.views[index].coin.getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right ||
+          event.clientY < box.top || event.clientY > box.bottom) continue;
+      var dx = event.clientX - (box.left + box.width / 2);
+      var dy = event.clientY - (box.top + box.height / 2);
+      var distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        best = index;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  /* A tap on the landed coin throws it again; anywhere else puts it away.
+     With two coins down, the grey one throws both again and the player's own
+     goes back to flipping it alone. */
   function tapCoinToss(event) {
     var dom = coinDom();
+    if (event.target.closest('[data-start-duel]')) {
+      startCoinDuel();
+      return;
+    }
     if (event.target.closest('[data-run]')) {
       armCoinRun(!coinToss.runArmed);
       return;
@@ -3390,12 +3813,18 @@
       return;
     }
     if (!coinToss.landed) return;
-    var box = dom.coin.getBoundingClientRect();
-    var onCoin = event.clientX >= box.left && event.clientX <= box.right &&
-      event.clientY >= box.top && event.clientY <= box.bottom;
-    if (!onCoin) closeCoinToss();
+    var tapped = coinTapped(dom, event);
+    if (tapped < 0) {
+      closeCoinToss();
+      return;
+    }
+    if (tapped === 1) {
+      tossCoin(null);
+      return;
+    }
+    if (coinToss.duel) leaveCoinDuel();
     // Mid-run, the coin goes again on its own; a tap only skips the wait.
-    else if (coinToss.run) tossCoin(coinToss.run.call);
+    if (coinToss.run) tossCoin(coinToss.run.call);
     else if (coinSettings.call) askCoinCall();
     else tossCoin(null);
   }
@@ -3405,11 +3834,13 @@
     window.clearTimeout(coinToss.timer);
     coinToss.landed = coinToss.calling = false;
     coinToss.run = null;
+    coinToss.duel = null;
     dom.overlay.classList.remove('is-running');
     dom.overlay.classList.remove('is-active');
     coinToss.timer = window.setTimeout(function () {
       dom.overlay.hidden = true;
-      dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost');
+      // The grey coin stays on show while the overlay fades.
+      dom.overlay.classList.remove('is-landed', 'is-calling', 'is-won', 'is-lost', 'is-duel');
       coinToss.timer = null;
     }, 300);
   }
@@ -3591,6 +4022,8 @@
       return response.json();
     }).then(function (status) {
       setHouseLights(status && status.house_lights);
+      // Before the seats re-render below, so they draw with these settings.
+      syncCommanderFxSettings(status);
       syncAnnouncerSounds(status);
       syncCoinSettings(status);
     }).catch(function () {
@@ -3602,6 +4035,79 @@
      page, which usually runs on a different device (a phone) from this
      screen, so they only arrive here through the same status poll that keeps
      the house-lights button honest. */
+  /* A deck preset loaded on the lights page dresses the seat with its
+     pictures. Only a change on the server replaces what is shown, so art
+     dropped onto a panel here stays until the next preset; a picture the
+     server stops naming goes only if the seat is still showing it. */
+  function syncSeatPictures(seat, player) {
+    var slots = {
+      background_image: { holder: seat, key: 'image' },
+      commander_image: { holder: seat, key: 'commanderImage' },
+      second_commander_image: { holder: seat.secondCommander, key: 'commanderImage' }
+    };
+    var changed = false;
+    Object.keys(slots).forEach(function (field) {
+      var wanted = typeof player[field] === 'string' ? player[field] : '';
+      var before = seat.tablePictures[field];
+      if (wanted === before) return;
+      var slot = slots[field];
+      var showing = slot.holder[slot.key];
+      if (wanted) slot.holder[slot.key] = pictureUrl(wanted);
+      else if (showing === pictureUrl(before)) slot.holder[slot.key] = null;
+      if (slot.holder[slot.key] !== showing && slot.key === 'commanderImage') slot.holder.commanderRevealed = false;
+      seat.tablePictures[field] = wanted;
+      changed = true;
+    });
+    var focus = typeof player.background_focus === 'string' ? player.background_focus : '';
+    if (seat.image === pictureUrl(seat.tablePictures.background_image) && seat.imageFocus !== focus) {
+      seat.imageFocus = focus;
+      changed = true;
+    }
+    return changed;
+  }
+
+  function syncCommanderFxSettings(status) {
+    var saved = status && status.moment_settings && status.moment_settings.commander_fx;
+    if (!saved) return;
+    if (typeof saved.always === 'boolean') commanderFxSettings.always = saved.always;
+    if (Number.isFinite(saved.strength)) commanderFxSettings.strength = saved.strength;
+  }
+
+  /* One commander card's animation, as the lights page set it. A table with
+     no lights server still gets the default foil shimmer. */
+  function commanderFxFor(seatIndex, second) {
+    var fx = commanderFx[seatIndex] && commanderFx[seatIndex][second ? 1 : 0];
+    return fx || { effect: 'foil', focus: '', glow: '', area: 'art' };
+  }
+
+  function commanderFxOptions(fx, image, fps) {
+    return {
+      image: image,
+      effect: fx.effect,
+      focus: fx.focus,
+      glow: fx.glow,
+      area: fx.area,
+      strength: commanderFxSettings.strength / 100,
+      fps: fps
+    };
+  }
+
+  /* The small card at the seat animates only when Settings says so, and only
+     face up — face down its art is not showing anyway. */
+  function syncParkedCommanderFx(card, seat, index, second) {
+    var fx = commanderFxFor(index, second);
+    var wanted = window.CommanderFx && commanderFxSettings.always && commanderFxSettings.strength > 0 &&
+      seat.commanderRevealed && seat.commanderImage && fx.effect !== 'none' && !card.hidden;
+    if (!wanted) {
+      if (card.commanderFx) card.commanderFx.destroy();
+      card.commanderFx = null;
+      return;
+    }
+    var options = commanderFxOptions(fx, seat.commanderImage, COMMANDER_FX_PARKED_FPS);
+    if (card.commanderFx) card.commanderFx.update(options);
+    else card.commanderFx = window.CommanderFx.attach(card.querySelector('.commander-card__face--front'), options);
+  }
+
   function syncAnnouncerSounds(status) {
     if (!status) return;
     var saved = status.moment_settings && status.moment_settings.winner_sound;
@@ -3620,6 +4126,7 @@
         return (player && typeof player.commander_sound === 'string') ? player.commander_sound : '';
       });
       var commanderLayoutChanged = false;
+      var picturesChanged = false;
       state.seats.forEach(function (seat, index) {
         var player = status.players[index] || {};
         var names = [player.commander_name || '', player.second_commander_name || ''];
@@ -3630,7 +4137,11 @@
         seat.twoCommanders = player.two_commanders === true;
         seat.commanderNames = names;
         seat.secondCommanderSound = player.second_commander_sound || '';
+        commanderFx[index] = [player.commander_fx || null, player.second_commander_fx || null];
+        if (typeof player.deck === 'string') seat.deck = player.deck;
+        if (syncSeatPictures(seat, player)) picturesChanged = true;
       });
+      if (picturesChanged) saveState();
       displayBrightness = state.seats.map(function (_, index) {
         var player = status.players[index] || {};
         return {
@@ -3673,15 +4184,33 @@
     return shuffled.slice(0, TABLE_RING.length);
   }
 
-  function playCrowdSound(file, beforeEnd, done) {
+  function playCrowdSound(file, beforeEnd, done, fadeSeconds) {
     if (!file) {
       if (beforeEnd) beforeEnd();
       if (done) done();
       return;
     }
     var cardLeadSeconds = (ENTRANCE_DROP_MS + ENTRANCE_OVERLAP_MS) / 1000;
-    playEntranceLayer('sound/' + encodeURIComponent(file), false, done,
+    var audio = playEntranceLayer('sound/' + encodeURIComponent(file), false, done,
       CROWD_VOLUME, cardLeadSeconds, beforeEnd);
+    if (fadeSeconds > 0) fadeInLayer(audio, CROWD_VOLUME, fadeSeconds * 1000);
+  }
+
+  /* Ramps a layer from silence up to `target`. Stops on its own once the
+     layer has been stopped or has finished. */
+  function fadeInLayer(audio, target, durationMs) {
+    var level = Math.max(0, Math.min(1, target));
+    var started = window.performance.now();
+    audio.volume = 0;
+    var timer = window.setInterval(function () {
+      if (entranceLayeredAudio.indexOf(audio) === -1) {
+        window.clearInterval(timer);
+        return;
+      }
+      var progress = Math.min(1, (window.performance.now() - started) / durationMs);
+      audio.volume = level * progress;
+      if (progress >= 1) window.clearInterval(timer);
+    }, 40);
   }
 
   function revealEntrance(seatIndex) {
@@ -3741,7 +4270,7 @@
       view.entrance.setAttribute('aria-hidden', 'true');
       syncEntranceStage();
 
-      function startCrowdReaction() {
+      function startCrowdReaction(announcementLeft) {
         if (entranceSequence !== token) return;
         var crowd = token.crowds[token.crowdIndex++] || '';
         var lastPlayer = token.remaining === 0;
@@ -3761,26 +4290,53 @@
               pickRandomFirstPlayer();
             });
           }
-        });
+        }, announcementLeft);
       }
 
-      playAnnouncer(announcerSounds[seatIndex], null,
-        ENTRANCE_OVERLAP_MS / 1000, startCrowdReaction);
-      showBoardReveal(seatIndex, null);
+      var card = showBoardReveal(seatIndex, null);
+      playAnnouncer(announcerSounds[seatIndex], function () {
+        if (entranceSequence === token) card.release();
+      }, ENTRANCE_CROWD_LEAD_MS / 1000, startCrowdReaction);
     }, ENTRANCE_DROP_MS);
   }
 
-  /* A four-second framed title card. The top copy is rotated by CSS, so the
+  /* A framed title card that sweeps in, holds for at least BOARD_REVEAL_MS
+     and until the returned handle's release() (the end of the player's
+     announcement), then sweeps out. The top copy is rotated by CSS, so the
      shared left-to-right animation reads correctly from both table sides. */
   function showBoardReveal(seatIndex, done) {
     var overlay = document.getElementById('board-reveal');
     var seat = state.seats[seatIndex];
+    var handle = { release: function () {} };
     if (!overlay || !seat.image) {
       if (done) done();
-      return;
+      return handle;
     }
 
     window.clearTimeout(boardRevealTimer);
+    // A newer card owns the overlay: an older card's late release is ignored.
+    var showing = ++boardRevealShown;
+    var released = false;
+    var minimumHeld = false;
+    var leaving = false;
+    function leave() {
+      if (showing !== boardRevealShown) return;
+      if (leaving || !released || !minimumHeld) return;
+      leaving = true;
+      overlay.classList.add('is-leaving');
+      boardRevealTimer = window.setTimeout(function () {
+        overlay.classList.remove('is-active', 'is-leaving');
+        boardRevealTimer = window.setTimeout(function () {
+          overlay.hidden = true;
+          boardRevealTimer = null;
+          if (done) done();
+        }, 160);
+      }, BOARD_REVEAL_EXIT_MS);
+    }
+    handle.release = function () {
+      released = true;
+      leave();
+    };
     var image = 'url("' + seat.image + '")';
     var playerWindow = seatViews[seatIndex].el.getBoundingClientRect();
     overlay.style.setProperty('--board-reveal-accent', seatColor(seatIndex));
@@ -3788,23 +4344,22 @@
     overlay.style.setProperty('--board-reveal-brightness', displayBrightness[seatIndex].background / 100);
     overlay.querySelectorAll('.board-reveal__art').forEach(function (art) {
       art.style.backgroundImage = image;
+      art.style.backgroundPosition = seat.imageFocus || '';
     });
     overlay.querySelectorAll('.board-reveal__name').forEach(function (name) {
       name.textContent = seat.name;
     });
     overlay.hidden = false;
-    overlay.classList.remove('is-active');
+    overlay.classList.remove('is-active', 'is-leaving');
     void overlay.offsetWidth;
     overlay.classList.add('is-active');
 
     boardRevealTimer = window.setTimeout(function () {
-      overlay.classList.remove('is-active');
-      boardRevealTimer = window.setTimeout(function () {
-        overlay.hidden = true;
-        boardRevealTimer = null;
-        if (done) done();
-      }, 300);
-    }, BOARD_REVEAL_MS);
+      boardRevealTimer = null;
+      minimumHeld = true;
+      leave();
+    }, Math.max(0, BOARD_REVEAL_MS - BOARD_REVEAL_EXIT_MS));
+    return handle;
   }
 
   function cancelEntranceSequence() {
@@ -3822,10 +4377,11 @@
     stopAnnouncer();
     window.clearTimeout(boardRevealTimer);
     boardRevealTimer = null;
+    boardRevealShown++;
 
     var overlay = document.getElementById('board-reveal');
     if (overlay) {
-      overlay.classList.remove('is-active');
+      overlay.classList.remove('is-active', 'is-leaving');
       overlay.hidden = true;
     }
   }
@@ -3982,6 +4538,7 @@
       card.setAttribute('aria-label', card.getAttribute('aria-label') + ' ' + slot);
       card.title += ' (commander ' + slot + ')';
     }
+    syncParkedCommanderFx(card, seat, index, slot === 2);
   }
 
   function renderSeat(index) {
@@ -4014,6 +4571,7 @@
     view.el.style.setProperty('--accent', seatColor(index));
     view.el.style.setProperty('--background-brightness', displayBrightness[index].background / 100);
     view.bg.style.backgroundImage = seat.image ? 'url("' + seat.image + '")' : '';
+    view.bg.style.backgroundPosition = seat.image && seat.imageFocus ? seat.imageFocus : '';
     renderCommanderCard(view.commander, seat, index,
       seat.commanderNames[0] || seat.name, seat.twoCommanders ? 1 : null);
     view.el.classList.toggle('has-partner', !!seat.twoCommanders);
@@ -4248,7 +4806,8 @@
       }
     });
 
-    document.getElementById('coin-flip').addEventListener('click', openCoinToss);
+    document.getElementById('coin-flip').addEventListener('click', function () { openCoinToss(false); });
+    document.getElementById('coin-flip-two').addEventListener('click', function () { openCoinToss(true); });
     document.getElementById('coin-toss').addEventListener('click', tapCoinToss);
 
     document.addEventListener('keydown', function (event) {

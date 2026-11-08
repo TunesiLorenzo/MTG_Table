@@ -3,7 +3,8 @@
     "Borgo": {
       "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif",
       "decks": [
-        "Jace"
+        "Jace",
+        "MasterOfKeys"
       ]
     },
     "Curti": {
@@ -140,7 +141,15 @@
       "cards": [
         "Backgrounds/Commander/Niv-Mizzet.jpg"
       ],
-      "sound": "NivMizzet.wav"
+      "sound": "NivMizzet.wav",
+      "card_fx": [
+        {
+          "effect": "storm",
+          "focus": "53% 31.1%",
+          "glow": "",
+          "area": "card"
+        }
+      ]
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
@@ -205,7 +214,15 @@
       "cards": [
         "Backgrounds/Commander/Lumra.jpg"
       ],
-      "sound": "Lumra.wav"
+      "sound": "Lumra.wav",
+      "card_fx": [
+        {
+          "effect": "quake",
+          "focus": "36.4% 29.4%",
+          "glow": "",
+          "area": "art"
+        }
+      ]
     },
     "Dina": {
       "commander": "Dina, Essence Brewer",
@@ -250,7 +267,15 @@
       "cards": [
         "Backgrounds/Commander/Raffine.webp"
       ],
-      "sound": "Raffine.wav"
+      "sound": "Raffine.wav",
+      "card_fx": [
+        {
+          "effect": "arcane",
+          "focus": "59.4% 35.7%",
+          "glow": "61.6% 22.7%",
+          "area": "art"
+        }
+      ]
     },
     "Zndrsplt": {
       "commander": "Zndrsplt & Okaun",
@@ -259,7 +284,21 @@
         "Backgrounds/Commander/Zndrsplt.jfif",
         "Backgrounds/Commander/Okaun.jfif"
       ],
-      "sound": "Zndrsplt.wav"
+      "sound": "Zndrsplt.wav",
+      "card_fx": [
+        {
+          "effect": "embers",
+          "focus": "45.9% 33.2%",
+          "glow": "80.8% 25.1%",
+          "area": "card"
+        },
+        {
+          "effect": "embers",
+          "focus": "34.2% 36.2%",
+          "glow": "42.8% 20.8%",
+          "area": "card"
+        }
+      ]
     },
     "Jace": {
       "commander": "Jace",
@@ -270,7 +309,34 @@
       "sound": "Jace.wav",
       "colors": "U",
       "card_colors": "U",
-      "type_line": "Token Planeswalker \u2014 Jace"
+      "type_line": "Token Planeswalker \u2014 Jace",
+      "card_fx": [
+        {
+          "effect": "ghost",
+          "focus": "",
+          "glow": "43.7% 12.2%",
+          "area": "card"
+        }
+      ]
+    },
+    "MasterOfKeys": {
+      "commander": "The Master Of Keys",
+      "art": "Backgrounds/Players/MasterOfKeys.png",
+      "cards": [
+        "Backgrounds/Commander/MasterOfKeys.webp"
+      ],
+      "sound": "MasterOfKeys.wav",
+      "colors": "WUB",
+      "card_colors": "WUB",
+      "type_line": "Legendary Enchantment Creature \u2014 Horror",
+      "card_fx": [
+        {
+          "effect": "shadow",
+          "focus": "47.8% 36.3%",
+          "glow": "49% 21.7%",
+          "area": "card"
+        }
+      ]
     }
   }
 }
