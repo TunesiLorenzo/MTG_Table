@@ -28,7 +28,8 @@
     "Milli": {
       "portrait": "Backgrounds/Players/VoltiBase/Milli.jfif",
       "decks": [
-        "Raffine"
+        "Raffine",
+        "Lumra"
       ]
     },
     "Dadda": {
@@ -201,10 +202,10 @@
       "commander": "Lumra, Bellows of the beast",
       "colors": "G",
       "art": "Backgrounds/Players/Lumra.png",
-      "art_focus": "52.8% 20.1%",
       "cards": [
         "Backgrounds/Commander/Lumra.jpg"
-      ]
+      ],
+      "sound": "Lumra.wav"
     },
     "Dina": {
       "commander": "Dina, Essence Brewer",
