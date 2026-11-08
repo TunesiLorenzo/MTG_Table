@@ -1,7 +1,10 @@
 {
   "players": {
     "Borgo": {
-      "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif"
+      "portrait": "Backgrounds/Players/VoltiBase/borgo.jfif",
+      "decks": [
+        "Jace"
+      ]
     },
     "Curti": {
       "portrait": "Backgrounds/Players/VoltiBase/curti.jpg",
@@ -12,14 +15,21 @@
     "Coach": {
       "portrait": "Backgrounds/Players/VoltiBase/coach.jpeg",
       "decks": [
-        "Beamtown Bullies"
+        "Beamtown Bullies",
+        "Zndrsplt"
       ]
     },
     "Ny": {
-      "portrait": "Backgrounds/Players/VoltiBase/ny.JPG"
+      "portrait": "Backgrounds/Players/VoltiBase/ny.JPG",
+      "decks": [
+        "Niv-Mizzet"
+      ]
     },
     "Milli": {
-      "portrait": "Backgrounds/Players/VoltiBase/Milli.jfif"
+      "portrait": "Backgrounds/Players/VoltiBase/Milli.jfif",
+      "decks": [
+        "Raffine"
+      ]
     },
     "Dadda": {
       "portrait": "Backgrounds/Players/VoltiBase/Dadda.jfif"
@@ -123,13 +133,13 @@
     "Niv-Mizzet": {
       "commander": "niv-mizzet parun",
       "colors": "UR",
+      "card_colors": "UR",
+      "type_line": "Legendary Creature \u2014 Dragon Wizard",
       "art": "Backgrounds/Players/Niv-Mizzet.png",
-      "art_focus": "51.6% 8.6%",
       "cards": [
         "Backgrounds/Commander/Niv-Mizzet.jpg"
       ],
-      "card_colors": "UR",
-      "type_line": "Legendary Creature \u2014 Dragon Wizard"
+      "sound": "NivMizzet.wav"
     },
     "Oloro": {
       "commander": "Oloro, Ageless Ascetic",
@@ -232,6 +242,34 @@
       "sound": "BeamTownBullies.wav",
       "volume": 39,
       "discontinued": true
+    },
+    "Raffine": {
+      "commander": "Raffine",
+      "art": "Backgrounds/Players/Raffine.png",
+      "cards": [
+        "Backgrounds/Commander/Raffine.webp"
+      ],
+      "sound": "Raffine.wav"
+    },
+    "Zndrsplt": {
+      "commander": "Zndrsplt & Okaun",
+      "art": "Backgrounds/Players/ZNDRSPLT.png",
+      "cards": [
+        "Backgrounds/Commander/Zndrsplt.jfif",
+        "Backgrounds/Commander/Okaun.jfif"
+      ],
+      "sound": "Zndrsplt.wav"
+    },
+    "Jace": {
+      "commander": "Jace",
+      "art": "Backgrounds/Players/Jace.png",
+      "cards": [
+        "Backgrounds/Commander/JaceMultiverse.jpg"
+      ],
+      "sound": "Jace.wav",
+      "colors": "U",
+      "card_colors": "U",
+      "type_line": "Token Planeswalker \u2014 Jace"
     }
   }
 }
