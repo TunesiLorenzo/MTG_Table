@@ -357,6 +357,36 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 .game-player small { margin-top: 3px; color: var(--muted); font-size: .75rem; }
 .game-player small .pips { margin-left: 5px; }
 
+/* Game statistics: each game's own folded under its result, the records on
+   the front page, and a player's averages on their page. Gold marks the best
+   in a column. The awards and records come from game-stats.js. */
+.stat-icon { width: 20px; height: 20px; flex: none; color: var(--gold); }
+.game-stats { border-top: 1px solid #33291f; }
+.game-stats summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 15px; color: var(--bronze-light); font: 700 .74rem var(--display); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.game-stats summary::-webkit-details-marker { display: none; }
+.game-stats summary::before { content: ""; align-self: center; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid var(--bronze); transition: rotate .15s; }
+.game-stats[open] summary::before { rotate: 90deg; }
+.game-stats summary small { color: var(--muted); font: italic .9rem var(--serif); letter-spacing: 0; text-transform: none; }
+.award-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 8px; margin: 0; padding: 0 15px 12px; list-style: none; }
+.award-list li { display: flex; gap: 10px; align-items: flex-start; min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(135deg, #e2b86212, transparent 70%), #15110d; }
+.award-list li > span { min-width: 0; }
+.award-list b { display: block; color: var(--gold); font: 700 .64rem var(--display); letter-spacing: .12em; text-transform: uppercase; }
+.award-list strong { display: block; margin-top: 2px; overflow: hidden; font: 700 .92rem var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.award-list small { display: block; color: var(--muted); font-size: .74rem; }
+.game-stats .table-wrap { padding: 0 6px 8px; }
+.stats-table { font-size: .8rem; }
+.stats-table th, .stats-table td { padding: 8px 7px; }
+.stats-table td.is-lead { color: var(--gold); font-weight: 800; }
+.stats-player strong { display: block; font-family: var(--display); }
+.stats-player small { display: block; color: var(--muted); font-size: .7rem; }
+.records-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 26px; }
+.summary.record { position: relative; padding-left: 54px; }
+.record .stat-icon { position: absolute; top: 18px; left: 18px; width: 24px; height: 24px; filter: drop-shadow(0 0 6px #e2b86266); }
+.record strong { font-size: clamp(1.05rem, 2.2vw, 1.35rem); }
+.award-bars .bar-item { grid-template-columns: minmax(170px, 210px) 1fr auto; }
+.award-bars .bar-label { display: flex; align-items: center; gap: 6px; overflow: visible; }
+.award-bars .stat-icon { width: 16px; height: 16px; }
+
 @media (max-width: 780px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .game-results { grid-template-columns: repeat(2, 1fr); }
@@ -365,6 +395,9 @@ tr.rarity-mythic { background: linear-gradient(90deg, #f0702a1c, transparent 45%
 }
 @media (max-width: 560px) {
   main { padding: 14px 12px 80px; }
+  .award-list { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 10px 10px; }
+  .award-bars .bar-item { grid-template-columns: 1fr; }
+  .award-bars .bar-value { grid-column: 1; }
   .sigil { width: 420px; right: -170px; }
   .sigil-symbol { font-size: 26px; }
   .hero { flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; min-height: 0; padding: 24px 20px; }

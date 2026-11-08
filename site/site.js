@@ -395,6 +395,7 @@ function gameCards(list, emptyText) {
         const place = top ? (isDraw ? `${BROKEN_SIGIL}DRAW` : `${CROWN}VICTORY`) : `#${result.rank}`;
         return `<div class="game-player${top ? (isDraw ? " is-tied" : " is-winner") : ""}"><span class="place">${place}</span><strong>${playerLink(result.name)}</strong><small>${deckLink(result.deck)}${pips(deckColors(result.deck))}</small></div>`;
       }).join("")}</div>
+      ${gameStatsPanel(game)}
     </article>`;
   }).join("")}</div>`;
 }
@@ -412,6 +413,79 @@ function backLink(kind) {
   return player
     ? `<a class="back-link" href="${playerHref(player.name)}">&larr; ${escapeHtml(player.name)}</a>`
     : '<a class="back-link" href="#/">&larr; Leaderboard</a>';
+}
+
+/* ----------------------------------------------------------- game stats --
+   What the life tracker saved with each game. The awards, records and
+   averages come from game-stats.js (js/game-stats.js on the table, copied in
+   by build_site.py), so this page and the table always agree. A game recorded
+   before the tracker kept statistics simply has none. */
+
+/* Optional: should game-stats.js fail to load (a server started before it
+   existed, a stale cache), the statistics are left out and everything else
+   still draws. */
+const GS = window.GameStats || null;
+const statIcon = (name) => GS.icon(name, "stat-icon");
+const statNames = (list) => list.map((entry) => playerLink(entry.name)).join(" &amp; ");
+
+/* One game's awards and every player's numbers, folded away under its result. */
+function gameStatsPanel(game) {
+  const summary = GS && GS.gameSummary(game);
+  if (!summary) return "";
+  const tops = GS.leaders(summary.players);
+  const facts = [
+    summary.durationSeconds ? `${GS.clock(summary.durationSeconds)} game` : "",
+    plural(summary.turns, "turn"),
+    plural(summary.eliminations, "elimination"),
+  ].filter(Boolean).join(" · ");
+  const awards = summary.awards.length
+    ? `<ul class="award-list">${summary.awards.map((entry) => `<li title="${escapeHtml(entry.award.note)}">${statIcon(entry.award.icon)}<span><b>${escapeHtml(entry.award.title)}</b><strong>${statNames(entry.winners)}</strong><small>${escapeHtml(entry.value)}</small></span></li>`).join("")}</ul>`
+    : "";
+  const rows = summary.players.map((entry) => `<tr>
+    <td>${entry.rank}</td>
+    <td class="stats-player"><strong>${playerLink(entry.name)}</strong>${entry.eliminatedBy ? `<small>out to ${escapeHtml(entry.eliminatedBy)}</small>` : ""}</td>
+    ${GS.COLUMNS.map((column) => entry.hasStats
+      ? `<td${tops[column.key] !== undefined && entry[column.key] === tops[column.key] ? ' class="is-lead"' : ""}>${GS.cell(column, entry[column.key])}</td>`
+      : "<td>—</td>").join("")}
+  </tr>`).join("");
+  return `<details class="game-stats">
+    <summary><span>Game stats</span><small>${escapeHtml(facts)}</small></summary>
+    ${awards}
+    <div class="table-wrap"><table class="stats-table">
+      <thead><tr><th>#</th><th>Player</th>${GS.COLUMNS.map((column) => `<th title="${escapeHtml(column.label)}">${escapeHtml(column.short)}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </details>`;
+}
+
+/* The table's all-time records, for the front page. */
+function recordsSection() {
+  const records = GS ? GS.records(games) : [];
+  if (!records.length) return "";
+  return `<section>
+    ${heading("HALL OF RECORDS", "Records", "From games tracked on the table")}
+    <div class="records-grid">${records.map((record) => `<article class="summary record">${statIcon(record.icon)}<span class="eyebrow">${escapeHtml(record.title)}</span>
+      <strong>${record.holders.length ? record.holders.map(playerLink).join(" &amp; ") : escapeHtml(record.value)}</strong>
+      <small>${escapeHtml([record.holders.length ? record.value : "", record.detail, record.date ? formatDate(record.date) : ""].filter(Boolean).join(" · "))}</small></article>`).join("")}</div>
+  </section>`;
+}
+
+/* A player's averages over every tracked game, for their page. */
+function playStyleSection(player) {
+  if (!GS) return "";
+  const totals = GS.playerTotals(player.results.map((entry) => entry.game)).find((entry) => keyOf(entry.name) === keyOf(player.name));
+  if (!totals) return "";
+  const each = (value) => String(GS.perGame(value));
+  return `<section>
+    ${heading("PLAY STYLE", `How ${player.name} plays`, `Across ${plural(totals.games, "tracked game")}`)}
+    ${tiles([
+      ["AVG. TURN", GS.clock(totals.avgTurnSeconds), `longest ${GS.clock(totals.longestTurnSeconds)} · ${plural(totals.turns, "turn")} in all`],
+      ["DAMAGE / GAME", each(totals.perGame.damageDealt), `${totals.damageDealt} dealt · ${each(totals.perGame.commanderDealt)} commander a game`],
+      ["LIFE GAINED / GAME", each(totals.perGame.lifeGained), `${totals.lifeGained} gained · ${each(totals.perGame.damageTaken)} taken a game`],
+      ["ELIMINATIONS", totals.eliminations, `biggest hit ${totals.biggestHit} · ${GS.clock(totals.perGame.playSeconds)} played a game`],
+    ])}
+    ${totals.awards.length ? `<div class="card">${heading("AWARDS", "Awards won", plural(totals.awardCount, "award"))}${bars(totals.awards.map((entry) => [`${statIcon(entry.award.icon)}${escapeHtml(entry.award.title)}`, entry.award.title, entry.count, plural(entry.count, "time"), playerColors(player)]), "award-bars")}</div>` : ""}
+  </section>`;
 }
 
 /* ---------------------------------------------------------------- views -- */
@@ -466,6 +540,7 @@ function homeView() {
       ${heading("DECK PERFORMANCE", "Decks", "Sorted by wins, then win rate")}
       ${stats.decks.length ? `<div class="deck-grid">${stats.decks.map((deck) => deckCard(deck, deckCaption(deck))).join("")}</div>` : '<div class="empty">Decks appear after the first recorded game.</div>'}
     </section>
+    ${recordsSection()}
     <section>
       ${heading("ARCHIVE", "Game history", plural(games.length, "game"))}
       ${gameCards(games, "No games recorded yet.")}
@@ -502,6 +577,7 @@ function playerView(name) {
       ${decks.length ? `<div class="deck-grid">${decks.map((deck) => deckCard(deck, deckInfo(deck.name).commander || (deck.games ? `Avg. finish ${average(deck)}` : "New deck"))).join("")}</div>` : '<div class="empty">No deck has been recorded or added for this player yet.</div>'}
     </section>
     ${player.games ? `<section class="card">${heading("FINISHING POSITIONS", "Where the games ended")}${finishBars(player, playerColors(player))}</section>` : ""}
+    ${playStyleSection(player)}
     <section>
       ${heading("ARCHIVE", `${player.name}'s games`, plural(player.games, "game"))}
       ${gameCards(player.results.map((entry) => entry.game), "No recorded games yet.")}

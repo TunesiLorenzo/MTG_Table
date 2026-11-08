@@ -4,7 +4,8 @@ The published site is the ``site/`` folder plus what it reads:
 ``game_history.json``, the pictures and deck sounds named in
 ``site/roster.json``, the intro's sound named in ``site/intro.json``, the
 site's overall volume in ``site/settings.json``, and the table's card
-animations (``js/commander-fx.js``) for the decks' commander cards.
+animations (``js/commander-fx.js``) for the decks' commander cards, and
+the game statistics' awards and records (``js/game-stats.js``).
 Nothing else in the repository is copied, so the life tracker, the lights
 page, the table's other sounds and any picture or sound the roster does not
 mention stay off the public site.
@@ -35,13 +36,14 @@ OUT_DIR = BASE_DIR / "_site"
 # click.mp3 is the life tracker's own button click (sound/click.mp3), for the site's buttons.
 PAGE_FILES = ("index.html", "site.css", "site.js", "click.mp3", "grimoire-leather.webp", "grimoire-paper.webp")
 # Files the site shares with the table, published under the name on the left:
-# the card animations the deck pages draw over each commander card.
-SHARED_PAGE_FILES = {"commander-fx.js": "js/commander-fx.js"}
+# the card animations the deck pages draw over each commander card, and the
+# awards and records the game statistics are shown with.
+SHARED_PAGE_FILES = {"commander-fx.js": "js/commander-fx.js", "game-stats.js": "js/game-stats.js"}
 # index.html's own stylesheet and script. Pages caches every file for ten
 # minutes and a browser reloading the page asks again only for the page itself,
 # so each gets a ?v= of its contents: a new deploy is a new URL, never a stale
 # stylesheet under new markup.
-VERSIONED_FILES = ("site.css", "site.js", "commander-fx.js")
+VERSIONED_FILES = ("site.css", "site.js", "commander-fx.js", "game-stats.js")
 # Longest edge, in pixels, of each published copy of a picture.
 IMAGE_SIZES = {"full": 1600, "thumb": 480}
 # Roster keys whose value is one picture, and those whose value is a list.
