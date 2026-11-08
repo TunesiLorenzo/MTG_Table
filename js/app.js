@@ -14,6 +14,9 @@
      server behind the page, so no lights, no server controls, and nothing to
      ask it. Results go to the Drive inbox or a file instead. */
   var STATIC_SITE = window.MTG_TABLE_STATIC === true;
+  /* The phone tracker's pictures are the published copies in the site's
+     img/ (from tracker/catalog.json); a new deck's come from Scryfall. */
+  var SCRYFALL_IMAGE = /^https:\/\/cards\.scryfall\.io\//;
   var START_CHOICES = [20, 30, 40];
 
   /* Seats fill the grid row by row, but the turn passes around the physical
@@ -1082,6 +1085,12 @@
           commanderRevealed: false,
           // The deck preset loaded on the lights page, for the result window.
           deck: '',
+          // Phone tracker only: who sits here and their deck, picked in the
+          // Player & deck window. { player, deck, custom, at }: `custom` is a
+          // new deck { name, commander, scryfall_id, color_identity, art_url,
+          // card_url } instead of one from the catalogue; `at` changes on
+          // every pick, so the seat is dressed again even as the same deck.
+          pick: null,
           // The pictures the server last handed this seat. Only a change to
           // them replaces the art, so a picture dropped here afterwards stays.
           // preset_load is the server's token for the last preset loaded onto
@@ -1099,11 +1108,21 @@
   function isSeatPicture(value) {
     return typeof value === 'string' &&
       (value.slice(0, 11) === 'data:image/' || value.slice(0, 12) === 'Backgrounds/' ||
-       value.slice(0, 13) === '/Backgrounds/');
+       value.slice(0, 13) === '/Backgrounds/' || value.slice(0, 7) === '../img/' ||
+       value.indexOf(window.location.origin + '/') === 0 || SCRYFALL_IMAGE.test(value));
   }
 
+  /* A full URL, resolved against the page: the pictures also reach the
+     stylesheet through custom properties (--commander-image), and a relative
+     url() there would be read from css/, not from the page. */
   function pictureUrl(path) {
-    return path ? path.split('/').map(encodeURIComponent).join('/') : null;
+    if (!path) return null;
+    if (SCRYFALL_IMAGE.test(path)) return path;
+    try {
+      return new URL(path.split('/').map(encodeURIComponent).join('/'), document.baseURI).href;
+    } catch (error) {
+      return path;
+    }
   }
 
   function loadState() {
@@ -1180,6 +1199,7 @@
             if (typeof savedSeat.imageFocus === 'string') seat.imageFocus = savedSeat.imageFocus;
           }
           if (typeof savedSeat.deck === 'string') seat.deck = savedSeat.deck;
+          seat.pick = cleanPick(savedSeat.pick);
           if (savedSeat.tablePictures && typeof savedSeat.tablePictures === 'object') {
             Object.keys(seat.tablePictures).forEach(function (key) {
               var value = savedSeat.tablePictures[key];
@@ -1303,6 +1323,11 @@
         }
         if (button.dataset.trayClearImage) {
           setSeatImage(index, null);
+          return;
+        }
+        if (button.dataset.traySetup) {
+          closeTrays();
+          openSeatSetup(index);
           return;
         }
         if (button.dataset.designation) {
@@ -2849,6 +2874,472 @@
     }
   }
 
+  /* --------------------------------------------- player & deck (phone) -- */
+
+  /* On the phone there is no lights page to dress a seat, so the tracker
+     does it itself: tracker/catalog.json (written by build_site.py) lists the
+     leaderboard's players and decks, each deck with the preset the table
+     server would hand over — pictures, commander names and sounds, card
+     animations, and its owner's entrance announcement. A pick goes through
+     the same syncAnnouncerSounds the server's status does, so a seat looks
+     and sounds the same either way. New players and decks are allowed: a new
+     deck is a name and, if Scryfall finds it, its commander's art. */
+
+  var CUSTOM_KEY = 'mtg-table-custom-v1';
+  var SEAT_NAME_MAX = 18;
+  var CUSTOM_REMEMBER_MAX = 30;
+  var catalog = { players: [], decks: [], sounds: {} };
+  var catalogLoaded = false;
+
+  function trimmed(value, max) {
+    return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  }
+
+  function nameKey(name) {
+    return String(name || '').toLowerCase().replace(/[^0-9a-z]+/g, '');
+  }
+
+  function cleanCustomDeck(value) {
+    if (!value || typeof value !== 'object') return null;
+    var name = trimmed(value.name, 80);
+    if (!name) return null;
+    return {
+      name: name,
+      commander: trimmed(value.commander, 120),
+      scryfall_id: trimmed(value.scryfall_id, 64),
+      color_identity: Array.isArray(value.color_identity)
+        ? value.color_identity.filter(function (color) { return /^[WUBRGC]$/.test(color); }) : [],
+      art_url: SCRYFALL_IMAGE.test(value.art_url || '') ? value.art_url : '',
+      card_url: SCRYFALL_IMAGE.test(value.card_url || '') ? value.card_url : ''
+    };
+  }
+
+  function cleanPick(value) {
+    if (!value || typeof value !== 'object') return null;
+    var custom = cleanCustomDeck(value.custom);
+    var pick = {
+      player: trimmed(value.player, SEAT_NAME_MAX),
+      deck: custom ? custom.name : trimmed(value.deck, 80),
+      custom: custom,
+      at: trimmed(value.at, 32) || '0'
+    };
+    return pick.player || pick.deck ? pick : null;
+  }
+
+  function catalogDeck(name) {
+    var key = nameKey(name);
+    return key ? catalog.decks.filter(function (deck) { return nameKey(deck.name) === key; })[0] || null : null;
+  }
+
+  function catalogPlayer(name) {
+    var key = (name || '').toLowerCase();
+    return catalog.players.filter(function (player) { return player.name.toLowerCase() === key; })[0] || null;
+  }
+
+  function shortCommander(name) {
+    return String(name || '').split(',')[0].trim().slice(0, 40);
+  }
+
+  /* One seat as the server would describe it, from its pick. */
+  function seatPreset(index) {
+    var pick = state.seats[index].pick;
+    if (!pick) return {};
+    var preset;
+    if (pick.custom) {
+      var custom = pick.custom;
+      preset = {
+        deck: custom.name,
+        two_commanders: false,
+        commander_name: shortCommander(custom.commander),
+        second_commander_name: '',
+        commander_sound: '',
+        second_commander_sound: '',
+        background_image: custom.art_url,
+        background_focus: '',
+        commander_image: custom.card_url,
+        second_commander_image: '',
+        // Scryfall's pictures are another site's, which the card animations
+        // cannot draw from; a new deck's card just turns over.
+        commander_fx: { effect: 'none', focus: '', glow: '', area: 'art' },
+        announcer_sound: ''
+      };
+    } else {
+      var deck = catalogDeck(pick.deck);
+      preset = deck ? Object.assign({}, deck.preset) : { deck: pick.deck };
+      // The entrance announcement is a recording of one player with one deck.
+      preset.announcer_sound = (deck && deck.announcers && deck.announcers[pick.player.toLowerCase()]) || '';
+    }
+    preset.preset_load = pick.at;
+    return preset;
+  }
+
+  function applyStaticPresets() {
+    var sounds = catalog.sounds || {};
+    syncAnnouncerSounds({
+      players: state.seats.map(function (_, index) { return seatPreset(index); }),
+      crowd_sounds: sounds.crowd_sounds,
+      coin_sounds: sounds.coin_sounds,
+      announcer_death: sounds.announcer_death
+    });
+  }
+
+  /* Without the catalogue (offline on first open) the seats keep what they
+     had: applying picks to an empty list would strip their pictures. */
+  function loadCatalog() {
+    if (!window.fetch) return;
+    window.fetch('catalog.json', { cache: 'no-cache' }).then(function (response) {
+      if (!response.ok) throw new Error('No catalogue');
+      return response.json();
+    }).then(function (data) {
+      catalog = {
+        players: Array.isArray(data.players) ? data.players.filter(function (player) { return player && player.name; }) : [],
+        decks: Array.isArray(data.decks) ? data.decks.filter(function (deck) { return deck && deck.name && deck.preset; }) : [],
+        sounds: data.sounds || {}
+      };
+      catalogLoaded = true;
+      applyStaticPresets();
+      // A table nobody has sat down at yet: start by asking who is playing.
+      var picked = state.seats.some(function (seat) { return seat.pick; });
+      var started = state.stats.timeline.length > 0;
+      if (!picked && !started && !document.querySelector('dialog[open]')) openSeatSetup(0);
+    }).catch(function () {
+      /* Offline: the seats stay dressed as they were saved. */
+    });
+  }
+
+  /* New players and decks typed on this device, offered again next time. */
+  function readCustom() {
+    try {
+      var saved = JSON.parse(window.localStorage.getItem(CUSTOM_KEY) || '{}');
+      return {
+        players: (Array.isArray(saved.players) ? saved.players : [])
+          .map(function (name) { return trimmed(name, SEAT_NAME_MAX); }).filter(Boolean),
+        decks: (Array.isArray(saved.decks) ? saved.decks : []).map(cleanCustomDeck).filter(Boolean)
+      };
+    } catch (error) {
+      return { players: [], decks: [] };
+    }
+  }
+
+  function rememberCustom(player, deck) {
+    var custom = readCustom();
+    if (player && !catalogPlayer(player)) {
+      custom.players = [player].concat(custom.players.filter(function (name) {
+        return name.toLowerCase() !== player.toLowerCase();
+      })).slice(0, CUSTOM_REMEMBER_MAX);
+    }
+    if (deck) {
+      custom.decks = [deck].concat(custom.decks.filter(function (saved) {
+        return nameKey(saved.name) !== nameKey(deck.name);
+      })).slice(0, CUSTOM_REMEMBER_MAX);
+    }
+    try {
+      window.localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom));
+    } catch (error) {
+      /* Not remembered; this game still has them. */
+    }
+  }
+
+  /* ---- the Player & deck window ---- */
+
+  var setup = null;
+
+  function openSeatSetup(index) {
+    var dialog = document.getElementById('seat-setup-dialog');
+    if (!dialog) return;
+    startSetupFor(index);
+    if (!dialog.open) dialog.showModal();
+  }
+
+  /* What the window shows for one seat, starting from that seat's pick. */
+  function startSetupFor(index) {
+    var seat = state.seats[index];
+    var pick = seat.pick;
+    var player = pick && pick.player ? pick.player : seat.name;
+    var known = catalogPlayer(player) || readCustom().players.some(function (name) {
+      return name.toLowerCase() === player.toLowerCase();
+    });
+    setup = {
+      seat: index,
+      player: known || (pick && pick.player) ? player : '',
+      newPlayer: false,
+      deck: pick && !pick.custom ? pick.deck : '',
+      custom: pick && pick.custom ? Object.assign({}, pick.custom) : null,
+      newDeck: !!(pick && pick.custom && !readCustom().decks.some(function (deck) {
+        return nameKey(deck.name) === nameKey(pick.custom.name);
+      })),
+      results: [],
+      searchSeq: 0
+    };
+    if (!setup.player && !/^Player \d$/.test(seat.name)) {
+      // A name typed on the panel that is in no list: keep it, as a new player.
+      setup.newPlayer = true;
+      setup.player = seat.name;
+    }
+    document.getElementById('seat-setup-player-name').value = setup.newPlayer ? setup.player : '';
+    document.getElementById('seat-setup-deck-name').value = setup.newDeck && setup.custom ? setup.custom.name : '';
+    document.getElementById('seat-setup-commander').value = setup.newDeck && setup.custom ? setup.custom.commander : '';
+    setSetupStatus('');
+    renderSetup();
+  }
+
+  function setSetupStatus(message, isError) {
+    var status = document.getElementById('seat-setup-status');
+    status.textContent = message;
+    status.classList.toggle('is-error', !!isError);
+  }
+
+  function takenBy(name, except) {
+    var key = (name || '').toLowerCase();
+    for (var i = 0; i < state.seats.length; i++) {
+      if (i !== except && state.seats[i].name.toLowerCase() === key) return i;
+    }
+    return -1;
+  }
+
+  function tileHtml(attrs, label, sub, picture, selected, extraClass) {
+    return '<button type="button" class="seat-setup__tile' + (selected ? ' is-selected' : '') + (extraClass ? ' ' + extraClass : '') + '"' +
+      attrs + ' aria-pressed="' + (selected ? 'true' : 'false') + '">' +
+      (picture ? '<span class="seat-setup__pic" style="background-image:url(\'' + escapeHtml(picture) + '\')"></span>'
+        : '<span class="seat-setup__pic seat-setup__pic--blank">' + escapeHtml((label || '?').charAt(0).toUpperCase()) + '</span>') +
+      '<span class="seat-setup__label">' + escapeHtml(label) + '</span>' +
+      (sub ? '<span class="seat-setup__sub">' + escapeHtml(sub) + '</span>' : '') +
+      '</button>';
+  }
+
+  function renderSetup() {
+    if (!setup) return;
+    var index = setup.seat;
+
+    document.getElementById('seat-setup-seats').innerHTML = state.seats.map(function (seat, seatIndex) {
+      return '<button type="button" class="seat-setup__seat' + (seatIndex === index ? ' is-active' : '') + '"' +
+        ' data-setup-seat="' + seatIndex + '" style="--seat-color:' + seatColor(seatIndex) + '">' +
+        '<span class="seat-setup__seat-dot"></span>' + escapeHtml(seat.name) +
+        (seat.pick && seat.pick.deck ? '<small>' + escapeHtml(seat.pick.deck) + '</small>' : '') + '</button>';
+    }).join('');
+
+    // Players: the catalogue, then new ones from this device.
+    var custom = readCustom();
+    var players = catalog.players.map(function (player) { return { name: player.name, portrait: player.portrait }; });
+    custom.players.forEach(function (name) {
+      if (!catalogPlayer(name)) players.push({ name: name, portrait: '', custom: true });
+    });
+    document.getElementById('seat-setup-players').innerHTML = players.map(function (player) {
+      var at = takenBy(player.name, index);
+      var selected = !setup.newPlayer && setup.player.toLowerCase() === player.name.toLowerCase();
+      return tileHtml(' data-setup-player="' + escapeHtml(player.name) + '"' + (at !== -1 ? ' disabled' : ''),
+        player.name, at !== -1 ? 'Seat ' + (at + 1) : (player.custom ? 'This device' : ''),
+        player.portrait, selected, at !== -1 ? 'is-taken' : '');
+    }).join('') + tileHtml(' data-setup-new-player="1"', '+ New player', '', '', setup.newPlayer, 'seat-setup__tile--new');
+    document.getElementById('seat-setup-new-player').hidden = !setup.newPlayer;
+
+    // Decks: theirs first, then the rest, then retired ones and this device's.
+    var who = setup.newPlayer ? null : catalogPlayer(setup.player);
+    var theirs = who ? who.decks.map(catalogDeck).filter(Boolean) : [];
+    var others = catalog.decks.filter(function (deck) { return theirs.indexOf(deck) === -1 && !deck.discontinued; });
+    var retired = catalog.decks.filter(function (deck) { return theirs.indexOf(deck) === -1 && deck.discontinued; });
+    var deckTile = function (deck) {
+      var selected = !setup.newDeck && !setup.custom && nameKey(setup.deck) === nameKey(deck.name);
+      var owner = Object.keys(deck.announcers || {}).length ? '' : '';
+      return tileHtml(' data-setup-deck="' + escapeHtml(deck.name) + '"', deck.name,
+        deck.commander && nameKey(deck.commander) !== nameKey(deck.name) ? deck.commander : owner,
+        deck.thumb, selected, deck.discontinued ? 'is-retired' : '');
+    };
+    var group = function (title, tiles) {
+      return tiles ? '<h4 class="seat-setup__group">' + escapeHtml(title) + '</h4><div class="seat-setup__grid">' + tiles + '</div>' : '';
+    };
+    var customTiles = custom.decks.map(function (deck, deckIndex) {
+      var selected = !setup.newDeck && setup.custom && nameKey(setup.custom.name) === nameKey(deck.name);
+      return tileHtml(' data-setup-custom-deck="' + deckIndex + '"', deck.name, deck.commander || 'No preset',
+        deck.art_url, selected, 'is-custom');
+    }).join('');
+    document.getElementById('seat-setup-decks').innerHTML =
+      group(who ? who.name + '’s decks' : '', theirs.map(deckTile).join('')) +
+      group(theirs.length ? 'Other decks' : 'Decks', others.map(deckTile).join('')) +
+      group('Retired', retired.map(deckTile).join('')) +
+      group('New decks on this device', customTiles) +
+      '<div class="seat-setup__grid">' +
+      tileHtml(' data-setup-new-deck="1"', '+ New deck', 'No preset sounds or art', '', setup.newDeck, 'seat-setup__tile--new') +
+      '</div>';
+    document.getElementById('seat-setup-new-deck').hidden = !setup.newDeck;
+
+    document.getElementById('seat-setup-results').innerHTML = setup.results.map(function (card, cardIndex) {
+      var selected = setup.custom && setup.custom.scryfall_id === card.scryfall_id;
+      return '<button type="button" class="seat-setup__card' + (selected ? ' is-selected' : '') + '" data-setup-card="' + cardIndex + '"' +
+        ' title="' + escapeHtml(card.name) + '"><img src="' + escapeHtml(card.card_url) + '" alt="' + escapeHtml(card.name) + '" loading="lazy"></button>';
+    }).join('');
+
+    var title = document.getElementById('seat-setup-title');
+    title.textContent = 'Seat ' + (index + 1);
+    title.style.setProperty('--seat-color', seatColor(index));
+  }
+
+  /* Scryfall's commanders matching what was typed, most played first. */
+  var scryfallTimer = null;
+
+  function searchCommander(text) {
+    window.clearTimeout(scryfallTimer);
+    var query = text.trim();
+    if (query.length < 2) {
+      setup.results = [];
+      renderSetup();
+      return;
+    }
+    scryfallTimer = window.setTimeout(function () {
+      var seq = ++setup.searchSeq;
+      setSetupStatus('Searching Scryfall…');
+      window.fetch('https://api.scryfall.com/cards/search?order=edhrec&q=' +
+        encodeURIComponent(query + ' is:commander')).then(function (response) {
+        if (response.status === 404) return { data: [] };
+        if (!response.ok) throw new Error('Scryfall answered ' + response.status);
+        return response.json();
+      }).then(function (data) {
+        if (!setup || seq !== setup.searchSeq) return;
+        setup.results = (data.data || []).map(scryfallCard).filter(Boolean).slice(0, 12);
+        setSetupStatus(setup.results.length ? 'Tap the commander.' : 'No commander called that — the deck can go without.');
+        renderSetup();
+      }).catch(function () {
+        if (!setup || seq !== setup.searchSeq) return;
+        setSetupStatus('Scryfall cannot be reached — the deck can go without art.', true);
+      });
+    }, 350);
+  }
+
+  function scryfallCard(card) {
+    var face = card.image_uris ? card : (card.card_faces && card.card_faces[0]);
+    var images = face && face.image_uris;
+    if (!images || !images.normal) return null;
+    return {
+      name: card.name,
+      scryfall_id: card.id,
+      color_identity: card.color_identity || [],
+      art_url: images.art_crop || '',
+      card_url: images.normal
+    };
+  }
+
+  /* Seat the choice, then move on to the next seat nobody has picked yet. */
+  function saveSetup() {
+    var index = setup.seat;
+    var player = setup.newPlayer
+      ? trimmed(document.getElementById('seat-setup-player-name').value, SEAT_NAME_MAX)
+      : setup.player;
+    if (!player) { setSetupStatus('Choose a player, or type a new one.', true); return; }
+    var at = takenBy(player, index);
+    if (at !== -1) { setSetupStatus(player + ' is already at seat ' + (at + 1) + '.', true); return; }
+
+    var custom = null;
+    var deck = setup.deck;
+    if (setup.newDeck) {
+      var deckName = trimmed(document.getElementById('seat-setup-deck-name').value, 80);
+      var commander = trimmed(document.getElementById('seat-setup-commander').value, 120);
+      if (!deckName && setup.custom && setup.custom.commander) deckName = shortCommander(setup.custom.commander);
+      if (!deckName) deckName = shortCommander(commander);
+      if (!deckName) { setSetupStatus('Give the new deck a name.', true); return; }
+      if (catalogDeck(deckName)) {
+        setSetupStatus('There is already a deck called ' + catalogDeck(deckName).name + ' — pick it from the list.', true);
+        return;
+      }
+      var card = setup.custom || {};
+      custom = cleanCustomDeck({
+        name: deckName,
+        commander: card.commander || commander,
+        scryfall_id: card.scryfall_id,
+        color_identity: card.color_identity,
+        art_url: card.art_url,
+        card_url: card.card_url
+      });
+      deck = custom.name;
+    } else if (setup.custom) {
+      custom = setup.custom;
+      deck = custom.name;
+    }
+    if (!deck) { setSetupStatus('Choose a deck, or make a new one.', true); return; }
+
+    var seat = state.seats[index];
+    seat.name = player;
+    seat.deck = deck;
+    seat.pick = { player: player, deck: deck, custom: custom, at: Date.now().toString(36) };
+    rememberCustom(setup.newPlayer ? player : null, custom);
+    applyStaticPresets();
+    render();
+    saveState();
+
+    var next = -1;
+    for (var step = 1; step < state.seats.length; step++) {
+      var candidate = (index + step) % state.seats.length;
+      if (!state.seats[candidate].pick) { next = candidate; break; }
+    }
+    if (next === -1) {
+      document.getElementById('seat-setup-dialog').close();
+    } else {
+      startSetupFor(next);
+      setSetupStatus(player + ' is at seat ' + (index + 1) + '.');
+    }
+  }
+
+  function bindSeatSetup() {
+    var dialog = document.getElementById('seat-setup-dialog');
+    if (!dialog) return;
+    dialog.addEventListener('click', function (event) {
+      if (event.target === dialog) { dialog.close(); return; }
+      var button = event.target.closest('button');
+      if (!button || !setup) return;
+      var data = button.dataset;
+      if (data.setupSeat !== undefined) {
+        startSetupFor(Number(data.setupSeat));
+      } else if (data.setupPlayer !== undefined) {
+        setup.player = data.setupPlayer;
+        setup.newPlayer = false;
+        // Their usual deck, unless one is already chosen.
+        var who = catalogPlayer(setup.player);
+        if (!setup.deck && !setup.custom && !setup.newDeck && who && who.decks.length) setup.deck = who.decks[0];
+        renderSetup();
+      } else if (data.setupNewPlayer) {
+        setup.newPlayer = true;
+        renderSetup();
+        document.getElementById('seat-setup-player-name').focus();
+      } else if (data.setupDeck !== undefined) {
+        setup.deck = data.setupDeck;
+        setup.custom = null;
+        setup.newDeck = false;
+        renderSetup();
+      } else if (data.setupCustomDeck !== undefined) {
+        setup.custom = readCustom().decks[Number(data.setupCustomDeck)] || null;
+        setup.deck = '';
+        setup.newDeck = false;
+        renderSetup();
+      } else if (data.setupNewDeck) {
+        setup.newDeck = true;
+        setup.deck = '';
+        setup.custom = null;
+        renderSetup();
+        document.getElementById('seat-setup-deck-name').focus();
+      } else if (data.setupCard !== undefined) {
+        var card = setup.results[Number(data.setupCard)];
+        if (!card) return;
+        setup.custom = {
+          name: '', commander: card.name, scryfall_id: card.scryfall_id,
+          color_identity: card.color_identity, art_url: card.art_url, card_url: card.card_url
+        };
+        var nameInput = document.getElementById('seat-setup-deck-name');
+        if (!nameInput.value.trim()) nameInput.value = shortCommander(card.name);
+        setSetupStatus(card.name + ' — the deck will use its art.');
+        renderSetup();
+      } else if (button.id === 'seat-setup-save') {
+        saveSetup();
+      } else if (button.id === 'seat-setup-close') {
+        dialog.close();
+      }
+    });
+    document.getElementById('seat-setup-commander').addEventListener('input', function (event) {
+      // A different commander typed: the card picked for the old one goes.
+      if (setup.custom && setup.custom.commander !== event.target.value) setup.custom = null;
+      searchCommander(event.target.value);
+    });
+    dialog.addEventListener('close', function () { setup = null; });
+  }
+
   /* ------------------------------------------------------- saved game -- */
 
   var APP_VERSION = '2026-11-09';
@@ -2928,7 +3419,7 @@
           seat: index,
           name: seat.name,
           deck: deckBySeat[index] || seat.deck || '',
-          deck_source: seat.deck ? 'preset' : 'blank',
+          deck_source: seat.pick ? (seat.pick.custom ? 'blank' : 'preset') : (seat.deck ? 'preset' : 'blank'),
           commander_names: seat.twoCommanders ? seat.commanderNames.slice() : [seat.commanderNames[0] || ''],
           color: seatColor(index),
           life: seat.life,
@@ -2970,7 +3461,20 @@
       game: game,
       table: table,
       timeline: timeline,
-      new_decks: []
+      new_decks: state.seats.map(function (seat, index) {
+        var custom = seat.pick && seat.pick.custom;
+        if (!custom) return null;
+        return {
+          name: deckBySeat[index] || custom.name,
+          commander: custom.commander,
+          scryfall_id: custom.scryfall_id,
+          color_identity: custom.color_identity,
+          art_url: custom.art_url,
+          card_url: custom.card_url,
+          color: seatColor(index),
+          player: seat.name
+        };
+      }).filter(Boolean)
     };
   }
 
@@ -3640,12 +4144,16 @@
     var own = rows.filter(function (row) { return row.kind !== 'commander'; });
 
     view.tray.innerHTML =
+      // Clear art sits at the far end from the close button, so a tap meant
+      // to close the tray cannot wipe the seat's picture instead.
       '<div class="tray__head">' +
+      '<button class="tray__btn tray__btn--wide" type="button" data-tray-clear-image="1"' +
+      ' title="Drop an image on this panel to use it as the background">Clear art</button>' +
       '<input class="tray__color" type="color" data-tray-color="1" value="' + seatColor(seatIndex) + '"' +
       ' title="Seat colour — tap to change" aria-label="Seat colour">' +
       '<span class="tray__title">' + escapeHtml(state.seats[seatIndex].name) + '</span>' +
-      '<button class="tray__btn tray__btn--wide" type="button" data-tray-clear-image="1"' +
-      ' title="Drop an image on this panel to use it as the background">Clear art</button>' +
+      (STATIC_SITE ? '<button class="tray__btn tray__btn--wide tray__btn--setup" type="button" data-tray-setup="1"' +
+        ' title="Choose who sits here and which deck they play">Player &amp; deck</button>' : '') +
       '<button class="tray__close" type="button" data-tray-close="1" title="Close" aria-label="Close">&times;</button>' +
       '</div>' +
       // More than four damage rows means partner commanders: two abreast.
@@ -5278,6 +5786,14 @@
     });
   }
 
+  /* House lights on, whatever they were: the end of a game (a draw) hands the
+     room back to plain light, as a reset does. Nothing on the phone tracker. */
+  function enableHouseLights() {
+    postJSON('/api/lights/house', { on: true }, function (result) {
+      if (result && typeof result.house_lights === 'boolean') setHouseLights(result.house_lights);
+    });
+  }
+
   /* For when a light has drifted: puts the current state back on every one of
      them. The reply carries the house-lights state, so the button stays honest
      if something else changed it. */
@@ -6282,6 +6798,10 @@
           window.setTimeout(renderOutbox, 2500);
         });
       }
+      if (action === 'seat-setup') {
+        setHubOpen(false);
+        openSeatSetup(state.currentPlayer);
+      }
       if (action === 'outbox-download' && window.MtgGameInbox) {
         window.MtgGameInbox.pending().forEach(function (submission, index) {
           // Browsers drop a burst of downloads; space them out.
@@ -6404,8 +6924,10 @@
       var stopped = isClockStopped();
       setSwitch(clockStop, stopped);
       clockStop.disabled = !!state.stats.endedAt;
+      // The label says what a tap will do: a waiting clock starts, a stopped
+      // one resumes. "Clock waiting" read as a stop button that did nothing.
       clockStop.querySelector('.hub__action-text').textContent =
-        state.stats.waiting ? 'Clock waiting' : stopped ? 'Clock stopped' : 'Stop clock';
+        state.stats.endedAt ? 'Game over' : state.stats.waiting ? 'Start clock' : stopped ? 'Resume clock' : 'Stop clock';
       clockStop.title = state.stats.waiting
         ? 'The clock starts when the first player is picked, the turn passes, or a life total changes. Switch off to start it now.'
         : 'Stop every game timer — the turn badge, turn times and game time — until you switch it off again';
@@ -6501,6 +7023,7 @@
   buildHub();
   bindImageCropDialog();
   bindGameResultDialog();
+  bindSeatSetup();
   bindOutbox();
   bindGameRecap();
   bindKeyboard();
@@ -6513,6 +7036,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-static-href]'), function (link) {
       link.setAttribute('href', link.dataset.staticHref);
     });
+    loadCatalog();
   } else {
     pushPlayerNames();
     postJSON('/api/turn', { player: state.currentPlayer, apply_lights: false });

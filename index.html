@@ -92,6 +92,10 @@
             <button class="hub__action" id="clock-reset" data-action="clock-reset" type="button"
                     title="Put the game clock and every player's turn times back to zero">Reset clock</button>
           </div>
+          <div class="hub__row" data-static-only>
+            <button class="hub__action" id="seat-setup-open" data-action="seat-setup" type="button"
+                    title="Choose who sits at each seat and which deck they play">Players &amp; decks</button>
+          </div>
           <div class="hub__row" id="outbox-row" hidden>
             <button class="hub__action hub__action--outbox" id="outbox-retry" data-action="outbox-retry" type="button"
                     title="Games that have not reached the Drive inbox yet. They are kept on this device and retried automatically">Send unsent games</button>
@@ -428,6 +432,38 @@
         <button type="submit" class="result-dialog__save" hidden>Save result</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Phone tracker only: who sits where and with which deck. Filled by js/app.js
+       from tracker/catalog.json. -->
+  <dialog id="seat-setup-dialog" class="seat-setup" aria-labelledby="seat-setup-title">
+    <div class="seat-setup__body">
+      <div class="seat-setup__head">
+        <h2 id="seat-setup-title">Seat 1</h2>
+        <button type="button" class="seat-setup__close" id="seat-setup-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="seat-setup__seats" id="seat-setup-seats" role="tablist" aria-label="Seats"></div>
+      <h3 class="seat-setup__heading">Player</h3>
+      <div class="seat-setup__grid" id="seat-setup-players"></div>
+      <label class="seat-setup__field" id="seat-setup-new-player" hidden>New player's name
+        <input id="seat-setup-player-name" maxlength="18" autocomplete="off" placeholder="Name">
+      </label>
+      <h3 class="seat-setup__heading">Deck</h3>
+      <div id="seat-setup-decks"></div>
+      <div class="seat-setup__new-deck" id="seat-setup-new-deck" hidden>
+        <label class="seat-setup__field">Deck name
+          <input id="seat-setup-deck-name" maxlength="80" autocomplete="off" placeholder="Name">
+        </label>
+        <label class="seat-setup__field">Commander <small>(optional, found on Scryfall for its art)</small>
+          <input id="seat-setup-commander" type="search" maxlength="120" autocomplete="off" placeholder="Start typing a commander">
+        </label>
+        <div class="seat-setup__results" id="seat-setup-results"></div>
+      </div>
+      <p class="seat-setup__status" id="seat-setup-status" role="status" aria-live="polite"></p>
+      <div class="seat-setup__actions">
+        <button type="button" class="seat-setup__save" id="seat-setup-save">Save seat</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="stats-dialog" class="result-dialog stats-dialog" aria-labelledby="stats-title">

@@ -151,6 +151,29 @@ changed after it was handed out goes out as a correction that replaces the
 earlier one. On a page with no local server behind it, **Save result** is not
 shown and **Send to Drive** takes its place.
 
+## The phone tracker (GitHub Pages)
+
+The same life tracker is published at **`/tracker/`** on the public site
+(`https://tunesilorenzo.github.io/MTG_Table/tracker/`), for playing anywhere
+from one phone on the table. It has no table server behind it: the lights and
+server controls are gone and results go to Drive or a file instead of
+**Save result**.
+
+Seats are set up in its **Player & deck** window. It opens by itself on a new
+table, from the hub's *Players & decks*, or from the button in a seat's
+tray. Pick a player from the leaderboard (their own decks are listed first) or
+type a new one, then one of the leaderboard's decks, which brings its art,
+commander cards, card animation, sounds and the player's own entrance
+announcement, or **+ New deck**: a name, and optionally a commander found on
+Scryfall for its art. A new deck has no sounds or animation. New players and
+decks are remembered on that phone, and a game with a new deck lists it in the
+saved game's `new_decks` for adding to the roster.
+
+The players and decks come from `tracker/catalog.json`, which `build_site.py`
+writes from `site/roster.json`, `game_history.json` and the deck presets in
+`profiles/` (merged as the table's server does), so pushing a roster change
+updates the phone too.
+
 ## The public copy (GitHub Pages)
 
 `site/` is a read-only version of the leaderboard for GitHub Pages: standings,

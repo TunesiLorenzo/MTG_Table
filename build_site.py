@@ -174,6 +174,173 @@ def publish_page():
     (OUT_DIR / "index.html").write_text(page, encoding="utf-8")
 
 
+def deck_key(name):
+    """How names are matched, as web.py does: "NivMizzet" is "Niv-Mizzet"."""
+    return re.sub(r"[^0-9a-z]+", "", str(name or "").casefold())
+
+
+def short_commander_name(name):
+    """A commander as the damage tracker labels it: "Arcades", not "Arcades, the Strategist"."""
+    return str(name or "").split(",")[0].strip()[:40]
+
+
+def tracker_picture(source, size="full"):
+    """A picture for the tracker, from tracker/: the published copy, or "" if it is missing."""
+    if not source or not isinstance(source, str) or not (BASE_DIR / source).is_file():
+        return ""
+    return "../" + publish_image(source)[size]
+
+
+def roster_preset(name, entry):
+    """What a leaderboard deck brings to a seat, as web.py's deck_details_from_roster."""
+    cards = [card for card in entry.get("cards") or [] if isinstance(card, str)]
+    commander = str(entry.get("commander") or "")
+    partners = [part.strip() for part in commander.split("&") if part.strip()]
+    two = len(cards) > 1
+    if not two or len(partners) != 2:
+        partners = [commander, ""]
+    return {
+        "deck": name,
+        "two_commanders": two,
+        "commander_name": short_commander_name(partners[0]),
+        "second_commander_name": short_commander_name(partners[1]) if two else "",
+        "commander_sound": entry.get("sound") or "",
+        "second_commander_sound": "",
+        "background_image": entry.get("art") or "",
+        "background_focus": entry.get("art_focus") or "",
+        "commander_image": cards[0] if cards else "",
+        "second_commander_image": cards[1] if two else "",
+    }
+
+
+PROFILE_PRESET_KEYS = (
+    "two_commanders", "commander_name", "second_commander_name", "commander_sound", "second_commander_sound",
+    "background_image", "background_focus", "commander_image", "second_commander_image",
+    "commander_fx", "second_commander_fx", "background_brightness", "commander_brightness",
+)
+
+
+def deck_profiles(decks):
+    """The saved preset (profiles/*.json) of each leaderboard deck, by deck name.
+
+    A profile names its deck, or is named after it (NivMizzet for Niv-Mizzet),
+    or after its commander (Guff for Commodore Guff). Where two claim one
+    deck the most recently saved wins, as on the table.
+    """
+    by_key = {deck_key(name): name for name in decks}
+    found = {}
+    for path in sorted((BASE_DIR / "profiles").glob("*.json")):
+        try:
+            profile = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if not isinstance(profile, dict):
+            continue
+        deck = by_key.get(deck_key(profile.get("deck"))) or by_key.get(deck_key(path.stem))
+        if not deck:
+            stem = deck_key(path.stem)
+            deck = next((name for name, entry in decks.items()
+                         if stem and stem in deck_key(entry.get("commander"))), "")
+        if not deck:
+            continue
+        saved = str(profile.get("saved_at") or "")
+        if deck not in found or saved > found[deck][0]:
+            found[deck] = (saved, profile)
+    return {deck: profile for deck, (_, profile) in found.items()}
+
+
+def sound_files(folder, pattern=None):
+    if not folder.is_dir():
+        return []
+    names = [item.name for item in folder.iterdir()
+             if item.is_file() and item.suffix.lower() in TRACKER_SOUND_TYPES
+             and (pattern is None or pattern.fullmatch(item.name))]
+    return sorted(names, key=lambda name: (len(name), name.casefold()))
+
+
+def tracker_catalog():
+    """tracker/catalog.json: the players and decks a seat can be set to.
+
+    It stands in for the table server on the phone. Each deck carries its
+    preset in the shape the server hands the tracker (pictures, commander
+    names and sounds, card animations), the roster's details under its saved
+    profile's, and the entrance announcement of the player the profile is for.
+    """
+    roster = json.loads((SITE_DIR / "roster.json").read_text(encoding="utf-8"))
+    decks = roster.get("decks") or {}
+    profiles = deck_profiles(decks)
+    history = json.loads((BASE_DIR / "game_history.json").read_text(encoding="utf-8"))
+
+    deck_list = []
+    owners = {}
+    for name in sorted(decks, key=str.casefold):
+        entry = decks[name]
+        preset = roster_preset(name, entry)
+        profile = profiles.get(name, {})
+        for key in PROFILE_PRESET_KEYS:
+            if key in profile and profile[key] is not None:
+                preset[key] = profile[key]
+        # The picker's tile: the deck's art, or else its commander card.
+        thumb = tracker_picture(preset["background_image"], "thumb") or tracker_picture(preset["commander_image"], "thumb")
+        for key in ("background_image", "commander_image", "second_commander_image"):
+            preset[key] = tracker_picture(preset[key])
+        for key in ("commander_sound", "second_commander_sound"):
+            if preset[key] and not (BASE_DIR / "sound" / "Commander" / preset[key]).is_file():
+                preset[key] = ""
+        announcers = {}
+        owner = str(profile.get("name") or "").strip()
+        sound = profile.get("announcer_sound")
+        if owner and sound and (BASE_DIR / "sound" / "Announcer" / "Players" / sound).is_file():
+            announcers[owner.casefold()] = sound
+        if owner:
+            owners.setdefault(owner.casefold(), []).append(name)
+        deck_list.append({
+            "name": name,
+            "commander": entry.get("commander") or "",
+            "colors": entry.get("colors") or "",
+            "discontinued": entry.get("discontinued") is True,
+            "thumb": thumb,
+            "preset": preset,
+            "announcers": announcers,
+        })
+
+    # Everyone on the roster or in a recorded game, with the decks they play:
+    # the roster's list, then what they have played, then presets made for them.
+    players = {}
+    for name, entry in (roster.get("players") or {}).items():
+        players[name.casefold()] = {"name": name, "portrait": tracker_picture(entry.get("portrait"), "thumb"),
+                                    "decks": list(entry.get("decks") or [])}
+    for game in history.get("games", []):
+        for seat in game.get("players", []):
+            player = players.setdefault(seat["name"].casefold(), {"name": seat["name"], "portrait": "", "decks": []})
+            player["decks"].append(seat.get("deck", ""))
+    by_key = {deck_key(name): name for name in decks}
+    for key, player in players.items():
+        wanted = player["decks"] + owners.get(key, [])
+        known = []
+        for deck in wanted:
+            name = by_key.get(deck_key(deck))
+            if name and name not in known:
+                known.append(name)
+        player["decks"] = known
+
+    sound_dir = BASE_DIR / "sound"
+    catalog = {
+        "players": sorted(players.values(), key=lambda player: player["name"].casefold()),
+        "decks": deck_list,
+        "sounds": {
+            "crowd_sounds": sound_files(sound_dir, re.compile(r"crowd_\d+\.wav", re.IGNORECASE)),
+            "coin_sounds": sound_files(sound_dir, re.compile(r"coin_\d+\.(wav|mp3|ogg|m4a)", re.IGNORECASE)),
+            "announcer_death": {
+                "intros": sound_files(sound_dir / "Announcer" / "Base" / "Death"),
+                "players": sound_files(sound_dir / "Announcer" / "Players" / "Death"),
+            },
+        },
+    }
+    (TRACKER_DIR / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=1), encoding="utf-8")
+    return catalog
+
+
 def publish_tracker():
     """Copy the life tracker into tracker/, marked as having no table server."""
     for name in TRACKER_VERSIONED + TRACKER_ASSETS:
@@ -198,6 +365,7 @@ def publish_tracker():
         raise SystemExit("index.html: expected one js/emblems.js script to put the static flag before")
     page = page.replace(marker, '<script>window.MTG_TABLE_STATIC = true;</script>\n  ' + marker)
     (TRACKER_DIR / "index.html").write_text(page, encoding="utf-8")
+    tracker_catalog()
     return len(sounds)
 
 
