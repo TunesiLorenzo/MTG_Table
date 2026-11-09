@@ -167,7 +167,9 @@ commander cards, card animation, sounds and the player's own entrance
 announcement, or **+ New deck**: a name, and optionally a commander found on
 Scryfall for its art. A new deck has no sounds or animation. New players and
 decks are remembered on that phone, and a game with a new deck lists it in the
-saved game's `new_decks` for adding to the roster.
+saved game's `new_decks` for adding to the roster. **Reset game** clears all
+four public-tracker assignments and begins this selection again; after picking
+a player and deck, it moves straight to the next seat.
 
 The players and decks come from `tracker/catalog.json`, which `build_site.py`
 writes from `site/roster.json`, `game_history.json` and the deck presets in

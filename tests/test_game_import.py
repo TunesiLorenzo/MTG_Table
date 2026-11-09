@@ -8,7 +8,8 @@ from uuid import uuid4
 
 
 FUNCTIONS = {'import_submissions', 'imported_created_at', 'game_signature', 'plan_game_import',
-             'game_from_payload', 'clean_game_text', 'clean_game_stats'}
+             'game_from_payload', 'clean_game_text', 'clean_game_stats',
+             'deck_names_match', 'renamed_deck_roster'}
 CONSTANTS = {'IMPORTABLE_STATUSES', 'GAME_STAT_FIELDS', 'GAME_STAT_MAX', 'GAME_ID_PATTERN',
              'GAME_PLAYER_COUNT', 'GAME_NAME_MAX', 'GAME_DECK_MAX', 'ROSTER_COMMANDER_MAX'}
 
@@ -108,6 +109,27 @@ class GameImportTests(unittest.TestCase):
                          [game(B, ranks=(2, 1, 3, 4))], known=lambda name: name == 'Urza')
         self.assertEqual([(deck['name'], deck['colors'], deck['game']) for deck in plan['new_decks']],
                          [('Ghave', 'WBG', A)])
+
+    def test_renaming_into_an_existing_deck_merges_roster_and_player_lists(self):
+        roster = {
+            'decks': {
+                'Imported deck': {'commander': 'Ghave', 'colors': 'WBG'},
+                'Existing deck': {'commander': 'Muldrotha', 'art': 'Backgrounds/Players/existing.jpg'},
+            },
+            'players': {
+                'Ny': {'decks': ['Imported deck', 'Existing deck']},
+                'Coach': {'decks': ['Imported deck']},
+            },
+        }
+        merged = self.scope['renamed_deck_roster'](roster, 'Imported deck', 'Existing deck')
+        self.assertTrue(merged)
+        self.assertNotIn('Imported deck', roster['decks'])
+        # The established deck wins fields it has, while the imported deck
+        # still supplies information the established entry did not have.
+        self.assertEqual(roster['decks']['Existing deck']['commander'], 'Muldrotha')
+        self.assertEqual(roster['decks']['Existing deck']['colors'], 'WBG')
+        self.assertEqual(roster['players']['Ny']['decks'], ['Existing deck'])
+        self.assertEqual(roster['players']['Coach']['decks'], ['Existing deck'])
 
 
 if __name__ == '__main__':

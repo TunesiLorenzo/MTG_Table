@@ -192,6 +192,21 @@
       <p class="editor-hint">For decks not played yet. Played decks appear on their own; a new deck gets a page where its commander and art can be set.</p>`;
   }
 
+  /* Deck names are also the key on every saved game.  This control therefore
+     uses its own explicit action instead of silently treating a roster save as
+     a rename (which would strand the old results under their former name). */
+  function deckRenameField(name) {
+    const names = [...new Map([...Object.keys(source.decks), ...stats.decks.map((deck) => deck.name)]
+      .map((deck) => [deck.toLocaleLowerCase(), deck])).values()]
+      .filter((deck) => deck.toLocaleLowerCase() !== name.toLocaleLowerCase())
+      .sort((left, right) => left.localeCompare(right));
+    return `<div class="editor-field deck-identity"><span>Deck name</span>
+      <div class="editor-deck-add"><input data-deck-rename list="editor-merge-decks" maxlength="80" value="${escapeHtml(name)}" aria-label="Deck name">
+      <button type="button" class="editor-add" data-rename-deck>Rename / merge</button></div>
+      <datalist id="editor-merge-decks">${names.map((deck) => `<option value="${escapeHtml(deck)}">`).join("")}</datalist></div>
+      <p class="editor-hint">Choose an existing deck to merge this deck's recorded games into it. Otherwise this renames the deck everywhere, including its saved results.</p>`;
+  }
+
   function mountEditor() {
     const [, kind, ...rest] = window.location.hash.replace(/^#/, "").split("/");
     let name = rest.join("/");
@@ -204,7 +219,8 @@
     form.className = "card editor-card";
     form.innerHTML = `<div class="section-heading"><div><span class="eyebrow">LOCAL EDITOR</span><h2>Edit ${escapeHtml(subject.name)}</h2></div><span class="muted">Saved to site/roster.json</span></div>
       ${group === "decks"
-        ? `<label class="editor-field"><span>Commander</span><input name="commander" maxlength="120" value="${escapeHtml(entry.commander || "")}" placeholder="Shown under the deck name"></label>
+        ? `${deckRenameField(subject.name)}
+           <label class="editor-field"><span>Commander</span><input name="commander" maxlength="120" value="${escapeHtml(entry.commander || "")}" placeholder="Shown under the deck name"></label>
            ${colorField(entry.colors)}
            <p class="editor-hint">Left empty, the colours are looked up from the commander when you save.</p>
            ${themeField(subject.name, entry.theme || "")}
@@ -392,6 +408,40 @@
     form.addEventListener("click", (event) => {
       if (event.target.closest("[data-add-deck]")) addDeck();
       if (event.target.closest("[data-preview-sound]")) togglePreview();
+      const rename = event.target.closest("[data-rename-deck]");
+      if (rename) {
+        const input = form.querySelector("[data-deck-rename]");
+        const target = input.value.replace(/\s+/g, " ").trim();
+        if (!target) {
+          status.textContent = "Give the deck a name first.";
+          status.className = "editor-status error";
+          return;
+        }
+        const existing = [...Object.keys(source.decks), ...stats.decks.map((deck) => deck.name)]
+          .some((name) => name.toLocaleLowerCase() === target.toLocaleLowerCase()
+            && name.toLocaleLowerCase() !== subject.name.toLocaleLowerCase());
+        const message = existing
+          ? `Merge ${subject.name} into ${target}? Every recorded game using ${subject.name} will be moved to ${target}. The existing deck's configured details are kept.`
+          : `Rename ${subject.name} to ${target}? Every recorded game using this deck will be renamed too.`;
+        if (!window.confirm(message)) return;
+        rename.disabled = true;
+        status.textContent = existing ? "Merging deckâ€¦" : "Renaming deckâ€¦";
+        status.className = "editor-status";
+        call("/api/public/decks/rename", { source: subject.name, target })
+          .then(async (result) => {
+            source = result.roster;
+            publish = result.publish;
+            showPublishState();
+            window.location.hash = `#/deck/${encodeURIComponent(result.target)}`;
+            await start();
+          })
+          .catch((error) => {
+            status.textContent = error.message;
+            status.className = "editor-status error";
+            rename.disabled = false;
+          });
+        return;
+      }
       const resetFocus = event.target.closest("[data-reset-focus]");
       if (resetFocus) {
         const box = resetFocus.closest("[data-focus-for]");

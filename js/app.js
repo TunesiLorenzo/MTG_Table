@@ -3098,7 +3098,7 @@
       // A table nobody has sat down at yet: start by asking who is playing.
       var picked = state.seats.some(function (seat) { return seat.pick; });
       var started = state.stats.timeline.length > 0;
-      if (!picked && !started && !document.querySelector('dialog[open]')) openSeatSetup(0);
+      if (!picked && !started && !document.querySelector('dialog[open]')) openSeatSetup(0, true);
     }).catch(function () {
       /* Offline: the seats stay dressed as they were saved. */
     });
@@ -3141,15 +3141,15 @@
 
   var setup = null;
 
-  function openSeatSetup(index) {
+  function openSeatSetup(index, autoAdvance) {
     var dialog = document.getElementById('seat-setup-dialog');
     if (!dialog) return;
-    startSetupFor(index);
+    startSetupFor(index, autoAdvance);
     if (!dialog.open) dialog.showModal();
   }
 
   /* What the window shows for one seat, starting from that seat's pick. */
-  function startSetupFor(index) {
+  function startSetupFor(index, autoAdvance) {
     var seat = state.seats[index];
     var pick = seat.pick;
     var player = pick && pick.player ? pick.player : seat.name;
@@ -3165,6 +3165,9 @@
       newDeck: !!(pick && pick.custom && !readCustom().decks.some(function (deck) {
         return nameKey(deck.name) === nameKey(pick.custom.name);
       })),
+      // A fresh public-tracker seating run moves on as soon as this seat has
+      // both choices. Editing one seat later remains deliberate.
+      autoAdvance: !!autoAdvance,
       results: [],
       searchSeq: 0
     };
@@ -3178,6 +3181,14 @@
     document.getElementById('seat-setup-commander').value = setup.newDeck && setup.custom ? setup.custom.commander : '';
     setSetupStatus('');
     renderSetup();
+  }
+
+  function advanceSetupWhenReady() {
+    if (!setup || !setup.autoAdvance || setup.newDeck) return;
+    var player = setup.newPlayer
+      ? trimmed(document.getElementById('seat-setup-player-name').value, SEAT_NAME_MAX)
+      : setup.player;
+    if (player && (setup.deck || setup.custom)) saveSetup();
   }
 
   function setSetupStatus(message, isError) {
@@ -3370,7 +3381,7 @@
     if (next === -1) {
       document.getElementById('seat-setup-dialog').close();
     } else {
-      startSetupFor(next);
+      startSetupFor(next, setup.autoAdvance);
       setSetupStatus(player + ' is at seat ' + (index + 1) + '.');
     }
   }
@@ -3384,14 +3395,17 @@
       if (!button || !setup) return;
       var data = button.dataset;
       if (data.setupSeat !== undefined) {
-        startSetupFor(Number(data.setupSeat));
+        startSetupFor(Number(data.setupSeat), setup.autoAdvance);
       } else if (data.setupPlayer !== undefined) {
         setup.player = data.setupPlayer;
         setup.newPlayer = false;
         // Their usual deck, unless one is already chosen.
         var who = catalogPlayer(setup.player);
-        if (!setup.deck && !setup.custom && !setup.newDeck && who && who.decks.length) setup.deck = who.decks[0];
+        if (!setup.autoAdvance && !setup.deck && !setup.custom && !setup.newDeck && who && who.decks.length) {
+          setup.deck = who.decks[0];
+        }
         renderSetup();
+        advanceSetupWhenReady();
       } else if (data.setupNewPlayer) {
         setup.newPlayer = true;
         renderSetup();
@@ -3401,11 +3415,13 @@
         setup.custom = null;
         setup.newDeck = false;
         renderSetup();
+        advanceSetupWhenReady();
       } else if (data.setupCustomDeck !== undefined) {
         setup.custom = readCustom().decks[Number(data.setupCustomDeck)] || null;
         setup.deck = '';
         setup.newDeck = false;
         renderSetup();
+        advanceSetupWhenReady();
       } else if (data.setupNewDeck) {
         setup.newDeck = true;
         setup.deck = '';
@@ -6444,6 +6460,27 @@
   /* A new game at the same table: life and counters back to the start, the
      clock at 0:00 and stopped until the first player is picked. Seat colours,
      art, sounds — whatever deck preset each seat has on — all stay. */
+  function clearStaticSeatAssignments() {
+    state.seats.forEach(function (seat, index) {
+      var defaults = SEAT_DEFAULTS[index];
+      seat.name = defaults.name;
+      seat.deck = '';
+      seat.pick = null;
+      seat.image = null;
+      seat.imageFocus = '';
+      seat.commanderImage = null;
+      seat.commanderRevealed = false;
+      seat.commanderNames = ['', ''];
+      seat.twoCommanders = false;
+      seat.secondCommander.commanderImage = null;
+      seat.secondCommander.commanderRevealed = false;
+      seat.tablePictures = {
+        background_image: '', commander_image: '', second_commander_image: '', preset_load: ''
+      };
+    });
+    applyStaticPresets();
+  }
+
   function resetGame() {
     cancelDeathAnnouncements();
     cancelEntranceSequence();
@@ -6477,6 +6514,9 @@
       seat.spared = false;
       seat.commanderRevealed = false;
     });
+    // The GitHub Pages tracker is passed between games and devices, so reset
+    // its seats as well. The local table intentionally keeps its presets.
+    if (STATIC_SITE) clearStaticSeatAssignments();
     statBatches.forEach(function (batch) { if (batch) window.clearTimeout(batch.timer); });
     statBatches = [null, null, null, null];
     // Fresh stats come stopped at 0:00, waiting for the first player.
@@ -6494,6 +6534,7 @@
     });
     render();
     saveState();
+    if (STATIC_SITE) openSeatSetup(0, true);
   }
 
   function setStartingLife(life) {
@@ -6918,7 +6959,9 @@
       }
       if (action === 'reset') {
         gameConfirm('Reset the game?\n\nAll life totals go back to ' + state.startingLife + ', the clock to 0:00' +
-          (STATIC_SITE ? '' : ', and the house lights come on') + '. Each seat keeps its player and deck.',
+          (STATIC_SITE
+            ? '. Players and decks will be cleared so you can choose everyone again.'
+            : ', and the house lights come on. Each seat keeps its player and deck.'),
           { yes: 'Reset game', danger: true }).then(function (yes) {
           if (!yes) return;
           resetGame();

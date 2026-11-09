@@ -1958,6 +1958,137 @@ def set_public_roster_entry():
     return ok(f"Saved {name}", roster=roster, publish=publish_state())
 
 
+def deck_names_match(left, right):
+    """The strict spelling match used by game-history deck statistics."""
+    return str(left or "").casefold() == str(right or "").casefold()
+
+
+def renamed_deck_roster(roster, source, target):
+    """Move a roster deck to `target`, folding it into that deck when present.
+
+    The target's configured details win a merge.  An imported deck is usually
+    bare, so this both avoids overwriting an established deck's art and lets
+    any details which only exist on the source fill gaps in the target.
+    """
+    decks = roster["decks"]
+    source_key = next((name for name in decks if deck_names_match(name, source)), "")
+    target_key = next((name for name in decks if deck_names_match(name, target)), "")
+    merging = bool(target_key and not deck_names_match(source_key, target_key))
+
+    if source_key and merging:
+        source_entry = decks.pop(source_key)
+        decks[target_key] = {**source_entry, **decks[target_key]}
+    elif source_key:
+        # This also permits a casing-only rename.
+        source_entry = decks.pop(source_key)
+        decks[target] = source_entry
+
+    for entry in roster["players"].values():
+        listed = entry.get("decks")
+        if not isinstance(listed, list):
+            continue
+        replaced = [target if deck_names_match(name, source) else name for name in listed]
+        deduped, seen = [], set()
+        for name in replaced:
+            key = str(name).casefold()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(name)
+        if deduped != listed:
+            entry["decks"] = deduped
+    return merging
+
+
+def rename_profile_decks(source, target):
+    """Keep saved table presets attached to a deck after it is renamed."""
+    changed = 0
+    try:
+        files = list(PROFILE_DIR.glob("*.json"))
+    except OSError:
+        return changed
+    for path in files:
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(saved, dict):
+            continue
+        # Older presets inferred their deck from their filename; make that
+        # association explicit when their filename was the old deck name.
+        deck = saved.get("deck") if isinstance(saved, dict) else ""
+        inferred = path.stem if not deck else deck
+        if not deck_names_match(inferred, source):
+            continue
+        saved["deck"] = target
+        try:
+            write_json_file(path, saved)
+            changed += 1
+        except OSError:
+            app.logger.warning("Could not update renamed deck in %s", path.name)
+    if changed:
+        profile_deck_cache.clear()
+    return changed
+
+
+@app.post("/api/public/decks/rename")
+def rename_public_deck():
+    """Rename one deck everywhere, or merge it into an existing deck.
+
+    Deck names are the join between the roster and recorded results.  Merely
+    changing the roster key would split the leaderboard, so this deliberately
+    rewrites every matching recorded result too.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    source = clean_game_text(payload.get("source"), "Current deck name", GAME_DECK_MAX)
+    target = clean_game_text(payload.get("target"), "New deck name", GAME_DECK_MAX)
+    if deck_names_match(source, target) and source == target:
+        raise ValueError("Choose a different deck name")
+
+    with history_lock:
+        history_before = copy.deepcopy(game_history)
+        target_in_history = any(
+            deck_names_match(player.get("deck"), target)
+            for game in history_before for player in game.get("players") or []
+            if isinstance(player, dict)
+        )
+        renamed_games = 0
+        for game in game_history:
+            for player in game.get("players") or []:
+                if isinstance(player, dict) and deck_names_match(player.get("deck"), source):
+                    player["deck"] = target
+                    renamed_games += 1
+
+        with roster_lock:
+            roster = load_roster()
+            source_in_roster = any(deck_names_match(name, source) for name in roster["decks"])
+            target_in_roster = any(deck_names_match(name, target) for name in roster["decks"])
+            if not source_in_roster and not renamed_games:
+                raise ValueError(f"No deck called {source}")
+            merging = renamed_deck_roster(roster, source, target)
+            # A target known only through game history is still a merge: move
+            # the source's roster details to its established statistics name.
+            merging = merging or ((target_in_roster or target_in_history) and not deck_names_match(source, target))
+            try:
+                write_json_file(ROSTER_FILE, roster)
+                save_game_history()
+            except Exception:
+                game_history[:] = history_before
+                raise
+
+    table_changed = False
+    with state_lock:
+        for player in table_state["players"]:
+            if deck_names_match(player.get("deck"), source):
+                player["deck"] = target
+                table_changed = True
+        if table_changed:
+            save_table_state()
+    profiles = rename_profile_decks(source, target)
+    action = "Merged" if merging else "Renamed"
+    return ok(f"{action} {source} as {target}", roster=roster, target=target,
+              merged=merging, games=renamed_games, profiles=profiles, publish=publish_state())
+
+
 def clean_card_fx(value, count):
     """A deck's card animations for the public site: one per commander card,
     in the shape the table keeps them (see COMMANDER_FX_EFFECTS), or [] for
