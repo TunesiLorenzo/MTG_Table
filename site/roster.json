@@ -337,6 +337,12 @@
           "area": "card"
         }
       ]
+    },
+    "gg": {
+      "commander": "Liliana, Heretical Healer // Liliana, Defiant Necromancer",
+      "colors": "B",
+      "card_colors": "B",
+      "type_line": "Legendary Creature \u2014 Human Cleric // Legendary Planeswalker \u2014 Liliana"
     }
   }
 }
