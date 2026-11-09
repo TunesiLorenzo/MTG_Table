@@ -173,6 +173,143 @@ $("#recent-list").addEventListener("click", async (event) => {
   }
 });
 
+/* Importing the phone tracker's games: the server sorts each one into new,
+   a correction, already imported and so on (plan_game_import in web.py);
+   this shows that plan and sends back the ids that are ticked. */
+const importInput = $("#import-file");
+const importPreview = $("#import-preview");
+const IMPORTABLE = ["new", "correction", "match"];
+const IMPORT_LABELS = {
+  new: "New",
+  correction: "Correction",
+  match: "Recorded by hand?",
+  imported: "Already imported",
+  superseded: "Replaced by a later correction",
+  repeat: "Repeated in the file",
+  invalid: "Not a valid game",
+};
+let importItems = null;
+let importPlan = null;
+
+function importPlayers(game) {
+  return [...game.players].sort((a, b) => a.rank - b.rank)
+    .map((player) => `<span class="import-player"><b>#${player.rank}</b> ${escapeHtml(player.name)} <span class="muted">${escapeHtml(player.deck)}</span></span>`)
+    .join("");
+}
+
+function importNote(entry) {
+  if (entry.status === "correction") {
+    const old = games.find((game) => game.id === entry.replaces);
+    return `Replaces the saved game from ${escapeHtml(formatDate(old ? old.date : entry.date))}`;
+  }
+  if (entry.status === "match") return "Same date, players, decks and ranks as a game already saved, so it is left unticked";
+  if (entry.status === "invalid") return escapeHtml(entry.message || "");
+  return "";
+}
+
+function importRow(entry, selectable) {
+  const note = importNote(entry);
+  const body = `
+    <span class="recent-date">${escapeHtml(entry.date ? formatDate(entry.date) : "No date")}</span>
+    <span class="import-players">${entry.game ? importPlayers(entry.game) : ""}${note ? `<span class="import-note">${note}</span>` : ""}</span>
+    <span class="import-badge import-${entry.status}">${IMPORT_LABELS[entry.status] || entry.status}</span>`;
+  return selectable
+    ? `<label class="import-row"><input type="checkbox" data-import-id="${escapeHtml(entry.id)}"${entry.status === "match" ? "" : " checked"}>${body}</label>`
+    : `<div class="import-row is-skipped"><span></span>${body}</div>`;
+}
+
+function renderImportPreview() {
+  const entries = importPlan.entries;
+  const ready = entries.filter((entry) => IMPORTABLE.includes(entry.status));
+  const skipped = entries.filter((entry) => !IMPORTABLE.includes(entry.status));
+  const imported = skipped.filter((entry) => entry.status === "imported").length;
+  const total = `${entries.length} game${entries.length === 1 ? "" : "s"} in the file`;
+  const decks = importPlan.new_decks;
+  importPreview.hidden = false;
+  importPreview.innerHTML = `
+    <p class="import-heading"><strong>${total}</strong> · ${ready.length} to import · ${imported} already imported${skipped.length > imported ? ` · ${skipped.length - imported} skipped` : ""}</p>
+    ${ready.length
+      ? `<div class="import-list">${ready.map((entry) => importRow(entry, true)).join("")}</div>`
+      : '<div class="empty import-empty">Nothing new to import: every game in the file is already on the leaderboard.</div>'}
+    ${decks.length && ready.length ? `<label class="import-decks"><input type="checkbox" id="import-add-decks" checked>
+      Also add ${decks.length === 1 ? "a new deck" : `${decks.length} new decks`} to the roster: ${decks.map((deck) => escapeHtml(deck.name)).join(", ")}</label>` : ""}
+    ${skipped.length ? `<details class="import-skipped"><summary>Show the ${skipped.length} left out</summary>
+      <div class="import-list">${skipped.map((entry) => importRow(entry, false)).join("")}</div></details>` : ""}
+    ${ready.length ? '<button type="button" class="submit-button" id="import-submit"></button>' : ""}`;
+  updateImportButton();
+}
+
+function chosenImports() {
+  return [...importPreview.querySelectorAll("[data-import-id]:checked")].map((box) => box.dataset.importId);
+}
+
+function updateImportButton() {
+  const button = $("#import-submit");
+  if (!button) return;
+  const count = chosenImports().length;
+  button.disabled = !count;
+  button.textContent = count ? `Import ${count} game${count === 1 ? "" : "s"}` : "Tick a game to import";
+}
+
+async function previewImport() {
+  const response = await fetch("/api/games/import", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: importItems }),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.message || "Could not read the file");
+  importPlan = result;
+  renderImportPreview();
+}
+
+importInput.addEventListener("change", async () => {
+  const files = [...importInput.files];
+  importPreview.hidden = true;
+  importItems = null;
+  if (!files.length) return;
+  try {
+    importItems = await Promise.all(files.map(async (file) => {
+      try {
+        return JSON.parse(await file.text());
+      } catch (_) {
+        throw new Error(`${file.name} is not a valid JSON file`);
+      }
+    }));
+    await previewImport();
+  } catch (error) {
+    showStatus(error.message, "error");
+  }
+});
+
+importPreview.addEventListener("change", (event) => {
+  if (event.target.matches("[data-import-id]")) updateImportButton();
+});
+
+importPreview.addEventListener("click", async (event) => {
+  const button = event.target.closest("#import-submit");
+  if (!button) return;
+  const ids = chosenImports();
+  if (!ids.length) return;
+  const addDecks = $("#import-add-decks");
+  button.disabled = true;
+  button.textContent = "Importing…";
+  try {
+    const response = await fetch("/api/games/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: importItems, import: ids, add_decks: addDecks ? addDecks.checked : false }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.message || "Could not import the games");
+    await loadGames();
+    // Previewed again, the games just added now show as already imported.
+    await previewImport();
+    showStatus(result.message, "success");
+  } catch (error) {
+    showStatus(error.message, "error");
+    updateImportButton();
+  }
+});
+
 buildResultRows();
 $("#game-date").value = localDateValue();
 render();

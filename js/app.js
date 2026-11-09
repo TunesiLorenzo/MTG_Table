@@ -1459,11 +1459,79 @@
     ], { duration: 420, easing: 'ease-out', pseudoElement: '::after' });
   }
 
-  function gameConfirm(message) {
-    // Native confirm dialogs block JavaScript and can swallow the pointer-up
-    // that would normally stop a held life button. Cancel first, every time.
+  /* The table's own yes/no and notice window, in place of the browser's
+     confirm() and alert(): those take Chrome out of fullscreen, which on the
+     table screen and a phone means the whole layout jumps mid-game. Each asks
+     and answers through a promise; several in a row are shown one at a time.
+     Escape, or a tap outside the window, is "no".
+
+     options: { yes: 'Eliminate', no: 'Keep them in', danger: true } */
+  var askQueue = [];
+
+  function gameConfirm(message, options) {
+    // A held life button must not keep counting behind the question.
     stopAllLifeHolds();
-    return window.confirm(message);
+    return new Promise(function (resolve) {
+      askQueue.push({ message: message, options: options || {}, resolve: resolve, notice: false });
+      if (askQueue.length === 1) showNextAsk();
+    });
+  }
+
+  function gameAlert(message) {
+    stopAllLifeHolds();
+    return new Promise(function (resolve) {
+      askQueue.push({ message: message, options: {}, resolve: resolve, notice: true });
+      if (askQueue.length === 1) showNextAsk();
+    });
+  }
+
+  function showNextAsk() {
+    var ask = askQueue[0];
+    var dialog = document.getElementById('table-ask');
+    if (!ask) return;
+    if (!dialog || !dialog.showModal) {
+      // A page without the window (an old cached copy): answer the safe way.
+      askQueue.shift();
+      ask.resolve(false);
+      showNextAsk();
+      return;
+    }
+    var paragraphs = String(ask.message).split(/\n\s*\n/);
+    document.getElementById('table-ask-title').textContent = paragraphs[0];
+    document.getElementById('table-ask-text').innerHTML = paragraphs.slice(1).map(function (text) {
+      return '<p>' + escapeHtml(text) + '</p>';
+    }).join('');
+    var yes = document.getElementById('table-ask-yes');
+    var no = document.getElementById('table-ask-no');
+    yes.textContent = ask.notice ? 'OK' : (ask.options.yes || 'Yes');
+    no.textContent = ask.options.no || 'Cancel';
+    no.hidden = ask.notice;
+    yes.classList.toggle('is-danger', !!ask.options.danger);
+    if (!dialog.open) dialog.showModal();
+    yes.focus();
+  }
+
+  function answerAsk(value) {
+    var ask = askQueue.shift();
+    var dialog = document.getElementById('table-ask');
+    if (dialog && dialog.open && !askQueue.length) dialog.close();
+    if (ask) ask.resolve(ask.notice ? true : value);
+    if (askQueue.length) showNextAsk();
+  }
+
+  function bindAskDialog() {
+    var dialog = document.getElementById('table-ask');
+    if (!dialog) return;
+    document.getElementById('table-ask-yes').addEventListener('click', function () { answerAsk(true); });
+    document.getElementById('table-ask-no').addEventListener('click', function () { answerAsk(false); });
+    // Escape closes a modal dialog by itself: count it as "no".
+    dialog.addEventListener('cancel', function (event) {
+      event.preventDefault();
+      answerAsk(false);
+    });
+    dialog.addEventListener('click', function (event) {
+      if (event.target === dialog) answerAsk(false);
+    });
   }
 
   /* ---------------------------------------------------------- screen tint -- */
@@ -2260,23 +2328,36 @@
        only for the automatic reasons: eliminating by hand is already a
        deliberate act and asks nothing. */
     if (wasAlive && !seat.out && !seat.spared && lethalReason(seat)) {
-      var confirmedOut = gameConfirm(
+      // The rest waits for the answer: the table window does not block.
+      gameConfirm(
         seat.name + ' has ' + lethalReason(seat) + '. Eliminate them?\n\n' +
-        'Cancel if an effect keeps them in the game.');
-      if (confirmedOut) {
-        // Match the tray's own Eliminate button exactly, not just the numbers:
-        // isAlive() already treated this seat as gone, but without `out` set
-        // the panel never actually faded to the out-of-game look, and a later
-        // render() would just recompute is-dead and leave it looking alive.
-        seat.out = true;
-        seat.outReason = 'out';
-        if (state.currentPlayer === changedIndex) advanceTurn(1);
+        'Keep them in if an effect keeps them in the game.',
+        { yes: 'Eliminate', no: 'Keep them in', danger: true }).then(function (confirmedOut) {
+        if (confirmedOut) {
+          // Match the tray's own Eliminate button exactly, not just the numbers:
+          // isAlive() already treated this seat as gone, but without `out` set
+          // the panel never actually faded to the out-of-game look, and a later
+          // render() would just recompute is-dead and leave it looking alive.
+          seat.out = true;
+          seat.outReason = 'out';
+          if (state.currentPlayer === changedIndex) advanceTurn(1);
+        } else {
+          seat.spared = true;
+        }
         renderSeat(changedIndex);
         updateTray(changedIndex);
-      } else {
-        seat.spared = true;
-      }
+        settleGameOutcome(changedIndex, wasAlive, active);
+        saveState();
+      });
+      return;
     }
+    settleGameOutcome(changedIndex, wasAlive, active);
+  }
+
+  /* The rest of updateGameOutcome, once any question about the numbers has
+     been answered. */
+  function settleGameOutcome(changedIndex, wasAlive, active) {
+    var seat = state.seats[changedIndex];
     /* Back out of danger, so the reprieve ends: if it happens again the table
        gets asked again rather than silently surviving a second time. */
     if (seat.spared && !lethalReason(seat)) seat.spared = false;
@@ -2324,12 +2405,12 @@
        declined win does not re-ask on every later tap; it is cleared again the
        moment two players are alive, so a genuine second ending still fires. */
     state.gameResultPrompted = true;
-    if (!gameConfirm(state.seats[survivors[0]].name + ' is the last player standing.\n\n' +
-        'Declare them the winner and end the game?')) {
-      return;
-    }
-
-    runWinnerSequence(survivors[0], true);
+    gameConfirm(state.seats[survivors[0]].name + ' is the last player standing.\n\n' +
+        'Declare them the winner and end the game?',
+        { yes: 'Declare winner', no: 'Not yet' }).then(function (yes) {
+      if (yes) runWinnerSequence(survivors[0], true);
+      else saveState();
+    });
   }
 
   function changeCounter(seatIndex, kind, source, amount) {
@@ -2393,10 +2474,13 @@
   function declareWinner(seatIndex) {
     var seat = state.seats[seatIndex];
     if (!isAlive(seat)) return;
-    if (!gameConfirm('Declare ' + seat.name + ' the winner and end the game?')) return;
-
-    state.gameResultPrompted = true;
-    runWinnerSequence(seatIndex, false);
+    gameConfirm('Declare ' + seat.name + ' the winner and end the game?',
+      { yes: 'Declare winner', no: 'Cancel' }).then(function (yes) {
+      // Still a game to win: nothing moved on while the question was up.
+      if (!yes || !isAlive(seat) || state.stats.endedAt) return;
+      state.gameResultPrompted = true;
+      runWinnerSequence(seatIndex, false);
+    });
   }
 
   function runWinnerSequence(winnerIndex, requireLastStanding) {
@@ -2505,12 +2589,17 @@
 
     var survivors = aliveSeatIndexes();
     if (survivors.length < 2) {
-      window.alert('A draw needs at least two players still alive.');
+      gameAlert('A draw needs at least two players still alive.');
       return;
     }
     var names = survivors.map(function (index) { return state.seats[index].name; });
-    if (!gameConfirm('Declare a draw between ' + names.join(', ') + ' and end the game?')) return;
+    gameConfirm('Declare a draw between ' + names.join(', ') + ' and end the game?',
+      { yes: 'Declare draw', no: 'Cancel' }).then(function (yes) {
+      if (yes && !drawSequence) startDraw(survivors);
+    });
+  }
 
+  function startDraw(survivors) {
     cancelEntranceSequence();
     cancelWinnerCelebration();
     closeTrays();
@@ -3499,7 +3588,7 @@
       state.seats[seatIndex].imageFocus = previousFocus;
       render();
       updateTray(seatIndex);
-      window.alert('That image is too large to store. Try a smaller one.');
+      gameAlert('That image is too large to store. Try a smaller one.');
     }
   }
 
@@ -3515,7 +3604,7 @@
       seat.commanderImage = previousImage;
       seat.commanderRevealed = previousRevealed;
       renderSeat(seatIndex);
-      window.alert('That commander image is too large to store. Try a smaller one.');
+      gameAlert('That commander image is too large to store. Try a smaller one.');
     }
   }
 
@@ -6712,6 +6801,7 @@
        into is swallowed too, so it never also nudges a control underneath. */
     document.addEventListener('pointerdown', function (event) {
       var dismissed = false;
+      if (event.target.closest && event.target.closest('dialog[open]')) return;
 
       if (!panel.hidden && !panel.contains(event.target) && !toggle.contains(event.target)) {
         setHubOpen(false);
@@ -6761,9 +6851,9 @@
       if (action === 'lights-follow') setLightsFollowTurn(!state.lightsFollowTurn);
       if (action === 'turn-timer') setTurnClock(!state.turnClock);
       if (action === 'clock-stop') setClockStopped(!isClockStopped());
-      if (action === 'clock-reset' &&
-          window.confirm('Reset the game clock to 0:00? Every player’s play time, turn count and turn times go back to zero. Damage, life and the rest are kept.')) {
-        resetClockToZero();
+      if (action === 'clock-reset') {
+        gameConfirm('Reset the game clock to 0:00?\n\nEvery player’s play time, turn count and turn times go back to zero. Damage, life and the rest are kept.',
+          { yes: 'Reset clock' }).then(function (yes) { if (yes) resetClockToZero(); });
       }
       if (action === 'entrance-mode') {
         setEntranceMode(!state.entranceMode);
@@ -6810,21 +6900,23 @@
       }
       if (action === 'house-lights') toggleHouseLights();
       if (action === 'resend-lights') resendLights();
-      if (action === 'shutdown' &&
-          window.confirm('Turn off the local table server? Every page — this one, the lights, and the leaderboard — will go offline until you start it again on the PC.')) {
-        shutdownServer();
+      if (action === 'shutdown') {
+        gameConfirm('Turn off the local table server?\n\nEvery page — this one, the lights, and the leaderboard — will go offline until you start it again on the PC.',
+          { yes: 'Turn off', danger: true }).then(function (yes) { if (yes) shutdownServer(); });
       }
-      if (action === 'restart-server' &&
-          window.confirm('Restart the local table server? Every page goes offline for a few seconds while it turns off and back on. This game is saved first.')) {
-        restartServer();
+      if (action === 'restart-server') {
+        gameConfirm('Restart the local table server?\n\nEvery page goes offline for a few seconds while it turns off and back on. This game is saved first.',
+          { yes: 'Restart' }).then(function (yes) { if (yes) restartServer(); });
       }
-      if (action === 'reset' &&
-          window.confirm('Reset all life totals to ' + state.startingLife + ', put the clock back to 0:00 and turn on the house lights? Each seat keeps its deck preset.')) {
-        resetGame();
-        // Between games the room goes to plain working light; the server says
-        // which way it went, so the button stays honest.
-        postJSON('/api/lights/house', { on: true }, function (result) {
-          if (result && typeof result.house_lights === 'boolean') setHouseLights(result.house_lights);
+      if (action === 'reset') {
+        gameConfirm('Reset the game?\n\nAll life totals go back to ' + state.startingLife + ', the clock to 0:00' +
+          (STATIC_SITE ? '' : ', and the house lights come on') + '. Each seat keeps its player and deck.',
+          { yes: 'Reset game', danger: true }).then(function (yes) {
+          if (!yes) return;
+          resetGame();
+          // Between games the room goes to plain working light; the server says
+          // which way it went, so the button stays honest.
+          enableHouseLights();
         });
       }
     });
@@ -7023,6 +7115,7 @@
   buildHub();
   bindImageCropDialog();
   bindGameResultDialog();
+  bindAskDialog();
   bindSeatSetup();
   bindOutbox();
   bindGameRecap();

@@ -434,6 +434,19 @@
     </form>
   </dialog>
 
+  <!-- The table's own questions and notices (js/app.js gameConfirm/gameAlert),
+       in place of the browser's confirm() and alert(), which leave fullscreen. -->
+  <dialog id="table-ask" class="table-ask" aria-labelledby="table-ask-title">
+    <div class="table-ask__body">
+      <h2 id="table-ask-title"></h2>
+      <div id="table-ask-text" class="table-ask__text"></div>
+      <div class="table-ask__actions">
+        <button type="button" class="table-ask__no" id="table-ask-no">Cancel</button>
+        <button type="button" class="table-ask__yes" id="table-ask-yes">Yes</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Phone tracker only: who sits where and with which deck. Filled by js/app.js
        from tracker/catalog.json. -->
   <dialog id="seat-setup-dialog" class="seat-setup" aria-labelledby="seat-setup-title">

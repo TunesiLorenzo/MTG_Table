@@ -64,6 +64,21 @@
         </div>
       </details>
 
+      <details class="card tool-card" id="import-card">
+        <summary class="tool-summary">
+          <span class="tool-title"><span class="eyebrow">PHONE TRACKER</span><span class="tool-heading">Import games</span></span>
+          <span class="tool-hint">From the Drive inbox (mtg_games.json) or a downloaded game</span>
+          <span class="tool-chevron" aria-hidden="true">&#9662;</span>
+        </summary>
+        <div class="tool-body">
+          <p class="historical-copy">Choose one or more files. Games already on the leaderboard are left out, and so is any game a later correction replaces, so the same inbox can be imported again and again.</p>
+          <label class="import-file">
+            <input id="import-file" type="file" accept=".json,application/json" multiple>
+          </label>
+          <div id="import-preview" class="import-preview" hidden></div>
+        </div>
+      </details>
+
       <details class="card tool-card">
         <summary class="tool-summary">
           <span class="tool-title"><span class="eyebrow">UNDO</span><span class="tool-heading">Recently recorded</span></span>

@@ -1290,6 +1290,186 @@ def delete_game(game_id):
     return ok("Game removed from the leaderboard")
 
 
+def import_submissions(payload):
+    """Every game submission in an imported file, in file order.
+
+    Accepts what the phone tracker produces: the Drive inbox
+    (`mtg-table-inbox`), one downloaded game (`mtg-table-game`), a bare
+    leaderboard game, or a list of any of these (several files at once).
+    """
+    if isinstance(payload, list):
+        return [submission for item in payload for submission in import_submissions(item)]
+    if not isinstance(payload, dict):
+        raise ValueError("This file does not contain any games")
+    if payload.get("format") == "mtg-table-inbox" or isinstance(payload.get("submissions"), list):
+        return [item if isinstance(item, dict) else {} for item in payload.get("submissions") or []]
+    if isinstance(payload.get("game"), dict):
+        return [payload]
+    if isinstance(payload.get("players"), list):
+        return [{"game": payload}]
+    raise ValueError("This file does not contain any games")
+
+
+def imported_created_at(*values):
+    """The first of the given timestamps that parses, in local time, or now."""
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            try:
+                return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).astimezone().isoformat(timespec="seconds")
+            except ValueError:
+                continue
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def game_signature(game):
+    """What makes two records the same result: the date and who finished where with what."""
+    return (game.get("date"), frozenset((str(player.get("name", "")).casefold(), str(player.get("deck", "")).casefold(),
+                                         player.get("rank")) for player in game.get("players") or []
+                                        if isinstance(player, dict)))
+
+
+IMPORTABLE_STATUSES = {"new", "correction", "match"}
+
+
+def plan_game_import(submissions, history, deck_known=lambda name: False):
+    """Sort imported submissions into what to add and what to skip.
+
+    Each entry gets a status:
+      new         not on the leaderboard yet
+      correction  replaces a game already on the leaderboard (`replaces`)
+      match       a different id, but the same date, players, decks and ranks
+                  as a saved game: most likely typed in by hand, so off by default
+      imported    its id is already on the leaderboard
+      superseded  a later correction in the same file replaces it
+      repeat      the same id earlier in the file
+      invalid     not a valid result (`message` says why)
+    New decks named by an importable game and missing from the roster are
+    listed in `new_decks`.
+    """
+    history_ids = {game.get("id") for game in history}
+    history_signatures = {game_signature(game): game for game in history}
+    entries, seen = [], set()
+    for index, submission in enumerate(submissions):
+        source = submission.get("source") if isinstance(submission.get("source"), dict) else {}
+        raw = submission.get("game") if isinstance(submission.get("game"), dict) else {}
+        entry = {"index": index, "status": "new"}
+        try:
+            if not isinstance(raw.get("id"), str) or not GAME_ID_PATTERN.fullmatch(raw["id"]):
+                raise ValueError("The game has no id from the tracker")
+            game = game_from_payload(raw)
+        except ValueError as error:
+            entry.update(status="invalid", message=str(error),
+                         date=str(raw.get("date") or ""), id=str(raw.get("id") or ""))
+            entries.append(entry)
+            continue
+        game["created_at"] = imported_created_at(raw.get("created_at"), submission.get("received_at"))
+        replaces = source.get("replaces")
+        entry.update(id=game["id"], date=game["date"], game=game,
+                     replaces=replaces if isinstance(replaces, str) and GAME_ID_PATTERN.fullmatch(replaces) else None)
+        decks = [deck for deck in submission.get("new_decks") or [] if isinstance(deck, dict)]
+        entry["decks"] = decks
+        if game["id"] in seen:
+            entry["status"] = "repeat"
+        seen.add(game["id"])
+        entries.append(entry)
+
+    replaced = {entry["replaces"]: entry["id"] for entry in entries if entry.get("replaces")}
+    for entry in entries:
+        if entry["status"] != "new":
+            continue
+        if entry["id"] in history_ids:
+            entry["status"] = "imported"
+        elif entry["id"] in replaced and replaced[entry["id"]] != entry["id"]:
+            entry["status"] = "superseded"
+        elif entry["replaces"] in history_ids:
+            entry["status"] = "correction"
+        elif game_signature(entry["game"]) in history_signatures:
+            entry["status"] = "match"
+            entry["match_id"] = history_signatures[game_signature(entry["game"])].get("id")
+
+    new_decks, named = [], set()
+    for entry in entries:
+        if entry["status"] not in IMPORTABLE_STATUSES:
+            continue
+        played = {player["deck"].casefold() for player in entry["game"]["players"]}
+        for deck in entry.pop("decks", []):
+            name = re.sub(r"\s+", " ", str(deck.get("name") or "")).strip()[:GAME_DECK_MAX]
+            if name and name.casefold() in played and name.casefold() not in named and not deck_known(name):
+                named.add(name.casefold())
+                new_decks.append({"name": name, "game": entry["id"],
+                                  "commander": re.sub(r"\s+", " ", str(deck.get("commander") or "")).strip()[:ROSTER_COMMANDER_MAX],
+                                  "colors": "".join(c for c in deck.get("color_identity") or [] if isinstance(c, str))})
+    for entry in entries:
+        entry.pop("decks", None)
+    return {"entries": entries, "new_decks": new_decks}
+
+
+@app.post("/api/games/import")
+def import_games():
+    """Preview, then import, games from the phone tracker's files.
+
+    `items` is the parsed file (or a list of them). Without `import` this only
+    previews; with `import`, a list of game ids, it adds those of them that are
+    still importable, re-checked here against the saved history.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    submissions = import_submissions(payload.get("items"))
+    if not submissions:
+        raise ValueError("This file does not contain any games")
+    known = lambda name: bool(roster_deck(name)[0])
+    chosen = payload.get("import")
+    with history_lock:
+        plan = plan_game_import(submissions, game_history, known)
+        if not isinstance(chosen, list):
+            for entry in plan["entries"]:
+                entry.pop("index", None)
+            return ok("Preview ready", **plan)
+        chosen = {value for value in chosen if isinstance(value, str)}
+        picked = [entry for entry in plan["entries"] if entry["status"] in IMPORTABLE_STATUSES and entry["id"] in chosen]
+        if not picked:
+            raise ValueError("Those games are already on the leaderboard" if chosen else "Choose at least one game to import")
+        before = list(game_history)
+        corrected = 0
+        for entry in picked:
+            index = next((i for i, saved in enumerate(game_history)
+                          if entry["status"] == "correction" and saved.get("id") == entry["replaces"]), None)
+            if index is None:
+                game_history.append(entry["game"])
+            else:
+                game_history[index] = entry["game"]
+                corrected += 1
+        try:
+            save_game_history()
+        except Exception:
+            game_history[:] = before
+            raise
+
+    # The decks come after the games are safe: a deck that cannot be saved
+    # costs its roster entry, never the results.
+    added_decks, failed_decks = [], []
+    if payload.get("add_decks", True):
+        picked_ids = {entry["id"] for entry in picked}
+        for deck in plan["new_decks"]:
+            if deck["game"] not in picked_ids or known(deck["name"]):
+                continue
+            try:
+                save_roster_entry("decks", deck["name"], {"commander": deck["commander"], "colors": deck["colors"]})
+                added_decks.append(deck["name"])
+            except (OSError, ValueError) as error:
+                app.logger.warning("Could not add deck %s to the roster (%s)", deck["name"], error)
+                failed_decks.append(deck["name"])
+
+    count = len(picked)
+    message = f"Imported {count} game{'s' if count != 1 else ''}"
+    if corrected:
+        message += f" ({corrected} correction{'s' if corrected != 1 else ''})"
+    if added_decks:
+        message += f", added {len(added_decks)} deck{'s' if len(added_decks) != 1 else ''} to the roster"
+    if failed_decks:
+        message += f"; could not add {', '.join(failed_decks)} to the roster"
+    return ok(message, imported=[entry["id"] for entry in picked], decks=added_decks), 201
+
+
 @app.post("/api/historical-wins")
 def set_historical_wins():
     """Add or replace one player's aggregate wins from incomplete old records."""

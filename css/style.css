@@ -3465,3 +3465,48 @@ html:not(.is-static) [data-static-only] { display: none !important; }
   border: 1px solid #a77aff; border-radius: 9px;
   cursor: pointer;
 }
+
+/* ------------------------------------------------- commander card, phone --
+   On the table screen the card is a share of the screen. On a phone its
+   4.5rem floor made it half a seat tall, right over the +1/+5 buttons, so on
+   small screens it is sized from the seat's own frame instead: no taller
+   than the corner under the buttons, no wider than the column beside the
+   total. The frame is the player's own orientation, so a seat turned 90°
+   sizes its card from its own long and short sides. */
+.seat__inner { container-type: size; }
+@media (max-width: 1000px), (max-height: 700px) {
+  .seat__inner { --commander-card-width: clamp(1.9rem, min(10.5vmin, 19cqh, 17cqw), 9rem); }
+}
+
+/* ---------------------------------------------------- the table's questions --
+   gameConfirm / gameAlert in js/app.js: the browser's own confirm() leaves
+   fullscreen, this does not. rem-sized, so it reads on a phone and the table. */
+.table-ask {
+  width: min(30rem, calc(100vw - 2rem));
+  padding: 0;
+  color: var(--ink);
+  background: #10131b;
+  border: 1px solid #ffffff2e;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px #000d;
+  font-family: var(--font-ui);
+  font-size: 16px;
+}
+.table-ask::backdrop { background: #000000b3; }
+.table-ask__body { display: grid; gap: .8rem; padding: 1.2rem 1.25rem 1.1rem; }
+.table-ask h2 { margin: 0; font-size: 1.15rem; font-weight: 800; line-height: 1.35; }
+.table-ask__text p { margin: 0 0 .5rem; color: #c3cad8; font-size: .95rem; line-height: 1.45; }
+.table-ask__text:empty { display: none; }
+.table-ask__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; margin-top: .2rem; }
+.table-ask__actions button {
+  min-width: 7rem;
+  padding: .7rem 1.1rem;
+  font: inherit;
+  font-weight: 800;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.table-ask__actions button[hidden] { display: none; }
+.table-ask__no { color: var(--ink-dim); background: #ffffff0a; border: 1px solid #ffffff2e; }
+.table-ask__yes { color: #fff; background: #7044cf; border: 1px solid #a77aff; }
+.table-ask__yes.is-danger { background: #b4304a; border-color: #ff7d95; }
