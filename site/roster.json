@@ -368,12 +368,6 @@
       "colors": "WUR",
       "card_colors": "WUR",
       "type_line": "Legendary Creature \u2014 Human Artificer // Legendary Creature \u2014 Dwarf Artificer"
-    },
-    "TestDeck": {
-      "commander": "Vito, Thorn of the Dusk Rose",
-      "colors": "B",
-      "card_colors": "B",
-      "type_line": "Legendary Creature \u2014 Vampire Cleric"
     }
   }
 }
