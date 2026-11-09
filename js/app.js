@@ -1463,7 +1463,10 @@
      confirm() and alert(): those take Chrome out of fullscreen, which on the
      table screen and a phone means the whole layout jumps mid-game. Each asks
      and answers through a promise; several in a row are shown one at a time.
-     Escape, or a tap outside the window, is "no".
+     Escape, or a later tap outside the window, is "no". The backdrop uses
+     pointerdown rather than click: on touch Chrome the click produced by the
+     same release that opened a window can otherwise land on its new backdrop
+     and dismiss it straight away.
 
      options: { yes: 'Eliminate', no: 'Keep them in', danger: true } */
   var askQueue = [];
@@ -1529,7 +1532,12 @@
       event.preventDefault();
       answerAsk(false);
     });
-    dialog.addEventListener('click', function (event) {
+    // Do not use `click` here. A dialog opened while handling a touch can be
+    // installed below that touch before its synthetic click is dispatched;
+    // treating that click as a backdrop press made the dialog flash and close
+    // immediately on Android Chrome. A subsequent pointerdown is unambiguously
+    // a new, intentional tap outside the window.
+    dialog.addEventListener('pointerdown', function (event) {
       if (event.target === dialog) answerAsk(false);
     });
   }
