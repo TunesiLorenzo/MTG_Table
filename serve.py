@@ -12,7 +12,7 @@ import threading
 import webbrowser
 
 import mdns
-from web import app, wait_for_previous_server
+from web import app, start_drive_sync, wait_for_previous_server
 
 
 def main():
@@ -39,6 +39,9 @@ def main():
 
     if not args.no_browser and not restarted:
         threading.Timer(0.7, lambda: webbrowser.open(url)).start()
+
+    # New games from the phone tracker's Drive inbox: imported and published.
+    start_drive_sync()
 
     try:
         app.run(host=args.host, port=args.port, threaded=True, use_reloader=False)

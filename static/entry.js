@@ -310,8 +310,88 @@ importPreview.addEventListener("click", async (event) => {
   }
 });
 
+/* The Drive inbox: the server imports and publishes what is new in it every
+   few minutes (sync_drive_inbox in web.py), and once more as this page opens.
+   Review inbox loads it into the preview above, to pick games by hand. */
+const driveStatus = $("#drive-sync-status");
+const driveHint = $("#drive-sync-hint");
+const driveButton = $("#drive-sync-button");
+const driveReviewButton = $("#drive-review-button");
+
+function clockTime(iso) {
+  const when = iso ? new Date(iso) : null;
+  if (!when || Number.isNaN(when.getTime())) return "";
+  const today = when.toDateString() === new Date().toDateString();
+  return when.toLocaleString([], today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function renderDriveSync(sync, problem = "") {
+  const lines = [];
+  if (!sync || !sync.enabled) {
+    lines.push("Automatic import from the Drive inbox is off (MTG_DRIVE_SYNC=0).");
+    driveHint.textContent = "From the Drive inbox (mtg_games.json) or a downloaded game";
+  } else {
+    const checked = clockTime(sync.checked_at);
+    const error = problem || sync.error;
+    lines.push(error
+      ? `<span class="is-warning">Could not check the Drive inbox: ${escapeHtml(error)}</span>`
+      : checked ? `Drive inbox checked at <strong>${checked}</strong>` : "Drive inbox not checked yet");
+    if (sync.last_import) lines.push(`Last import ${clockTime(sync.last_import.at)}: ${escapeHtml(sync.last_import.message)}`);
+    if (sync.publish_error) lines.push(`<span class="is-warning">Not on the public site yet: ${escapeHtml(sync.publish_error)}. Tried again on the next check.</span>`);
+    else if (sync.published_at) lines.push(`Published to the site at ${clockTime(sync.published_at)}`);
+    if (sync.waiting) lines.push(`<span class="is-warning">${sync.waiting} game${sync.waiting === 1 ? " has" : "s have"} the same result as one typed in by hand, so ${sync.waiting === 1 ? "it was" : "they were"} left out. Review the inbox to add ${sync.waiting === 1 ? "it" : "them"} anyway.</span>`);
+    driveHint.textContent = error ? "Drive inbox: could not check" : checked ? `Drive inbox imported automatically · checked ${checked}` : "Drive inbox imported automatically";
+  }
+  driveStatus.innerHTML = lines.map((line) => `<span>${line}</span>`).join("");
+}
+
+async function checkDriveInbox() {
+  driveButton.disabled = true;
+  driveButton.textContent = "Checking…";
+  try {
+    const response = await fetch("/api/games/drive-sync", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      const status = await fetch("/api/games/drive-sync").then((answer) => answer.json()).catch(() => null);
+      renderDriveSync(status && status.sync, result.message || "Unexpected error");
+      return;
+    }
+    renderDriveSync(result.sync);
+    if (result.imported) {
+      await loadGames();
+      if (importItems) await previewImport();
+      showStatus(result.message, result.sync.publish_error ? "error" : "success");
+    }
+  } catch (error) {
+    renderDriveSync(null, error.message);
+  } finally {
+    driveButton.disabled = false;
+    driveButton.textContent = "Check now";
+  }
+}
+
+driveButton.addEventListener("click", checkDriveInbox);
+driveReviewButton.addEventListener("click", async () => {
+  driveReviewButton.disabled = true;
+  driveReviewButton.textContent = "Loading…";
+  try {
+    const response = await fetch("/api/games/drive-inbox");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.message || "Could not load the Drive inbox");
+    importInput.value = "";
+    importItems = [result.inbox];
+    await previewImport();
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    driveReviewButton.disabled = false;
+    driveReviewButton.textContent = "Review inbox";
+  }
+});
+
 buildResultRows();
 $("#game-date").value = localDateValue();
 render();
 loadGames();
 prefillCurrentPlayers();
+checkDriveInbox();

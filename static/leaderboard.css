@@ -85,6 +85,13 @@ h2 { margin: 3px 0 0; font-size: 1.3rem; letter-spacing: -.02em; }
 .recent-row { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid #372f45; border-radius: 12px; background: #100d19; font-size: .84rem; }
 .recent-date { color: var(--muted); font-weight: 700; }
 .recent-winner { min-width: 0; overflow: hidden; color: var(--gold); text-overflow: ellipsis; white-space: nowrap; }
+.drive-sync { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid #372f45; border-radius: 12px; background: #100d19; font-size: .84rem; }
+.drive-sync-text { display: grid; gap: 3px; min-width: 0; color: var(--muted); line-height: 1.4; }
+.drive-sync-text strong { color: #fff; }
+.drive-sync-text .is-warning { color: var(--gold); }
+.drive-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drive-sync-button { width: auto; min-height: 0; padding: 8px 14px; font-size: .8rem; }
+.drive-sync-button.is-quiet { border-color: #4a3d63; background: transparent; color: #d4c3f5; }
 .import-file input { min-height: 0; padding: 10px 12px; cursor: pointer; }
 .import-preview { display: grid; gap: 12px; margin-top: 16px; }
 .import-heading { margin: 0; color: var(--muted); font-size: .84rem; }

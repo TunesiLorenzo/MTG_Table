@@ -235,6 +235,7 @@ COMMANDER_FX_EFFECTS = (
     ("mana", "Mana orbit"),
     ("cosmic", "Cosmic"),
     ("treasure", "Treasure"),
+    ("clockwork", "Clockwork & sparks"),
     ("none", "No animation"),
 )
 COMMANDER_FX_LABELS = dict(COMMANDER_FX_EFFECTS)
@@ -1416,18 +1417,37 @@ def import_games():
     submissions = import_submissions(payload.get("items"))
     if not submissions:
         raise ValueError("This file does not contain any games")
-    known = lambda name: bool(roster_deck(name)[0])
     chosen = payload.get("import")
+    if not isinstance(chosen, list):
+        with history_lock:
+            plan = plan_game_import(submissions, game_history, roster_deck_known)
+        for entry in plan["entries"]:
+            entry.pop("index", None)
+        return ok("Preview ready", **plan)
+    chosen = {value for value in chosen if isinstance(value, str)}
+    result = apply_game_import(submissions, lambda entry: entry["id"] in chosen, payload.get("add_decks", True))
+    if not result["picked"]:
+        raise ValueError("Those games are already on the leaderboard" if chosen else "Choose at least one game to import")
+    return ok(import_message(result), imported=[entry["id"] for entry in result["picked"]], decks=result["decks"]), 201
+
+
+def roster_deck_known(name):
+    return bool(roster_deck(name)[0])
+
+
+def apply_game_import(submissions, choose, add_decks=True):
+    """Add the importable games that `choose(entry)` picks from the import
+    plan, and the new decks they name to the roster.
+
+    The plan is made again here, under the history lock, so a game imported
+    meanwhile (by the Drive sync, or another page) is not added twice.
+    """
     with history_lock:
-        plan = plan_game_import(submissions, game_history, known)
-        if not isinstance(chosen, list):
-            for entry in plan["entries"]:
-                entry.pop("index", None)
-            return ok("Preview ready", **plan)
-        chosen = {value for value in chosen if isinstance(value, str)}
-        picked = [entry for entry in plan["entries"] if entry["status"] in IMPORTABLE_STATUSES and entry["id"] in chosen]
+        plan = plan_game_import(submissions, game_history, roster_deck_known)
+        picked = [entry for entry in plan["entries"] if entry["status"] in IMPORTABLE_STATUSES and choose(entry)]
+        result = {"plan": plan, "picked": picked, "corrected": 0, "decks": [], "failed_decks": []}
         if not picked:
-            raise ValueError("Those games are already on the leaderboard" if chosen else "Choose at least one game to import")
+            return result
         before = list(game_history)
         corrected = 0
         for entry in picked:
@@ -1444,22 +1464,27 @@ def import_games():
             game_history[:] = before
             raise
 
+    result["corrected"] = corrected
+
     # The decks come after the games are safe: a deck that cannot be saved
     # costs its roster entry, never the results.
-    added_decks, failed_decks = [], []
-    if payload.get("add_decks", True):
+    if add_decks:
         picked_ids = {entry["id"] for entry in picked}
         for deck in plan["new_decks"]:
-            if deck["game"] not in picked_ids or known(deck["name"]):
+            if deck["game"] not in picked_ids or roster_deck_known(deck["name"]):
                 continue
             try:
                 save_roster_entry("decks", deck["name"], {"commander": deck["commander"], "colors": deck["colors"]})
-                added_decks.append(deck["name"])
+                result["decks"].append(deck["name"])
             except (OSError, ValueError) as error:
                 app.logger.warning("Could not add deck %s to the roster (%s)", deck["name"], error)
-                failed_decks.append(deck["name"])
+                result["failed_decks"].append(deck["name"])
+    return result
 
-    count = len(picked)
+
+def import_message(result):
+    count, corrected = len(result["picked"]), result["corrected"]
+    added_decks, failed_decks = result["decks"], result["failed_decks"]
     message = f"Imported {count} game{'s' if count != 1 else ''}"
     if corrected:
         message += f" ({corrected} correction{'s' if corrected != 1 else ''})"
@@ -1467,7 +1492,175 @@ def import_games():
         message += f", added {len(added_decks)} deck{'s' if len(added_decks) != 1 else ''} to the roster"
     if failed_decks:
         message += f"; could not add {', '.join(failed_decks)} to the roster"
-    return ok(message, imported=[entry["id"] for entry in picked], decks=added_decks), 201
+    return message
+
+
+# -----------------------------
+# DRIVE INBOX SYNC
+# -----------------------------
+# While the server runs, games the phone tracker sent to the Drive inbox
+# (drive/inbox.gs) are imported by themselves and pushed to the public site:
+# every few minutes, and whenever the entry page opens. Set MTG_DRIVE_SYNC=0
+# to turn it off; MTG_INBOX_URL points it at another deployment.
+DRIVE_SYNC_SECONDS = 5 * 60
+DRIVE_SYNC_FIRST_DELAY = 15
+# New games and corrections go in by themselves. A game with the same result
+# as one typed in by hand ("match") would most likely be counted twice, so it
+# waits on the import card for someone to decide.
+DRIVE_AUTO_STATUSES = {"new", "correction"}
+drive_sync_lock = threading.Lock()
+drive_sync_state = {
+    "url": "", "checked_at": None, "error": None, "waiting": 0,
+    "last_import": None, "published_at": None, "publish_error": None, "publish_pending": False,
+}
+
+
+def drive_sync_enabled():
+    return os.environ.get("MTG_DRIVE_SYNC", "1").strip() != "0"
+
+
+def drive_inbox_url():
+    """The inbox the phone tracker sends to: the URL in js/game-inbox.js, so
+    the two cannot drift apart, unless MTG_INBOX_URL says otherwise."""
+    url = os.environ.get("MTG_INBOX_URL", "").strip()
+    if url:
+        return url
+    try:
+        script = (BASE_DIR / "js" / "game-inbox.js").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r"https://script\.google\.com/macros/s/[\w-]+/exec", script)
+    return match.group(0) if match else ""
+
+
+def fetch_drive_inbox(url):
+    # Apps Script answers through a redirect, which urllib follows.
+    lookup = urllib.request.Request(url, headers={"User-Agent": "MTGTable/1.0", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(lookup, timeout=45) as response:
+            inbox = json.load(response)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"The Drive inbox answered {error.code}") from error
+    except (urllib.error.URLError, OSError) as error:
+        raise RuntimeError(f"Could not reach the Drive inbox: {getattr(error, 'reason', error)}") from error
+    except ValueError as error:
+        raise RuntimeError("The Drive inbox did not answer with JSON") from error
+    if isinstance(inbox, dict) and inbox.get("ok") is False:
+        raise RuntimeError(f"The Drive inbox says: {inbox.get('error') or 'unknown error'}")
+    if not isinstance(inbox, dict) or inbox.get("format") != "mtg-table-inbox":
+        raise RuntimeError("The Drive inbox answered with something that is not an MTG Table inbox")
+    return inbox
+
+
+def publish_game_history():
+    """Commit game_history.json alone and push it.
+
+    Only the results go out by themselves. Roster edits, pictures and sounds
+    can stop the site building, so they wait for the Publish button, which
+    checks the build first. A deck the import added still shows on the site
+    from its games; its roster details follow with the next Publish.
+    """
+    with publish_lock:
+        branch = run_git("rev-parse", "--abbrev-ref", "HEAD")
+        if branch != PUBLISH_BRANCH:
+            raise RuntimeError(f"The site is published from {PUBLISH_BRANCH}, but this checkout is on {branch}")
+        if run_git("status", "--porcelain", "--", HISTORY_FILE.name):
+            run_git("add", "--", HISTORY_FILE.name)
+            # With paths, git commits only those: anything else staged stays staged.
+            run_git("commit", "-m", f"Add games from the Drive inbox ({datetime.now():%Y-%m-%d})",
+                    "--", HISTORY_FILE.name)
+        if publish_state()["unpushed"]:
+            run_git("push", timeout=180)
+
+
+def drive_sync_snapshot():
+    # Not under drive_sync_lock: a check can hold it for a minute or more, and
+    # a status read should not wait on it.
+    return {**copy.deepcopy(drive_sync_state), "enabled": drive_sync_enabled()}
+
+
+def sync_drive_inbox():
+    """Fetch the Drive inbox, import what is new, and publish it.
+
+    A push that fails (offline, no credentials) is tried again on the next
+    check, whether or not that check brings anything new.
+    """
+    url = drive_inbox_url()
+    if not url:
+        raise RuntimeError("No Drive inbox URL: set it in js/game-inbox.js or MTG_INBOX_URL")
+    with drive_sync_lock:
+        state = drive_sync_state
+        state["url"] = url
+        try:
+            submissions = import_submissions(fetch_drive_inbox(url))
+            result = apply_game_import(submissions, lambda entry: entry["status"] in DRIVE_AUTO_STATUSES)
+            state["error"] = None
+        except Exception as error:
+            state["error"] = str(error) or "Unexpected error"
+            raise
+        finally:
+            state["checked_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        state["waiting"] = sum(entry["status"] == "match" for entry in result["plan"]["entries"])
+        if result["picked"]:
+            state["last_import"] = {"at": state["checked_at"], "count": len(result["picked"]),
+                                    "message": import_message(result),
+                                    "ids": [entry["id"] for entry in result["picked"]]}
+            app.logger.info("Drive inbox: %s", state["last_import"]["message"])
+        if result["picked"] or state["publish_pending"]:
+            try:
+                publish_game_history()
+                state.update(published_at=state["checked_at"], publish_error=None, publish_pending=False)
+            except Exception as error:
+                state.update(publish_error=str(error) or "Unexpected error", publish_pending=True)
+                app.logger.warning("Drive inbox: imported, but could not publish (%s)", error)
+        return {"imported": len(result["picked"]), "message": import_message(result) if result["picked"] else ""}
+
+
+def start_drive_sync():
+    """Check the Drive inbox in the background while the server runs."""
+    if not drive_sync_enabled() or not drive_inbox_url():
+        return
+
+    def loop():
+        time.sleep(DRIVE_SYNC_FIRST_DELAY)
+        while True:
+            try:
+                sync_drive_inbox()
+            except Exception as error:
+                app.logger.warning("Drive inbox check failed: %s", error)
+            time.sleep(DRIVE_SYNC_SECONDS)
+
+    threading.Thread(target=loop, name="drive-sync", daemon=True).start()
+
+
+@app.get("/api/games/drive-sync")
+def drive_sync_status():
+    return ok("Drive inbox status", sync=drive_sync_snapshot())
+
+
+@app.get("/api/games/drive-inbox")
+def drive_inbox_contents():
+    """The Drive inbox itself, for the import card to preview like a file."""
+    url = drive_inbox_url()
+    if not url:
+        raise RuntimeError("No Drive inbox URL: set it in js/game-inbox.js or MTG_INBOX_URL")
+    return ok("Drive inbox loaded", inbox=fetch_drive_inbox(url))
+
+
+@app.post("/api/games/drive-sync")
+def drive_sync_now():
+    """Check the Drive inbox now: the entry page asks as it opens."""
+    if not drive_sync_enabled():
+        raise ValueError("Checking the Drive inbox is turned off (MTG_DRIVE_SYNC=0)")
+    outcome = sync_drive_inbox()
+    sync = drive_sync_snapshot()
+    if not outcome["imported"]:
+        message = "Drive inbox checked: nothing new"
+    elif sync["publish_error"]:
+        message = f"{outcome['message']}, but could not publish: {sync['publish_error']}"
+    else:
+        message = f"{outcome['message']} and published to the site"
+    return ok(message, sync=sync, imported=outcome["imported"])
 
 
 @app.post("/api/historical-wins")
@@ -2087,6 +2280,58 @@ def rename_public_deck():
     action = "Merged" if merging else "Renamed"
     return ok(f"{action} {source} as {target}", roster=roster, target=target,
               merged=merging, games=renamed_games, profiles=profiles, publish=publish_state())
+
+
+def deck_game_count(history, name):
+    """How many recorded results used a deck, matched as the statistics match."""
+    return sum(1 for game in history for player in game.get("players") or []
+               if isinstance(player, dict) and deck_names_match(player.get("deck"), name))
+
+
+def deleted_deck_roster(roster, name):
+    """Take a deck out of the roster: its own entry, and its name on every
+    player's list of decks. Returns whether it was anywhere to take out."""
+    decks = roster["decks"]
+    keys = [key for key in decks if deck_names_match(key, name)]
+    for key in keys:
+        decks.pop(key)
+    found = bool(keys)
+    for entry in roster["players"].values():
+        listed = entry.get("decks")
+        if not isinstance(listed, list):
+            continue
+        kept = [deck for deck in listed if not deck_names_match(deck, name)]
+        if kept != listed:
+            found = True
+            if kept:
+                entry["decks"] = kept
+            else:
+                entry.pop("decks")
+    return found
+
+
+@app.post("/api/public/decks/delete")
+def delete_public_deck():
+    """Delete a deck that has never been played.
+
+    Only an unplayed deck can go: recorded results name their deck, and
+    deleting one with results would leave them pointing at nothing (merge it
+    into another deck instead). Table presets for the deck are left alone.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    name = clean_game_text(payload.get("name"), "Deck name", GAME_DECK_MAX)
+    # Held throughout, so no game can be recorded with the deck mid-delete.
+    with history_lock:
+        played = deck_game_count(game_history, name)
+        if played:
+            raise ValueError(f"{name} has {played} recorded game{'s' if played != 1 else ''}, so it cannot be "
+                             "deleted. Merge it into another deck or mark it discontinued instead")
+        with roster_lock:
+            roster = load_roster()
+            if not deleted_deck_roster(roster, name):
+                raise ValueError(f"No deck called {name}")
+            write_json_file(ROSTER_FILE, roster)
+    return ok(f"Deleted {name}", roster=roster, publish=publish_state())
 
 
 def clean_card_fx(value, count):
@@ -3324,6 +3569,7 @@ if __name__ == "__main__":
     print("On your phone, use http://rpgtable.local:5001 while on the same Wi-Fi")
     wait_for_previous_server("0.0.0.0", 5001)
     mdns.register(5001)
+    start_drive_sync()
     try:
         app.run(host="0.0.0.0", port=5001, threaded=True)
     finally:

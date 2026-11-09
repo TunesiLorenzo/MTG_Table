@@ -18,6 +18,8 @@ main { padding-bottom: 130px; }
 .editor-card .editor-add, .editor-card .editor-remove { border-color: #5a4630; background: transparent; color: #e6cfa6; }
 .editor-card .editor-add { justify-self: start; }
 .editor-card .editor-remove { flex: none; padding: 0 13px; }
+.editor-card .editor-delete { border-color: #7a3434; color: #f0b0a8; }
+.editor-card .editor-delete:hover:not(:disabled) { background: #3a1716; }
 .editor-actions { display: flex; align-items: center; gap: 14px; }
 /* Colour identity: a mana symbol per colour, lit when chosen. */
 .editor-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

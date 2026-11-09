@@ -6,8 +6,19 @@ Friends need no Google account and no access to the file: the script runs as
 you and is the only thing that writes to it. It only ever appends, and a game
 it already has is not added twice, so a phone can safely resend.
 
-The leaderboard is not touched. You read the inbox and import games into
-`game_history.json` yourself.
+The script never touches the leaderboard. The table's server does: while
+`web.py` (or `serve.py`) runs, it reads the inbox every five minutes, and
+whenever `/leaderboard/entry` opens. It imports new games and corrections into
+`game_history.json`, then commits that file alone and pushes it, which
+republishes the public site. A game with the same result as one typed in by
+hand is left for you to add from the entry page's **Import games** card
+(**Review inbox**). New decks join the roster locally and reach the site with
+the next **Publish**. Set `MTG_DRIVE_SYNC=0` to turn this off, or
+`MTG_INBOX_URL` to read another deployment. Otherwise the URL comes from
+`js/game-inbox.js`.
+
+**Anything valid in the inbox goes live by itself**, so delete test entries
+from `mtg_games.json` before the server next runs.
 
 ## Setup (once, about 10 minutes)
 

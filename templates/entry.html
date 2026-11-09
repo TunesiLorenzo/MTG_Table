@@ -67,11 +67,18 @@
       <details class="card tool-card" id="import-card">
         <summary class="tool-summary">
           <span class="tool-title"><span class="eyebrow">PHONE TRACKER</span><span class="tool-heading">Import games</span></span>
-          <span class="tool-hint">From the Drive inbox (mtg_games.json) or a downloaded game</span>
+          <span class="tool-hint" id="drive-sync-hint">From the Drive inbox (mtg_games.json) or a downloaded game</span>
           <span class="tool-chevron" aria-hidden="true">&#9662;</span>
         </summary>
         <div class="tool-body">
-          <p class="historical-copy">Choose one or more files. Games already on the leaderboard are left out, and so is any game a later correction replaces, so the same inbox can be imported again and again.</p>
+          <div class="drive-sync">
+            <div class="drive-sync-text" id="drive-sync-status" aria-live="polite">Checking the Drive inbox…</div>
+            <div class="drive-sync-actions">
+              <button type="button" class="drive-sync-button" id="drive-sync-button">Check now</button>
+              <button type="button" class="drive-sync-button is-quiet" id="drive-review-button">Review inbox</button>
+            </div>
+          </div>
+          <p class="historical-copy">New games and corrections in the Drive inbox are imported and published to the site by themselves, every few minutes while this server runs. To pick games by hand, review the inbox or choose one or more files. Games already on the leaderboard are left out, and so is any game a later correction replaces, so the same inbox can be imported again and again.</p>
           <label class="import-file">
             <input id="import-file" type="file" accept=".json,application/json" multiple>
           </label>

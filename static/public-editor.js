@@ -230,7 +230,9 @@
            <button type="button" class="editor-add" data-add-card>+ Add a commander card</button>
            ${soundField(entry.sound || "", entry.volume)}
            <div class="editor-field"><span>Status</span><label class="editor-check"><input type="checkbox" data-discontinued${entry.discontinued ? " checked" : ""}> Discontinued</label></div>
-           <p class="editor-hint">No longer played. It keeps its page, art, sound and results, with a banner saying it is retired.</p>`
+           <p class="editor-hint">No longer played. It keeps its page, art, sound and results, with a banner saying it is retired.</p>
+           ${subject.games ? "" : `<div class="editor-field"><span>Delete</span><button type="button" class="editor-add editor-delete" data-delete-deck>Delete this deck</button></div>
+           <p class="editor-hint">Only for decks never played: removes its page and takes it off every player's deck list. Table presets for it are kept.</p>`}`
         : `${pictureField("portrait", "Profile photo", entry.portrait || "", "Initial only")}
            ${pictureField("background", "Banner", entry.background || "", "Cycle through their decks")}
            ${focusField("background", entry.background_focus)}
@@ -425,7 +427,7 @@
           : `Rename ${subject.name} to ${target}? Every recorded game using this deck will be renamed too.`;
         if (!window.confirm(message)) return;
         rename.disabled = true;
-        status.textContent = existing ? "Merging deckâ€¦" : "Renaming deckâ€¦";
+        status.textContent = existing ? "Merging deck…" : "Renaming deck…";
         status.className = "editor-status";
         call("/api/public/decks/rename", { source: subject.name, target })
           .then(async (result) => {
@@ -439,6 +441,28 @@
             status.textContent = error.message;
             status.className = "editor-status error";
             rename.disabled = false;
+          });
+        return;
+      }
+      const deleteDeck = event.target.closest("[data-delete-deck]");
+      if (deleteDeck) {
+        if (!window.confirm(`Delete ${subject.name}? Its page, commander, art and sound settings are removed, and it is taken off every player's deck list. This cannot be undone.`)) return;
+        deleteDeck.disabled = true;
+        soundPreview.pause();
+        status.textContent = "Deleting deck…";
+        status.className = "editor-status";
+        call("/api/public/decks/delete", { name: subject.name })
+          .then(async (result) => {
+            source = result.roster;
+            publish = result.publish;
+            showPublishState(`${result.message}. Commit & push to publish it.`, "success");
+            window.location.hash = "#/";
+            await start();
+          })
+          .catch((error) => {
+            status.textContent = error.message;
+            status.className = "editor-status error";
+            deleteDeck.disabled = false;
           });
         return;
       }

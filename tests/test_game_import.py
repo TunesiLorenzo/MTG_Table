@@ -9,7 +9,7 @@ from uuid import uuid4
 
 FUNCTIONS = {'import_submissions', 'imported_created_at', 'game_signature', 'plan_game_import',
              'game_from_payload', 'clean_game_text', 'clean_game_stats',
-             'deck_names_match', 'renamed_deck_roster'}
+             'deck_names_match', 'renamed_deck_roster', 'deleted_deck_roster', 'deck_game_count'}
 CONSTANTS = {'IMPORTABLE_STATUSES', 'GAME_STAT_FIELDS', 'GAME_STAT_MAX', 'GAME_ID_PATTERN',
              'GAME_PLAYER_COUNT', 'GAME_NAME_MAX', 'GAME_DECK_MAX', 'ROSTER_COMMANDER_MAX'}
 
@@ -130,6 +130,29 @@ class GameImportTests(unittest.TestCase):
         self.assertEqual(roster['decks']['Existing deck']['colors'], 'WBG')
         self.assertEqual(roster['players']['Ny']['decks'], ['Existing deck'])
         self.assertEqual(roster['players']['Coach']['decks'], ['Existing deck'])
+
+    def test_deleting_a_deck_clears_its_entry_and_player_lists(self):
+        roster = {
+            'decks': {'Spare deck': {'commander': 'Ghave'}, 'Kept deck': {'commander': 'Muldrotha'}},
+            'players': {
+                'Ny': {'decks': ['spare DECK', 'Kept deck'], 'portrait': 'x.jpg'},
+                'Coach': {'decks': ['Spare deck']},
+                'Borgo': {'portrait': 'y.jpg'},
+            },
+        }
+        self.assertTrue(self.scope['deleted_deck_roster'](roster, 'Spare deck'))
+        self.assertEqual(list(roster['decks']), ['Kept deck'])
+        self.assertEqual(roster['players']['Ny'], {'decks': ['Kept deck'], 'portrait': 'x.jpg'})
+        self.assertEqual(roster['players']['Coach'], {})
+        self.assertEqual(roster['players']['Borgo'], {'portrait': 'y.jpg'})
+        self.assertFalse(self.scope['deleted_deck_roster'](roster, 'Spare deck'))
+
+    def test_deck_game_count_matches_names_as_the_statistics_do(self):
+        history = [game(A), game(B, decks=('niv-mizzet', 'Urza', 'Jace', 'Raffine'))]
+        count = self.scope['deck_game_count']
+        self.assertEqual(count(history, 'Niv-Mizzet'), 2)
+        self.assertEqual(count(history, 'Urza'), 1)
+        self.assertEqual(count(history, 'Ghave'), 0)
 
 
 if __name__ == '__main__':

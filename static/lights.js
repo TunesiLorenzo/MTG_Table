@@ -569,6 +569,7 @@ const COMMANDER_FX_HINTS = {
   mana: "Focus on what the five mana orbs should circle. An eyes point adds glowing eyes.",
   cosmic: "Stars and a nebula fill the dark parts of the art. An eyes point adds glowing eyes.",
   treasure: "Gold glints on the bright parts of the art and coins fall. An eyes point adds glowing eyes.",
+  clockwork: "Gears turn in the corners and grind out sparks; a welding arc at the focus, and two more wandering over the art, throw showers of sparks. An eyes point adds glowing eyes.",
   none: "The card stays still.",
 };
 const COMMANDER_FX_DEFAULT_HINT = "Moves the art window. An eyes point adds glowing eyes on top.";

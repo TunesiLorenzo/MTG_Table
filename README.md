@@ -788,7 +788,8 @@ arcane flow, heat haze & embers, storm, shadow creep, wind sway, radiance,
 caustics, artifact glint, glowing eyes, roar (the card shakes while sound waves
 ripple out of the mouth), quake, heartbeat, frost, snowfall, toxic, void rift,
 inferno, ghost, blood drain, overgrowth, time ripple, rain, mana orbit, cosmic,
-treasure, or none. A live preview sits beside the
+treasure, clockwork & sparks (turning gears and welding sparks for machines,
+artificers and robots), or none. A live preview sits beside the
 menu. Choose **Place focus** or **Place eyes / mouth** and click the preview to
 set the points the effect works around — the chest that breathes, the source of
 the light, the mouth the breath leaves from, a pair of eyes to light up. **Art
