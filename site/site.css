@@ -103,6 +103,19 @@ h2 { margin: 3px 0 0; font: 700 1.22rem/1.2 var(--display); letter-spacing: .01e
 .muted { color: var(--muted); font: italic .95rem var(--serif); }
 .back-link { display: inline-block; margin: 6px 0 16px; padding: 9px 13px; border: 1px solid #5a4630; border-radius: 11px; color: #e6cfa6; font-size: .82rem; font-weight: 700; }
 .back-link:hover { color: #fff; border-color: var(--bronze); }
+.page-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 16px; }
+.page-nav .back-link { flex: none; margin: 0; }
+.stepper { display: flex; align-items: center; gap: 2px; min-width: 0; padding: 2px; border: 1px solid #5a4630; border-radius: 12px; background: #0f0d0ae0; }
+.step-link { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 220px; min-height: 36px; padding: 6px 11px; border: 1px solid transparent; border-radius: 9px; color: #e6cfa6; font-size: .82rem; font-weight: 700; touch-action: manipulation; }
+.step-link:hover { color: #fff; border-color: var(--bronze); }
+.step-link:focus-visible { outline: 2px solid var(--bronze-light); outline-offset: 1px; }
+.step-arrow { flex: none; font-size: 1.35rem; line-height: .8; }
+.step-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-count { flex: none; color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .06em; }
+@media (max-width: 700px) {
+  .step-name { display: none; }
+  .step-link { justify-content: center; min-width: 44px; padding: 7px 10px; }
+}
 .empty { display: grid; min-height: 150px; place-items: center; padding: 20px; border: 1px dashed #4a3d2f; border-radius: 14px; color: #9b8f7e; font: italic 1rem var(--serif); text-align: center; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 

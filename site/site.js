@@ -405,14 +405,45 @@ const heading = (eyebrow, title, note = "") => `<div class="section-heading"><di
    player, and everything else to the leaderboard. Where a page was opened
    from is kept in its history entry; see the router. */
 const routeOf = (hash) => String(hash || "").replace(/^#\/?/, "");
-function backLink(kind) {
+function openedFromPlayer() {
   const [from, ...rest] = routeOf(history.state?.from).split("/");
+  if (from !== "player") return null;
   let name = rest.join("/");
   try { name = decodeURIComponent(name); } catch (error) { /* as written */ }
-  const player = kind === "deck" && from === "player" && stats.playerIndex.get(keyOf(name));
+  return stats.playerIndex.get(keyOf(name)) || null;
+}
+function backLink(kind) {
+  const player = kind === "deck" && openedFromPlayer();
   return player
     ? `<a class="back-link" href="${playerHref(player.name)}">&larr; ${escapeHtml(player.name)}</a>`
     : '<a class="back-link" href="#/">&larr; Leaderboard</a>';
+}
+
+/* The pages either side of this one, in the order the leaderboard lists them:
+   players by standing, decks by wins. A deck opened from a player's page
+   steps through that player's decks instead, in the order their page shows
+   them. Both ends wrap round. */
+function neighbours(kind, name) {
+  const owner = kind === "deck" && openedFromPlayer();
+  const ownDecks = owner ? byPlay(owner.decks) : [];
+  const list = kind === "player" ? stats.players
+    : ownDecks.some((deck) => keyOf(deck.name) === keyOf(name)) ? ownDecks : stats.decks;
+  const index = list.findIndex((entry) => keyOf(entry.name) === keyOf(name));
+  if (index < 0 || list.length < 2) return null;
+  const at = (step) => list[(index + step + list.length) % list.length].name;
+  return { prev: at(-1), next: at(1), index, count: list.length };
+}
+
+/* The back link, with arrows to the previous and next player or deck. */
+function pageNav(kind, name) {
+  const near = neighbours(kind, name);
+  const href = kind === "player" ? playerHref : deckHref;
+  const step = (rel, target) => {
+    const label = `${rel === "prev" ? "Previous" : "Next"} ${kind}: ${target}`;
+    const text = `<span class="step-name">${escapeHtml(target)}</span>`;
+    return `<a class="step-link" href="${href(target)}" data-step="${rel}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${rel === "prev" ? `<span class="step-arrow" aria-hidden="true">&lsaquo;</span>${text}` : `${text}<span class="step-arrow" aria-hidden="true">&rsaquo;</span>`}</a>`;
+  };
+  return `<nav class="page-nav">${backLink(kind)}${near ? `<span class="stepper">${step("prev", near.prev)}<span class="step-count">${near.index + 1} / ${near.count}</span>${step("next", near.next)}</span>` : ""}</nav>`;
 }
 
 /* ----------------------------------------------------------- game stats --
@@ -556,7 +587,7 @@ function playerView(name) {
   const portrait = playerInfo(player.name).portrait;
   document.title = `${player.name} · MTG Leaderboard`;
   return `
-    ${backLink("player")}
+    ${pageNav("player", player.name)}
     <section class="hero${slides.length ? " has-art" : ""}${slides.some((slide) => slide.discontinued) ? " has-sash" : ""}${slides[0]?.discontinued ? " shows-discontinued" : ""}"${styleAttr(manaVar(playerColors(player)))}>
       ${slides.length ? `<span class="hero-slides" aria-hidden="true">${slides.map((slide) => `<span class="hero-slide${slide.discontinued ? " is-discontinued" : ""}" data-label="${escapeHtml(slide.label)}"${styleAttr(artVar(slide.picture), focusVar(slide.focus))}></span>`).join("")}</span>` : ""}
       ${slides.some((slide) => slide.discontinued) ? '<span class="discontinued-sash is-cycling" aria-hidden="true">Discontinued</span>' : ""}
@@ -597,7 +628,7 @@ function deckView(name) {
   ];
   document.title = `${deck.name} · MTG Leaderboard`;
   return `
-    ${backLink("deck")}
+    ${pageNav("deck", deck.name)}
     <section class="hero${info.art ? " has-art" : ""}${isDiscontinued(deck.name) ? " is-discontinued" : ""}"${styleAttr(artVar(info.art), focusVar(info.art_focus), manaVar(colors))}>
       ${discontinuedSash(deck.name)}
       ${info.sound ? soundButton(info.sound, info.volume) : ""}
@@ -1654,6 +1685,53 @@ app.addEventListener("click", (event) => {
     history.back();
   }
 });
+
+/* Stepping to the previous or next player or deck swaps the page in place
+   rather than adding to the history: back still returns to wherever the run
+   of pages was opened from, and the back link keeps pointing there too. */
+app.addEventListener("click", (event) => {
+  const link = event.target.closest("[data-step]");
+  if (!link || event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  history.replaceState(history.state, "", link.getAttribute("href"));
+  currentHash = window.location.hash;
+  route();
+  window.scrollTo(0, 0);
+});
+function stepPage(rel) {
+  const link = app.querySelector(`[data-step="${rel}"]`);
+  if (!link) return false;
+  link.click();
+  return true;
+}
+const busy = () => lightbox.open || !settingsPanel.hidden || document.querySelector(".grimoire");
+/* The arrow keys step too, unless something else has the keyboard. */
+document.addEventListener("keydown", (event) => {
+  if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || busy()) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable], .table-wrap")) return;
+  if (stepPage(event.key === "ArrowLeft" ? "prev" : "next")) event.preventDefault();
+});
+/* So does a swipe sideways: left for the next page, right for the one before.
+   A swipe from the very edge of the screen is left to the browser, and one
+   across a table that scrolls sideways or a form is left to them. */
+let swipe = null;
+app.addEventListener("touchstart", (event) => {
+  const touch = event.touches[0];
+  swipe = event.touches.length === 1 && !busy() && touch.clientX > 24 && touch.clientX < window.innerWidth - 24
+    && !event.target.closest(".table-wrap, input, textarea, select, form")
+    ? { x: touch.clientX, y: touch.clientY, at: performance.now() } : null;
+}, { passive: true });
+app.addEventListener("touchend", (event) => {
+  const start = swipe;
+  swipe = null;
+  const touch = event.changedTouches[0];
+  if (!start || !touch || performance.now() - start.at > 800) return;
+  const dx = touch.clientX - start.x;
+  const dy = touch.clientY - start.y;
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+  stepPage(dx < 0 ? "next" : "prev");
+}, { passive: true });
+app.addEventListener("touchcancel", () => { swipe = null; }, { passive: true });
 
 async function loadJson(path) {
   const response = await fetch(path, { cache: "no-cache" });

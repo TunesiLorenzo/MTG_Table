@@ -37,7 +37,10 @@
       "portrait": "Backgrounds/Players/VoltiBase/Dadda.jfif"
     },
     "Dave": {
-      "portrait": "Backgrounds/Players/VoltiBase/Dave.jfif"
+      "portrait": "Backgrounds/Players/VoltiBase/Dave.jfif",
+      "decks": [
+        "Satya"
+      ]
     },
     "Tune": {
       "portrait": "Backgrounds/Players/VoltiBase/Tune.jfif"
@@ -201,11 +204,13 @@
     "Vaevictis": {
       "commander": "Vaevictis asmadi, the Dire",
       "colors": "BRG",
+      "card_colors": "BRG",
+      "type_line": "Legendary Creature \u2014 Elder Dragon",
+      "art": "Backgrounds/Players/Vaevictis.png",
+      "art_focus": "48.3% 0%",
       "cards": [
         "Backgrounds/Commander/Vaevictis.jpg"
-      ],
-      "card_colors": "BRG",
-      "type_line": "Legendary Creature \u2014 Elder Dragon"
+      ]
     },
     "Lumra": {
       "commander": "Lumra, Bellows of the beast",
@@ -338,11 +343,31 @@
         }
       ]
     },
-    "gg": {
-      "commander": "Liliana, Heretical Healer // Liliana, Defiant Necromancer",
-      "colors": "B",
-      "card_colors": "B",
-      "type_line": "Legendary Creature \u2014 Human Cleric // Legendary Planeswalker \u2014 Liliana"
+    "Satya": {
+      "commander": "Satya, Aetherflux Genius & Cayth, Famed Mechanist",
+      "art": "Backgrounds/Players/Satya.png",
+      "cards": [
+        "Backgrounds/Commander/Satya.jpeg",
+        "Backgrounds/Commander/Cayth.jpeg"
+      ],
+      "sound": "Satya.wav",
+      "card_fx": [
+        {
+          "effect": "clockwork",
+          "focus": "59% 49.1%",
+          "glow": "80.8% 25.1%",
+          "area": "art"
+        },
+        {
+          "effect": "clockwork",
+          "focus": "55.9% 23%",
+          "glow": "",
+          "area": "card"
+        }
+      ],
+      "colors": "WUR",
+      "card_colors": "WUR",
+      "type_line": "Legendary Creature \u2014 Human Artificer // Legendary Creature \u2014 Dwarf Artificer"
     }
   }
 }

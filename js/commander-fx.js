@@ -22,7 +22,7 @@
   var EFFECTS = ['foil', 'breath', 'dragon', 'arcane', 'embers', 'storm', 'shadow',
                  'wind', 'radiance', 'caustics', 'glint', 'eyes',
                  'roar', 'heartbeat', 'frost', 'toxic', 'void', 'inferno', 'ghost', 'snow', 'quake',
-                 'blood', 'vines', 'time', 'rain', 'mana', 'cosmic', 'treasure'];
+                 'blood', 'vines', 'time', 'rain', 'mana', 'cosmic', 'treasure', 'clockwork'];
   /* The art window of a standard card frame, as fractions of the card image:
      left, top, right, bottom. */
   var ART_BOX = [0.075, 0.1, 0.925, 0.56];
@@ -115,6 +115,75 @@
     '  if (i == 2) return vec3(.6, .32, .8);',
     '  if (i == 3) return vec3(1., .32, .14);',
     '  return vec3(.3, .9, .38);',
+    '}',
+
+    /* A gear seen face on, for clockwork: its centre c and pitch radius r on */
+    /* the round2 scale, n teeth, turned by a. Two gears mesh when their n / r */
+    /* match and their centres sit r1 + r2 apart. Returns how much of the */
+    /* point is metal, and how brightly it is lit (above 1 is a highlight). */
+    'vec2 gear(vec2 p, vec2 c, float r, float n, float a) {',
+    '  vec2 d = p - c; float rr = length(d); float wa = atan(d.y, d.x); float ang = wa + a;',
+    '  float h = r * 6.2832 / n * .42; float root = r - h * .5;',
+    '  float edge = root + h * smoothstep(-.35, .35, sin(ang * n));',
+    '  float aa = .0025;',
+    '  float body = 1. - smoothstep(edge - aa, edge, rr);',
+    '  float off = abs(fract(ang * 5. / 6.2832) - .5) * 6.2832 / 5.;',
+    '  float sd = rr * sin(off) - r * .09;',
+    '  float spoke = 1. - smoothstep(0., aa, sd);',
+    '  float ring = smoothstep(r * .3, r * .3 + aa, rr) * (1. - smoothstep(r * .64 - aa, r * .64, rr));',
+    '  float window = ring * (1. - spoke);',
+    '  float axle = 1. - smoothstep(r * .1, r * .1 + aa, rr);',
+    '  float lit = .5 + .5 * dot(d / max(rr, .0001), vec2(-.6, -.8));',
+    /* Light on turned metal: a bright cross that stays put while the gear turns. */
+    '  float lathe = pow(abs(cos(wa * 2. + .9)), 8.);',
+    '  float outer = 1. - smoothstep(0., .008, edge - rr);',
+    '  float inner = exp(-pow((rr - r * .64) / .005, 2.)) + exp(-pow((rr - r * .3) / .005, 2.));',
+    '  float sideBevel = ring * exp(-pow(sd / .004, 2.));',
+    '  float line = 1. - smoothstep(0., .0025, edge - rr);',
+    '  float groove = exp(-pow((rr - root + .009) / .0018, 2.));',
+    '  float boss = 1. - smoothstep(r * .26, r * .26 + aa, rr);',
+    '  float shade = .38 + .26 * lit + .32 * lathe;',
+    '  shade += outer * (lit - .5) * 1.4 + inner * (.5 - lit) + boss * (.08 + .5 * pow(abs(cos(wa * 2. + .9)), 24.));',
+    '  shade *= (.9 + .14 * noise(vec2(rr * 300., 1.))) * (1. - .45 * groove) * (1. - .6 * line) * (1. - .35 * sideBevel);',
+    '  shade *= 1. - .12 * step(root, rr);',
+    '  return vec2(body * (1. - window) * (1. - axle), shade);',
+    '}',
+    /* Metal from a gear's shade: dark to bright, with a white-hot highlight. */
+    'vec3 metal(float sh, vec3 lo, vec3 hi) {',
+    '  return mix(lo, hi, clamp(sh, 0., 1.)) + vec3(1., .95, .82) * max(sh - 1., 0.) * .9;',
+    '}',
+    /* A burst of sparks for clockwork, at p (round2, from the source): each is */
+    /* thrown within dirA +- spread / 2, falls, and cools from white to red. */
+    /* bt is the time into burst bk; amount thins the sparks out. */
+    'vec3 sparkBurst(vec2 p, float bt, float bk, float dirA, float spread, float speed, float amount) {',
+    '  vec3 c = vec3(0.);',
+    '  for (int i = 0; i < 14; i++) {',
+    '    float fi = float(i);',
+    '    float life = .5 + .6 * hash(vec2(fi, bk + 2.2));',
+    '    float age = bt - hash(vec2(bk + fi * 1.7, 21.)) * .7;',
+    '    if (hash(vec2(fi, bk + 6.6)) < amount && age > 0. && age < life) {',
+    '      float a = dirA + (hash(vec2(fi, bk + 4.3)) - .5) * spread;',
+    '      vec2 v = vec2(cos(a), sin(a)) * speed * (.4 + .75 * hash(vec2(fi, bk + 9.1)));',
+    '      vec2 g = vec2(0., .65);',
+    '      vec2 pos = v * age + .5 * g * age * age;',
+    '      vec2 tail = pos - (v + g * age) * .06;',
+    '      vec2 pa = p - tail; vec2 ba = pos - tail;',
+    '      float k = clamp(dot(pa, ba) / max(dot(ba, ba), .000001), 0., 1.);',
+    '      vec2 q = pa - ba * k; float r2 = dot(q, q);',
+    '      float heat = 1. - age / life;',
+    '      float b = (exp(-r2 / .00002) + .3 * exp(-r2 / .0002)) * (.25 + .75 * k) * heat * (.75 + .25 * sin(age * 50. + fi * 7.));',
+    '      c += mix(vec3(.85, .16, .02), mix(vec3(1., .55, .1), vec3(1., .96, .78), smoothstep(.6, .95, heat)), smoothstep(.1, .5, heat)) * b;',
+    '    }',
+    '  }',
+    '  return c;',
+    '}',
+    /* A welding arc at p for the first .8 s of a burst, flickering, then the */
+    /* weld left glowing orange as it cools. */
+    'vec3 weldArc(vec2 p, float bt, float t, float size) {',
+    '  float r2 = dot(p, p) / size;',
+    '  float arc = (1. - smoothstep(.75, .9, bt)) * (.55 + .45 * hash(vec2(floor(t * 40.), size * 7.)));',
+    '  float cool = smoothstep(.1, .5, bt) * exp(-max(bt - .8, 0.) * 2.);',
+    '  return vec3(1., .92, .72) * (exp(-r2 / .0003) * 1.4 + exp(-r2 / .005) * .3) * arc + vec3(1., .38, .06) * exp(-r2 / .0004) * cool * .8;',
     '}',
 
     'void main() {',
@@ -579,6 +648,54 @@
     '    float coin = step(.84, ch) * (1. - smoothstep(.19, .22, length(cf / vec2(max(spin, .12), 1.))));',
     '    vec3 gold = mix(vec3(.62, .4, .08), vec3(1., .88, .45), spin);',
     '    col = mix(col, gold, clamp(coin * s, 0., 1.) * .9 * m);',
+    '  }',
+    /* Clockwork: brass and copper gears mesh and turn in the corners of the */
+    /* art, grinding out sparks where they meet; a welding arc at the focus and */
+    /* two more wandering over the art throw fountains of sparks. */
+    '  if (fx == 28) {',
+    '    vec2 gp = round2(uv);',
+    '    float w = t * .35;',
+    '    float r1 = .11; float n1 = 16.; float n2 = 10.; float r2 = r1 * n2 / n1;',
+    '    float th = -.12;',
+    '    float a1 = w; float a2 = -w * n1 / n2 - th * n1 / n2 - th - 3.1416; float a3 = -w * 1.3 + 1.;',
+    '    vec2 c1 = round2(vec2(u_art.x, u_art.w)) + vec2(.01, -.01);',
+    '    vec2 c2 = c1 + vec2(cos(th), sin(th)) * (r1 + r2);',
+    '    vec2 c3 = round2(vec2(u_art.z, u_art.y)) + vec2(-.005, .01);',
+    '    vec2 g1 = gear(gp, c1, r1, n1, a1);',
+    '    vec2 g2 = gear(gp, c2, r2, n2, a2);',
+    '    vec2 g3 = gear(gp, c3, .085, 13., a3);',
+    '    float cov = clamp(g1.x + g2.x + g3.x, 0., 1.);',
+    '    float ga = .95 * clamp(s, 0., 1.) * m;',
+    /* A drop shadow: the same gears a little down and right, darkening the art. */
+    '    vec2 so = vec2(-.008, -.011);',
+    '    float shadow = clamp(gear(gp + so, c1, r1, n1, a1).x + gear(gp + so, c2, r2, n2, a2).x + gear(gp + so, c3, .085, 13., a3).x, 0., 1.);',
+    '    col *= 1. - shadow * (1. - cov) * .55 * clamp(s, 0., 1.) * m;',
+    '    vec3 brassLo = vec3(.2, .12, .035); vec3 brassHi = vec3(1., .82, .46);',
+    '    col = mix(col, metal(g1.y, brassLo, brassHi), g1.x * ga);',
+    '    col = mix(col, metal(g2.y * .95, brassLo, brassHi), g2.x * ga);',
+    '    col = mix(col, metal(g3.y, vec3(.22, .08, .04), vec3(1., .66, .48)), g3.x * ga);',
+    '    vec3 spk = vec3(0.);',
+    /* The weld at the focus. */
+    '    float bk = floor(t / 2.8); float bt = t - bk * 2.8;',
+    '    vec2 fd = round2(uv - u_focus);',
+    '    spk += weldArc(fd, bt, t, 1.) + sparkBurst(fd, bt, bk, -1.5708, 3.4, .5, 1.);',
+    /* Two more welds, each somewhere new on every burst. */
+    '    for (int j = 0; j < 2; j++) {',
+    '      float fj = float(j);',
+    '      float per = 3.3 + fj * .8; float tj = t + 1.1 + fj * 1.9;',
+    '      float wk = floor(tj / per); float wt = tj - wk * per; wk += 100. + fj * 50.;',
+    '      vec2 wp = mix(u_art.xy, u_art.zw, vec2(.12 + .76 * hash(vec2(wk, 31.)), .1 + .6 * hash(vec2(wk, 37.))));',
+    '      vec2 wd = round2(uv - wp);',
+    '      spk += weldArc(wd, wt, t, .5) + sparkBurst(wd, wt, wk, -1.5708 + (hash(vec2(wk, 3.)) - .5) * 1.2, 2.6, .38, .75);',
+    '    }',
+    /* Grinding where the bottom gears mesh: sparks thrown up along the teeth. */
+    '    float gk = floor(t / 1.9); float gt = t - gk * 1.9;',
+    '    vec2 cd = gp - (c1 + vec2(cos(th), sin(th)) * r1);',
+    '    spk += sparkBurst(cd, gt, gk + 300., atan(-cos(th), sin(th)), .8, .6, .65);',
+    '    spk += vec3(1., .6, .2) * exp(-dot(cd, cd) / .0004) * (.4 + .3 * hash(vec2(floor(t * 25.), 5.)));',
+    /* Sparks darken what is under them a little, so they read on bright art too. */
+    '    col *= 1. - clamp(luma(spk), 0., 1.) * .35 * s * m;',
+    '    add += min(spk * 1.6, vec3(2.)) * s * m;',
     '  }',
     /* Glowing eyes: the effect itself at the focus, or an add-on at the
        second point for any effect but the breaths (which use it as the mouth). */
