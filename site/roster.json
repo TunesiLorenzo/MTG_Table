@@ -190,10 +190,10 @@
       "volume": 32,
       "card_fx": [
         {
-          "effect": "foil",
-          "focus": "",
+          "effect": "cosmic",
+          "focus": "35.4% 28%",
           "glow": "",
-          "area": "art"
+          "area": "card"
         }
       ]
     },
