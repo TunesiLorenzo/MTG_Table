@@ -163,6 +163,173 @@
           "rank": 3
         }
       ]
+    },
+    {
+      "id": "ad98ba1ac66bc6c073d32c36aabb87d0",
+      "date": "2026-11-09",
+      "created_at": "2026-11-09T01:18:30+01:00",
+      "outcome": "win",
+      "players": [
+        {
+          "name": "Coach",
+          "deck": "gg",
+          "rank": 1,
+          "stats": {
+            "turns": 0,
+            "play_seconds": 0,
+            "longest_turn_seconds": 0,
+            "damage_dealt": 0,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 0,
+            "life_gained": 0,
+            "damage_taken": 0,
+            "eliminations": 0,
+            "lowest_life": 40
+          }
+        },
+        {
+          "name": "Borgo",
+          "deck": "Jace",
+          "rank": 2,
+          "stats": {
+            "turns": 1,
+            "play_seconds": 23,
+            "longest_turn_seconds": 23,
+            "damage_dealt": 0,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 0,
+            "life_gained": 0,
+            "damage_taken": 0,
+            "eliminations": 0,
+            "lowest_life": 40
+          }
+        },
+        {
+          "name": "Ny",
+          "deck": "Niv-Mizzet",
+          "rank": 2,
+          "stats": {
+            "turns": 0,
+            "play_seconds": 0,
+            "longest_turn_seconds": 0,
+            "damage_dealt": 0,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 0,
+            "life_gained": 0,
+            "damage_taken": 0,
+            "eliminations": 0,
+            "lowest_life": 40
+          }
+        },
+        {
+          "name": "Milli",
+          "deck": "Raffine",
+          "rank": 2,
+          "stats": {
+            "turns": 0,
+            "play_seconds": 0,
+            "longest_turn_seconds": 0,
+            "damage_dealt": 0,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 0,
+            "life_gained": 0,
+            "damage_taken": 0,
+            "eliminations": 0,
+            "lowest_life": 40
+          }
+        }
+      ],
+      "duration_seconds": 23,
+      "starting_life": 40
+    },
+    {
+      "id": "ad41de481732ad266d75f497f130b99a",
+      "date": "2026-11-10",
+      "created_at": "2026-11-10T22:01:32+01:00",
+      "outcome": "win",
+      "players": [
+        {
+          "name": "Milli",
+          "deck": "Raffine",
+          "rank": 1,
+          "stats": {
+            "turns": 9,
+            "play_seconds": 1217,
+            "longest_turn_seconds": 396,
+            "damage_dealt": 117,
+            "commander_damage_dealt": 20,
+            "poison_dealt": 0,
+            "biggest_hit": 25,
+            "life_gained": 9,
+            "damage_taken": 25,
+            "eliminations": 3,
+            "lowest_life": 22
+          }
+        },
+        {
+          "name": "Borgo",
+          "deck": "Jace",
+          "rank": 3,
+          "stats": {
+            "turns": 8,
+            "play_seconds": 1007,
+            "longest_turn_seconds": 279,
+            "damage_dealt": 12,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 7,
+            "life_gained": 24,
+            "damage_taken": 64,
+            "eliminations": 0,
+            "lowest_life": 0,
+            "eliminated_by": "Milli"
+          }
+        },
+        {
+          "name": "Dave",
+          "deck": "Satya",
+          "rank": 3,
+          "stats": {
+            "turns": 9,
+            "play_seconds": 1150,
+            "longest_turn_seconds": 451,
+            "damage_dealt": 17,
+            "commander_damage_dealt": 6,
+            "poison_dealt": 0,
+            "biggest_hit": 7,
+            "life_gained": 0,
+            "damage_taken": 43,
+            "eliminations": 0,
+            "lowest_life": -3,
+            "eliminated_by": "Milli"
+          }
+        },
+        {
+          "name": "Ny",
+          "deck": "Niv-Mizzet",
+          "rank": 3,
+          "stats": {
+            "turns": 8,
+            "play_seconds": 342,
+            "longest_turn_seconds": 67,
+            "damage_dealt": 2,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 2,
+            "life_gained": 2,
+            "damage_taken": 45,
+            "eliminations": 0,
+            "lowest_life": -3,
+            "eliminated_by": "Milli"
+          }
+        }
+      ],
+      "duration_seconds": 3717,
+      "starting_life": 40
     }
   ],
   "historical_wins": [

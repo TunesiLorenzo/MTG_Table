@@ -186,7 +186,15 @@
         "Backgrounds/Commander/Yuna.jpg"
       ],
       "sound": "Chimes.mp3",
-      "volume": 32
+      "volume": 32,
+      "card_fx": [
+        {
+          "effect": "foil",
+          "focus": "",
+          "glow": "",
+          "area": "art"
+        }
+      ]
     },
     "Zhulodok": {
       "commander": "Zhulodok, Void Gorger",
@@ -357,12 +365,6 @@
           "focus": "59% 49.1%",
           "glow": "80.8% 25.1%",
           "area": "art"
-        },
-        {
-          "effect": "clockwork",
-          "focus": "55.9% 23%",
-          "glow": "",
-          "area": "card"
         }
       ],
       "colors": "WUR",
