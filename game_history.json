@@ -335,6 +335,92 @@
       "duration_seconds": 2569,
       "starting_life": 40,
       "edited_at": "2026-11-11T00:10:21+01:00"
+    },
+    {
+      "id": "06effa3087635de4fa0dacfef246e702",
+      "date": "2026-11-11",
+      "created_at": "2026-11-11T00:54:04+01:00",
+      "outcome": "win",
+      "players": [
+        {
+          "name": "Coach",
+          "deck": "Zndrsplt",
+          "rank": 1,
+          "stats": {
+            "turns": 11,
+            "play_seconds": 2175,
+            "longest_turn_seconds": 495,
+            "damage_dealt": 49192,
+            "commander_damage_dealt": 3,
+            "poison_dealt": 0,
+            "biggest_hit": 49152,
+            "life_gained": 0,
+            "damage_taken": 34,
+            "eliminations": 2,
+            "lowest_life": 6
+          }
+        },
+        {
+          "name": "Milli",
+          "deck": "Raffine",
+          "rank": 2,
+          "stats": {
+            "turns": 9,
+            "play_seconds": 583,
+            "longest_turn_seconds": 297,
+            "damage_dealt": 21,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 15,
+            "life_gained": 7,
+            "damage_taken": 26,
+            "eliminations": 1,
+            "lowest_life": 16,
+            "eliminated_by": "Coach"
+          }
+        },
+        {
+          "name": "Borgo",
+          "deck": "Jace",
+          "rank": 3,
+          "stats": {
+            "turns": 9,
+            "play_seconds": 2027,
+            "longest_turn_seconds": 545,
+            "damage_dealt": 44,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 16,
+            "life_gained": 0,
+            "damage_taken": 40,
+            "eliminations": 0,
+            "lowest_life": 0,
+            "eliminated_by": "Coach"
+          }
+        },
+        {
+          "name": "Ny",
+          "deck": "Yuna",
+          "rank": 4,
+          "stats": {
+            "turns": 7,
+            "play_seconds": 1250,
+            "longest_turn_seconds": 346,
+            "damage_dealt": 0,
+            "commander_damage_dealt": 0,
+            "poison_dealt": 0,
+            "biggest_hit": 0,
+            "life_gained": 0,
+            "damage_taken": 43,
+            "eliminations": 0,
+            "lowest_life": -3,
+            "eliminated_by": "Milli"
+          }
+        }
+      ],
+      "duration_seconds": 6039,
+      "starting_life": 40,
+      "edited_at": "2026-11-11T00:54:57+01:00"
     }
   ],
   "historical_wins": [
