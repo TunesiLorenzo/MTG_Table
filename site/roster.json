@@ -71,7 +71,8 @@
         "Backgrounds/Commander/Azlask.jpg"
       ],
       "sound": "Azlask.wav",
-      "volume": 66
+      "volume": 66,
+      "discontinued": true
     },
     "Cloud": {
       "commander": "Cloud, Ex-SOLDIER",
