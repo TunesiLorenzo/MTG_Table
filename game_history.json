@@ -176,7 +176,7 @@
           "rank": 1,
           "stats": {
             "turns": 9,
-            "play_seconds": 1217,
+            "play_seconds": 1097,
             "longest_turn_seconds": 396,
             "damage_dealt": 117,
             "commander_damage_dealt": 20,
@@ -247,7 +247,8 @@
         }
       ],
       "duration_seconds": 3717,
-      "starting_life": 40
+      "starting_life": 40,
+      "edited_at": "2026-11-11T00:10:35+01:00"
     },
     {
       "id": "f42724fe45b713aa0ae1216af49c85e9",
