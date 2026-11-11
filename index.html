@@ -266,6 +266,25 @@
         </div>
 
         <div class="seat__tray" hidden aria-label="Commander damage and poison counters"></div>
+
+        <!-- Local table: a commander of this seat has died. Asked here and on the
+             player's phone at once; the first answer settles it. -->
+        <div class="seat__ask" hidden role="alertdialog">
+          <span class="seat__ask-text"></span>
+          <span class="seat__ask-actions">
+            <button class="seat__ask-btn seat__ask-btn--yes" type="button" data-tax-answer="yes">Raise tax</button>
+            <button class="seat__ask-btn" type="button" data-tax-answer="no">No</button>
+          </span>
+        </div>
+
+        <!-- Local table: this seat's join code, from the tray's QR button, to
+             scan again and change the player or deck. A tap anywhere closes it. -->
+        <div class="seat__qr" hidden role="dialog" aria-label="This seat's QR code">
+          <img class="seat__qr-code" alt="">
+          <span class="seat__qr-seat"></span>
+          <span class="seat__qr-hint">Scan to change player or deck</span>
+          <span class="seat__qr-close">Tap to close</span>
+        </div>
       </div>
       <button class="seat__rotate" title="Rotate this panel" aria-label="Rotate this panel">&#8635;</button>
     </section>

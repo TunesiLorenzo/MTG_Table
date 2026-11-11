@@ -693,6 +693,77 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   font-size: 2vmin;
   letter-spacing: .06em;
 }
+/* The seat's code again, from the tray's QR button: over the whole panel,
+   turned toward its player like everything else in it. */
+.seat__qr {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1.2vmin;
+  background: #0b0705e8;
+  border-radius: inherit;
+  cursor: pointer;
+}
+.seat__qr[hidden] { display: none; }
+.seat__qr-code {
+  display: block;
+  width: 24vmin;
+  height: 24vmin;
+  background: #fff;
+  border: .4vmin solid var(--accent);
+  border-radius: 1vmin;
+  image-rendering: pixelated;
+}
+.seat__qr-seat {
+  color: var(--accent);
+  font-size: 3vmin;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.seat__qr-hint { color: #f0e2cf; font-size: 2vmin; }
+.seat__qr-close { color: #f0e2cf99; font-size: 1.6vmin; letter-spacing: .08em; }
+.tray__btn--qr { color: #ffd98a; border-color: #8f6f2a; }
+
+/* A commander died: raise its tax? Over the middle of the seat, turned to its
+   player; play goes on around it. */
+.seat__ask {
+  position: absolute;
+  z-index: 15;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 1.4vmin;
+  padding: 2vmin 2.4vmin;
+  background: #120a06f0;
+  border: .3vmin solid var(--accent);
+  border-radius: 1.6vmin;
+  box-shadow: 0 1vmin 3vmin #000c;
+  transform: translateY(-50%);
+  text-align: center;
+}
+.seat__ask[hidden] { display: none; }
+.seat__ask-text { color: #f3e9dc; font-size: 2.4vmin; font-weight: 700; }
+.seat__ask-actions { display: flex; gap: 1.4vmin; }
+.seat__ask-btn {
+  min-width: 14vmin;
+  padding: 1.2vmin 2.4vmin;
+  color: #f3e9dc;
+  background: #2a1d15;
+  border: .2vmin solid #6a4a33;
+  border-radius: 1vmin;
+  font: inherit;
+  font-size: 2.2vmin;
+  font-weight: 800;
+  cursor: pointer;
+}
+.seat__ask-btn--yes { color: #120a06; background: var(--accent); border-color: var(--accent); }
+
 /* Everyone is in: the plaques glow, asking for the tap that starts it. */
 body.is-lobby-ready .seat.is-entrance-covered .seat__entrance-name {
   animation: lobby-ready-glow 1.8s ease-in-out infinite;

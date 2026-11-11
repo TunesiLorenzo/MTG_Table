@@ -1313,6 +1313,7 @@
   }
 
   function saveState() {
+    scheduleRemoteSnapshot();
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       return true;
@@ -1342,6 +1343,8 @@
         entrance: seatEl.querySelector('.seat__entrance'),
         entranceName: seatEl.querySelector('.seat__entrance-name'),
         lobbyQr: seatEl.querySelector('.seat__entrance-qr'),
+        seatQr: seatEl.querySelector('.seat__qr'),
+        taxAsk: seatEl.querySelector('.seat__ask'),
         lobbySeat: seatEl.querySelector('.seat__entrance-seat'),
         number: seatEl.querySelector('.seat__number'),
         delta: seatEl.querySelector('.seat__delta'),
@@ -1377,6 +1380,19 @@
         if (event.ctrlKey || event.metaKey) skipEntrance();
         else revealEntrance(index);
       });
+      if (view.taxAsk) {
+        view.taxAsk.addEventListener('click', function (event) {
+          event.stopPropagation();
+          var button = event.target.closest('[data-tax-answer]');
+          if (button) answerTaxRaise(index, null, button.dataset.taxAnswer === 'yes');
+        });
+      }
+      if (view.seatQr) {
+        view.seatQr.addEventListener('click', function (event) {
+          event.stopPropagation();
+          closeSeatQr();
+        });
+      }
       view.commander.addEventListener('click', function (event) {
         event.stopPropagation();
         animateCommander(index);
@@ -1439,6 +1455,11 @@
         if (button.dataset.traySetup) {
           closeTrays();
           openSeatSetup(index);
+          return;
+        }
+        if (button.dataset.trayQr) {
+          closeTrays();
+          openSeatQr(index);
           return;
         }
         if (button.dataset.designation) {
@@ -4177,6 +4198,7 @@
       seat.commanderRevealed = !seat.commanderRevealed;
       saveState();
       renderSeat(seatIndex);
+      if (!seat.commanderRevealed) offerTaxRaise(seatIndex, !!second);
       return;
     }
 
@@ -4248,6 +4270,7 @@
       flight.remove();
       if (split) split.forEach(function (el) { el.remove(); });
       commanderAnimating[seatIndex] = false;
+      if (!revealed) offerTaxRaise(seatIndex, !!second);
     }
     if (revealing) {
       sendLightCue('commander_reveal', { seat: seatIndex });
@@ -4719,7 +4742,9 @@
       ' title="Seat colour — tap to change" aria-label="Seat colour">' +
       '<span class="tray__title">' + escapeHtml(state.seats[seatIndex].name) + '</span>' +
       (STATIC_SITE ? '<button class="tray__btn tray__btn--wide tray__btn--setup" type="button" data-tray-setup="1"' +
-        ' title="Choose who sits here and which deck they play">Player &amp; deck</button>' : '') +
+        ' title="Choose who sits here and which deck they play">Player &amp; deck</button>'
+        : '<button class="tray__btn tray__btn--wide tray__btn--qr" type="button" data-tray-qr="1"' +
+          ' title="Show this seat\'s QR code, to scan again and change the player or deck">QR code</button>') +
       // Out of the way of play: this game's numbers, and the seat's settings.
       '<button class="tray__icon" type="button" data-tray-toggle="stats" aria-pressed="false"' +
       ' title="This game\'s statistics" aria-label="This game\'s statistics">' + TRAY_ICONS.stats + '</button>' +
@@ -7148,6 +7173,8 @@
   }
 
   function startNewGame() {
+    // The codes are about to change.
+    closeSeatQr();
     resetGame();
     lobbySeats = [false, false, false, false];
     lobbyRevision = null;
@@ -7220,6 +7247,292 @@
     });
   }
 
+  /* A seat's code on demand, from its tray: the player scans it again to
+     change who sits there or the deck, mid-game too. While it is up the
+     table checks every second, and it closes by itself once the seat has
+     been re-dressed, or after two minutes. */
+  var SEAT_QR_MS = 120000;
+  var seatQr = null;
+
+  function openSeatQr(index) {
+    closeSeatQr();
+    var view = seatViews[index];
+    if (STATIC_SITE || !view || !view.seatQr) return;
+    view.seatQr.querySelector('.seat__qr-code').src = '/api/lobby/qr/' + (index + 1) + '.svg?t=' + Date.now();
+    view.seatQr.querySelector('.seat__qr-seat').textContent = 'Seat ' + (index + 1);
+    view.seatQr.hidden = false;
+    var watch = {
+      index: index,
+      load: state.seats[index].tablePictures.preset_load,
+      until: Date.now() + SEAT_QR_MS,
+      timer: null
+    };
+    watch.timer = window.setInterval(function () {
+      if (seatQr !== watch) return;
+      if (Date.now() > watch.until) {
+        closeSeatQr();
+        return;
+      }
+      syncHouseLights().then(function () {
+        if (seatQr === watch && state.seats[index].tablePictures.preset_load !== watch.load) closeSeatQr();
+      });
+    }, 1000);
+    seatQr = watch;
+  }
+
+  function closeSeatQr() {
+    if (!seatQr) return;
+    window.clearInterval(seatQr.timer);
+    var view = seatViews[seatQr.index];
+    if (view && view.seatQr) view.seatQr.hidden = true;
+    seatQr = null;
+  }
+
+  /* --- Remote control: each player's phone drives their own seat ---
+     The phone page (/join/<seat>, after the seat is claimed) queues taps on
+     the server; this page takes them with a long poll and applies them
+     through the same functions as its own buttons, so the sounds, effects,
+     statistics and eliminations all follow. After every change it posts a
+     snapshot of the game for the phones to show. Nothing is taken while the
+     covers are up or the introductions run, nor once the game is over. */
+  var REMOTE_RETRY_MS = 2000;
+  var REMOTE_SNAPSHOT_MS = 120;
+  var remoteAfter = -1;
+  var remoteSnapshotTimer = null;
+  var remoteSnapshotSent = '';
+
+  function listenRemote() {
+    if (STATIC_SITE || !window.fetch) return;
+    var answered = false;
+    window.fetch('/api/remote/actions?after=' + remoteAfter, { cache: 'no-store' }).then(function (response) {
+      return response.json();
+    }).then(function (result) {
+      if (!result || !result.ok) return;
+      answered = true;
+      // A restarted server counts from zero again: start over from where it is.
+      if (result.last < remoteAfter) {
+        remoteAfter = result.last;
+        return;
+      }
+      result.actions.forEach(function (action) {
+        try {
+          applyRemoteAction(action);
+        } catch (error) {
+          /* One bad action must not stop the ones after it. */
+        }
+      });
+      remoteAfter = result.last;
+    }).catch(function () {
+      /* The server is restarting. */
+    }).then(function () {
+      window.setTimeout(listenRemote, answered ? 0 : REMOTE_RETRY_MS);
+    });
+  }
+
+  function remoteSeatLocked(index) {
+    return state.lobby || !!entranceSequence || !!state.stats.endedAt ||
+      (state.entranceMode && !state.entranceRevealed[index]);
+  }
+
+  function applyRemoteAction(action) {
+    var index = action.seat;
+    var seat = state.seats[index];
+    if (!seat || remoteSeatLocked(index)) return;
+    if (action.action === 'life') {
+      if (action.amount) changeLife(index, action.amount);
+    } else if (action.action === 'counter') {
+      var source = action.source;
+      if (action.kind === 'commander') {
+        // Another seat's commander, or its partner's (+4) when it has one.
+        var from = source % 4;
+        if (source < 0 || from === index || (source > 3 && !state.seats[from].twoCommanders)) return;
+      } else if (action.kind === 'tax') {
+        source = seat.twoCommanders && source === 1 ? 1 : (seat.twoCommanders ? 0 : -1);
+      } else {
+        source = -1;
+      }
+      changeCounter(index, action.kind, source, action.amount < 0 ? -1 : 1);
+    } else if (action.action === 'emblem_add') {
+      addEmblem(index, action.emblem);
+    } else if (action.action === 'emblem_remove') {
+      removeEmblem(index, action.emblem);
+    } else if (action.action === 'end_turn') {
+      if (state.currentPlayer === index && isAlive(seat)) advanceTurn(1);
+    } else if (action.action === 'commander') {
+      var second = action.slot === 1 && seat.twoCommanders;
+      var holder = second ? seat.secondCommander : seat;
+      if (!!holder.commanderRevealed === !!action.play) return;
+      if (holder.commanderImage) {
+        animateCommander(index, second);
+      } else {
+        // No card picture to fly: the card just turns.
+        holder.commanderRevealed = !!action.play;
+        renderSeat(index);
+        saveState();
+        if (!action.play) offerTaxRaise(index, second);
+      }
+    } else if (action.action === 'designation') {
+      if (action.key === 'blessing') {
+        setDesignation(index, 'blessing');
+      } else if (action.key === 'monarch' || action.key === 'initiative') {
+        // Anyone can take it; only whoever holds it hands it on or drops it.
+        var to = action.to >= 0 && action.to < state.seats.length ? action.to : null;
+        if (to !== index && state[action.key] !== index) return;
+        setDesignationHolder(action.key, to);
+      }
+    } else if (action.action === 'out') {
+      // Conceded or eliminated from the phone (it asked first), or back in.
+      if (action.mode === 'back' ? !seat.out : seat.out) return;
+      setOut(index, action.mode);
+    } else if (action.action === 'tax_answer') {
+      // `id` is the queue's own number; the question's is id_asked.
+      answerTaxRaise(index, action.id_asked, !!action.raise_tax);
+    }
+  }
+
+  /* A seat's picture as the phone can load it: a path on this server (not
+     this page's own localhost address) or Scryfall's. A picture dropped onto
+     the table lives only in this browser, so the phone goes without. */
+  function remotePicture(picture) {
+    var image = picture || '';
+    if (!image || image.indexOf('data:') === 0 || image.indexOf('blob:') === 0) return '';
+    var origin = window.location.origin + '/';
+    return image.indexOf(origin) === 0 ? '/' + image.slice(origin.length) : image;
+  }
+
+  function setDesignationHolder(key, to) {
+    var previous = state[key];
+    if (previous === to) return;
+    state[key] = to;
+    if (previous !== null) renderSeat(previous);
+    if (to !== null) renderSeat(to);
+    seatViews.forEach(function (view) { updateTray(view.index); });
+    saveState();
+  }
+
+  /* --- A commander has died: raise its tax? ---
+     Asked on the seat and on its player's phone at once; whichever answers
+     first settles it, and the other's question goes. Local table only. */
+  var taxAsks = [null, null, null, null];
+
+  function offerTaxRaise(index, second) {
+    if (STATIC_SITE) return;
+    var seat = state.seats[index];
+    second = !!second && seat.twoCommanders;
+    var name = seat.commanderNames[second ? 1 : 0] || (second ? 'Commander 2' : 'Your commander');
+    taxAsks[index] = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      second: second,
+      name: name,
+      next: (second ? seat.secondTax : seat.tax) + TAX_STEP
+    };
+    renderTaxAsk(index);
+    scheduleRemoteSnapshot();
+  }
+
+  function answerTaxRaise(index, id, raise) {
+    var ask = taxAsks[index];
+    if (!ask || (id && ask.id !== id)) return;
+    taxAsks[index] = null;
+    renderTaxAsk(index);
+    if (raise) changeCounter(index, 'tax', state.seats[index].twoCommanders ? (ask.second ? 1 : 0) : -1, 1);
+    scheduleRemoteSnapshot();
+  }
+
+  function clearTaxAsks() {
+    taxAsks.forEach(function (_, index) {
+      taxAsks[index] = null;
+      renderTaxAsk(index);
+    });
+  }
+
+  function renderTaxAsk(index) {
+    var view = seatViews[index];
+    if (!view || !view.taxAsk) return;
+    var ask = taxAsks[index];
+    view.taxAsk.hidden = !ask;
+    if (ask) {
+      view.taxAsk.querySelector('.seat__ask-text').textContent =
+        ask.name + ' died. Raise its commander tax to +' + ask.next + '?';
+    }
+  }
+
+  /* Called by saveState: the phones hear about a change a moment after it. */
+  function scheduleRemoteSnapshot() {
+    if (STATIC_SITE || remoteSnapshotTimer) return;
+    remoteSnapshotTimer = window.setTimeout(function () {
+      remoteSnapshotTimer = null;
+      sendRemoteSnapshot(false);
+    }, REMOTE_SNAPSHOT_MS);
+  }
+
+  function sendRemoteSnapshot(force) {
+    if (STATIC_SITE || !window.fetch) return;
+    var snapshot = JSON.stringify({
+      // The last phone tap this page has taken, so a phone knows which of its
+      // own taps the numbers already include.
+      applied: remoteAfter,
+      current: state.currentPlayer,
+      monarch: state.monarch,
+      initiative: state.initiative,
+      started: !state.stats.waiting,
+      ended: !!state.stats.endedAt,
+      seats: state.seats.map(function (seat, index) {
+        return {
+          name: seat.name,
+          deck: seat.deck || '',
+          color: seatColor(index),
+          life: seat.life,
+          poison: seat.poison,
+          energy: seat.energy,
+          experience: seat.experience,
+          tax: seat.tax,
+          secondTax: seat.secondTax,
+          twoCommanders: !!seat.twoCommanders,
+          commanderNames: seat.commanderNames.slice(),
+          commander: seat.commander.slice(),
+          emblems: seat.emblems.slice(),
+          commanders: [seat].concat(seat.twoCommanders ? [seat.secondCommander] : []).map(function (holder, slot) {
+            return {
+              name: seat.commanderNames[slot] || (slot ? 'Commander 2' : 'Commander'),
+              revealed: !!holder.commanderRevealed,
+              // The card and its animation, so the phone's copy looks the same.
+              image: remotePicture(holder.commanderImage),
+              fx: commanderFxFor(index, slot === 1),
+              strength: commanderFxSettings.strength
+            };
+          }),
+          blessing: !!seat.blessing,
+          // The seat's wallpaper and its counter chips, as the table shows them.
+          banner: remotePicture(seat.image),
+          bannerFocus: seat.imageFocus || '',
+          brightness: displayBrightness[index] ? displayBrightness[index].background : 100,
+          chips: counterModel(index).map(function (row) {
+            var progress = lethalProgress(row);
+            return {
+              icon: row.icon, color: row.color, value: row.value, display: row.display || String(row.value),
+              slot: row.slot || 0, max: row.max || 0, lethal: !!row.lethal, title: row.title,
+              warn: !!(progress && progress.warn)
+            };
+          }),
+          out: !!seat.out,
+          outReason: seat.outReason,
+          taxAsk: taxAsks[index] ? { id: taxAsks[index].id, name: taxAsks[index].name, next: taxAsks[index].next } : null,
+          alive: isAlive(seat),
+          locked: remoteSeatLocked(index)
+        };
+      })
+    });
+    if (!force && snapshot === remoteSnapshotSent) return;
+    remoteSnapshotSent = snapshot;
+    window.fetch('/api/remote/state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: snapshot
+    }).catch(function () {
+      // Not delivered: the next change, or the next status tick, sends it again.
+      remoteSnapshotSent = '';
+    });
+  }
+
   function closeLobby(tellServer) {
     window.clearTimeout(lobbyTimer);
     lobbyTimer = null;
@@ -7259,6 +7572,7 @@
   }
 
   function resetGame() {
+    clearTaxAsks();
     cancelDeathAnnouncements();
     cancelEntranceSequence();
     cancelDrawSequence();
@@ -8019,6 +8333,10 @@
     window.setInterval(syncHouseLights, 5000);
     syncLobbyStage();
     startLobbyPolling();
+    listenRemote();
+    sendRemoteSnapshot(true);
+    // A server restarted mid-game has no snapshot until something changes.
+    window.setInterval(function () { sendRemoteSnapshot(true); }, 15000);
   }
   window.setInterval(renderTurnClock, 1000);
   window.setInterval(refreshLiveStats, 1000);

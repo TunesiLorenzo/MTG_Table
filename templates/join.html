@@ -12,6 +12,7 @@
     <header class="join__head">
       <span class="join__seat" id="join-seat">Seat {{ seat }}</span>
       <h1 id="join-title">Who's playing?</h1>
+      <p class="join__deck" id="join-deck" hidden></p>
     </header>
 
     <p class="join__status" id="join-status" role="status">Loading…</p>
@@ -34,18 +35,66 @@
       </div>
     </section>
 
-    <section class="join__step join__done" id="step-done" hidden>
-      <div class="join__done-pic" id="join-done-pic"></div>
-      <p class="join__done-name" id="join-done-name"></p>
-      <p class="join__done-deck" id="join-done-deck"></p>
-      <p class="join__hint">You're in. Watch the table for the introductions.</p>
-      <button class="join__secondary" type="button" id="join-change">Change my pick</button>
+    <!-- The seat's controls once it is claimed: they drive the table's own buttons. -->
+    <section class="join__step play" id="step-play" hidden>
+      <!-- The seat as the table shows it: its wallpaper, and the same counter chips. -->
+      <div class="play__banner" id="play-banner">
+        <div class="play__banner-text">
+          <strong id="play-banner-name"></strong>
+          <span id="play-banner-deck"></span>
+        </div>
+      </div>
+      <div class="play__ribbon" id="play-ribbon"></div>
+
+      <p class="play__note" id="play-note" hidden></p>
+      <!-- A commander died: asked here and on the table, the first answer counts. -->
+      <div class="play__ask" id="play-ask" hidden>
+        <p id="play-ask-text"></p>
+        <div class="play__ask-actions">
+          <button type="button" class="join__primary" data-tax-raise="1">Raise tax</button>
+          <button type="button" class="join__secondary" data-tax-raise="0">No</button>
+        </div>
+      </div>
+      <div class="play__life" id="play-life-row">
+        <button type="button" class="play__step" data-life="-5">&minus;5</button>
+        <button type="button" class="play__step" data-life="-1">&minus;1</button>
+        <output class="play__total" id="play-life">–</output>
+        <button type="button" class="play__step" data-life="1">+1</button>
+        <button type="button" class="play__step" data-life="5">+5</button>
+      </div>
+      <button type="button" class="join__primary play__turn" id="play-turn" disabled>End my turn</button>
+
+      <h2 class="join__group">Your commander</h2>
+      <div class="play__rows" id="play-commanders"></div>
+
+      <h2 class="join__group">Monarch, initiative, city's blessing</h2>
+      <div class="play__rows" id="play-designations"></div>
+
+      <h2 class="join__group">Commander damage taken</h2>
+      <div class="play__rows" id="play-damage"></div>
+
+      <h2 class="join__group">Counters</h2>
+      <div class="play__rows" id="play-counters"></div>
+
+      <h2 class="join__group">Emblems</h2>
+      <div class="play__chips" id="play-emblems"></div>
+      <div class="join__new">
+        <input type="search" id="play-emblem-search" placeholder="Add an emblem: type a planeswalker" autocomplete="off">
+      </div>
+      <div class="play__results" id="play-emblem-results"></div>
+
+      <h2 class="join__group">Leaving the game</h2>
+      <div class="play__out" id="play-out"></div>
+
+      <button class="join__secondary play__change" type="button" id="play-change">Change player or deck</button>
     </section>
 
     <footer class="join__foot" id="join-foot" hidden>
       <button class="join__primary" type="button" id="join-save" disabled>Take my seat</button>
     </footer>
   </main>
+  <script src="/js/emblems.js"></script>
+  <script src="/js/commander-fx.js"></script>
   <script src="{{ url_for('static', filename='join.js') }}"></script>
 </body>
 </html>

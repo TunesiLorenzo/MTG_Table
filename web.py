@@ -3230,21 +3230,37 @@ def add_phone_deck(new_deck, player):
 
 
 def joining_seat(seat, key):
-    """The seat index a phone's code is for, if it is still good."""
+    """The seat index a phone's code is for, if it is still good: until the
+    next New game, so a player can scan again mid-game to change their pick."""
     index = player_index(seat - 1)
     lobby = table_state["lobby"]
-    if not lobby["active"]:
-        raise ValueError("This game has already started. Ask for a New game on the table to join")
     if not lobby["keys"][index] or not secrets.compare_digest(str(key or ""), lobby["keys"][index]):
         raise ValueError("This code is from an earlier game. Scan the one on the table again")
     return index
+
+
+def seat_key(index):
+    """This seat's code key, made now if no New game has made one."""
+    with state_lock:
+        lobby = table_state["lobby"]
+        if not lobby["keys"][index]:
+            lobby["keys"][index] = secrets.token_urlsafe(6)
+            save_table_state()
+        return lobby["keys"][index]
+
+
+def seat_taken_by_other(index, other):
+    """Whether `other` seat's name is spoken for: claimed while joining, or
+    anyone's once the game is under way."""
+    lobby = table_state["lobby"]
+    return other != index and (lobby["claimed"][other] or not lobby["active"])
 
 
 def join_url(index):
     """The address in a seat's code: the PC's LAN address, which every phone can
     reach, rather than rpgtable.local, which Android does not always resolve."""
     port = request.host.rsplit(":", 1)[1] if ":" in request.host else "80"
-    return f"http://{mdns.active_lan_ip()}:{port}/join/{index + 1}?k={table_state['lobby']['keys'][index]}"
+    return f"http://{mdns.active_lan_ip()}:{port}/join/{index + 1}?k={seat_key(index)}"
 
 
 @app.get("/thumb/<path:filename>")
@@ -3327,9 +3343,12 @@ def join_details(seat):
     index = joining_seat(seat, request.args.get("k"))
     player = table_state["players"][index]
     red, green, blue = colorsys.hsv_to_rgb(player["hue"] / 360, player["saturation"] / 100, 1.0)
+    lobby = table_state["lobby"]
     taken = [{"seat": other + 1, "name": table_state["players"][other]["name"]}
-             for other in range(PLAYER_COUNT) if other != index and table_state["lobby"]["claimed"][other]]
-    return jsonify({"ok": True, "seat": seat, "claimed": table_state["lobby"]["claimed"][index],
+             for other in range(PLAYER_COUNT) if seat_taken_by_other(index, other)]
+    # Mid-game the seat already has its player: the phone opens on them.
+    claimed = lobby["claimed"][index] or (not lobby["active"] and bool(player["deck"]))
+    return jsonify({"ok": True, "seat": seat, "claimed": claimed, "joining": lobby["active"],
                     "name": player["name"], "deck": player["deck"],
                     "color": "#{:02x}{:02x}{:02x}".format(round(red * 255), round(green * 255), round(blue * 255)),
                     "taken": taken, "catalog": seat_catalog()})
@@ -3339,13 +3358,12 @@ def join_details(seat):
 def claim_seat(seat):
     """A phone takes its seat: `player` with a roster `deck`, or a `new_deck`
     { name, commander, art_url, card_url } made there. A seat can be claimed
-    again, to change the pick, until the entrance starts."""
+    again, to change the pick, until the next New game."""
     payload = request.get_json(force=True, silent=True) or {}
     index = joining_seat(seat, payload.get("k"))
     player = clean_seat_name(payload.get("player"))
     with state_lock:
-        lobby = table_state["lobby"]
-        taken = next((other for other in range(PLAYER_COUNT) if other != index and lobby["claimed"][other]
+        taken = next((other for other in range(PLAYER_COUNT) if seat_taken_by_other(index, other)
                       and table_state["players"][other]["name"].casefold() == player.casefold()), None)
     if taken is not None:
         raise ValueError(f"{player} is already at seat {taken + 1}")
@@ -3353,6 +3371,126 @@ def claim_seat(seat):
     deck = add_phone_deck(new_deck, player) if isinstance(new_deck, dict) else payload.get("deck")
     deck = dress_seat(index, player, deck)
     return ok(f"{player} is at seat {seat} with {deck}", name=player, deck=deck)
+
+
+# -----------------------------
+# REMOTE CONTROL: A PLAYER'S PHONE DRIVES THEIR OWN SEAT
+# -----------------------------
+# The table page owns the game, so a phone never changes it here: its taps are
+# queued as actions, the table takes them (long-polling /api/remote/actions)
+# and applies them through the same functions its own buttons use, so the
+# sounds, animations, statistics and eliminations all follow. After every
+# change the table posts a snapshot of the game, which the phones wait on.
+REMOTE_WAIT_SECONDS = 20
+REMOTE_KEEP = 200
+REMOTE_COUNTER_KINDS = {"commander", "poison", "energy", "experience", "tax"}
+remote_changed = threading.Condition()
+remote_actions = []
+remote_last_id = 0
+remote_snapshot = {"version": 0, "game": None}
+
+
+def remote_action_from_payload(index, payload):
+    action = payload.get("action")
+    entry = {"seat": index, "action": action}
+
+    def whole(name, low, high):
+        value = payload.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(f"{name} must be a whole number from {low} to {high}")
+        return value
+
+    if action == "life":
+        entry["amount"] = whole("amount", -50, 50)
+    elif action == "counter":
+        if payload.get("kind") not in REMOTE_COUNTER_KINDS:
+            raise ValueError("Unknown counter")
+        entry.update(kind=payload["kind"], source=whole("source", -1, 7), amount=whole("amount", -1, 1))
+    elif action in ("emblem_add", "emblem_remove"):
+        emblem = str(payload.get("emblem") or "")
+        if not re.fullmatch(r"[a-z0-9-]{1,80}", emblem):
+            raise ValueError("Unknown emblem")
+        entry["emblem"] = emblem
+    elif action == "commander":
+        # Cast (play) or killed (not play): the first commander, or the partner.
+        entry.update(slot=whole("slot", 0, 1), play=payload.get("play") is True)
+    elif action == "designation":
+        if payload.get("key") not in ("monarch", "initiative", "blessing"):
+            raise ValueError("Unknown designation")
+        # The seat it goes to; -1 for nobody.
+        entry.update(key=payload["key"], to=whole("to", -1, PLAYER_COUNT - 1))
+    elif action == "out":
+        # Conceded, eliminated, or back in the game: the phone has asked first.
+        if payload.get("mode") not in ("out", "conceded", "back"):
+            raise ValueError("Unknown way out")
+        entry["mode"] = payload["mode"]
+    elif action == "tax_answer":
+        ask = str(payload.get("id") or "")
+        if not re.fullmatch(r"[a-z0-9]{1,24}", ask):
+            raise ValueError("Unknown question")
+        entry.update(id_asked=ask, raise_tax=payload.get("raise") is True)
+    elif action != "end_turn":
+        raise ValueError("Unknown action")
+    return entry
+
+
+@app.post("/api/remote/<int:seat>")
+def remote_action(seat):
+    """A phone's tap on its own seat: life, a counter, an emblem, or the end of its turn."""
+    global remote_last_id
+    payload = request.get_json(force=True, silent=True) or {}
+    index = joining_seat(seat, payload.get("k"))
+    entry = remote_action_from_payload(index, payload)
+    with remote_changed:
+        remote_last_id += 1
+        entry["id"] = remote_last_id
+        remote_actions.append(entry)
+        del remote_actions[:-REMOTE_KEEP]
+        remote_changed.notify_all()
+    return jsonify({"ok": True, "id": entry["id"]})
+
+
+@app.get("/api/remote/actions")
+def remote_pending_actions():
+    """The table's long poll: actions after `after`, waiting for one if there
+    are none. A table just opened (after=-1) only learns where the queue is,
+    so taps made while it was closed are not played back."""
+    try:
+        after = int(request.args.get("after", "-1"))
+    except ValueError:
+        after = -1
+    with remote_changed:
+        if after >= 0:
+            remote_changed.wait_for(lambda: remote_last_id > after, timeout=REMOTE_WAIT_SECONDS)
+        pending = [entry for entry in remote_actions if after >= 0 and entry["id"] > after]
+        return jsonify({"ok": True, "last": remote_last_id, "actions": pending})
+
+
+@app.post("/api/remote/state")
+def remote_post_state():
+    """The table's snapshot of the game, for the phones."""
+    payload = request.get_json(force=True, silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("seats"), list):
+        raise ValueError("A game snapshot has seats")
+    with remote_changed:
+        remote_snapshot["version"] += 1
+        remote_snapshot["game"] = payload
+        remote_changed.notify_all()
+    return jsonify({"ok": True, "version": remote_snapshot["version"]})
+
+
+@app.get("/api/remote/<int:seat>/state")
+def remote_get_state(seat):
+    """A phone's long poll: the game once it is newer than `after`."""
+    joining_seat(seat, request.args.get("k"))
+    try:
+        after = int(request.args.get("after", "0"))
+    except ValueError:
+        after = 0
+    with remote_changed:
+        remote_changed.wait_for(lambda: remote_snapshot["version"] > after and remote_snapshot["game"] is not None,
+                                timeout=REMOTE_WAIT_SECONDS)
+        return jsonify({"ok": True, "version": remote_snapshot["version"], "game": remote_snapshot["game"]})
 
 
 @app.post("/api/players/<index>/seat")

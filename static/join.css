@@ -7,7 +7,8 @@
   --line: #3a2c22;
   --text: #f3e9dc;
   --muted: #b3a291;
-  --danger: #ff8a7a;
+  --danger: #ff4d63;
+  --warn: #ffb547;
   color-scheme: dark;
 }
 
@@ -169,3 +170,313 @@ html, body {
 .join__done-name { margin: 0; color: var(--seat); font-size: 1.8rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
 .join__done-deck { margin: 4px 0 0; font-size: 1.1rem; }
 .join__hint { margin: 18px 0; color: var(--muted); }
+
+/* ---- the seat's controls, once it is claimed ---- */
+.join__deck { margin: 4px 0 0; color: var(--muted); }
+.join__deck[hidden] { display: none; }
+
+.play__note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.play__note[hidden] { display: none; }
+
+.play__life {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.6fr 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+.play__total {
+  color: var(--seat);
+  font-size: 3.4rem;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.play__step, .play__btn {
+  min-height: 56px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 800;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.play__step:active, .play__btn:active { background: color-mix(in srgb, var(--seat) 30%, var(--panel)); }
+.play__step:disabled, .play__btn:disabled { opacity: .35; }
+.play__turn { margin-bottom: 4px; }
+
+.play__rows { display: grid; gap: 8px; }
+.play__row {
+  display: grid;
+  grid-template-columns: 1fr 56px 3.2em 56px;
+  align-items: center;
+  gap: 8px;
+}
+.play__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.play__dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--row);
+  border-radius: 50%;
+}
+.play__value { font-size: 1.35rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.play__row .play__btn { min-height: 48px; }
+.play__row.is-lethal .play__value { color: var(--danger); }
+
+.play__chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.play__chip {
+  padding: 8px 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--seat);
+  border-radius: 999px;
+  font: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+}
+.play__empty { color: var(--muted); }
+.play__results { display: grid; gap: 6px; margin-top: 8px; }
+.play__result {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.play__result span { color: var(--muted); font-size: .85rem; }
+.play__change { margin-top: 28px; }
+
+/* A commander died: the tax question, at the top of the controls. */
+.play__ask {
+  position: fixed;
+  z-index: 50;
+  left: 12px;
+  right: 12px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  max-width: 616px;
+  margin: 0 auto;
+  padding: 16px;
+  background: var(--panel);
+  border: 2px solid var(--seat);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px #000c;
+  animation: ask-in 260ms cubic-bezier(.2, .9, .3, 1.2);
+}
+/* The rest of the page dims behind it. */
+.play__ask::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #000a;
+}
+@keyframes ask-in {
+  from { opacity: 0; transform: translateY(30px); }
+}
+.play__ask p { font-size: 1.15rem; }
+.play__ask[hidden] { display: none; }
+.play__ask p { margin: 0 0 12px; font-weight: 700; }
+.play__ask-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Commanders and designations. */
+.play__cmd {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.play__cmd small, .play__mark-head span { display: block; color: var(--muted); font-size: .85rem; }
+.play__act {
+  min-height: 48px;
+  padding: 0 18px;
+  color: #120d0a;
+  background: var(--row, var(--seat));
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.play__act--kill { color: #fff; background: #a3362b; }
+.play__act--quiet { color: var(--text); background: transparent; border: 1px solid var(--line); }
+.play__act:disabled { opacity: .35; }
+.play__mark {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.play__mark-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.play__mark-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* The seat's wallpaper, with its name and deck, as on the table. */
+.play__banner {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 150px;
+  margin: 0 0 10px;
+  overflow: hidden;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--seat) 45%, var(--panel)), var(--panel)) center / cover no-repeat;
+  border: 2px solid var(--seat);
+  border-radius: 14px;
+}
+.play__banner.has-art { filter: brightness(var(--banner-brightness, 1)); }
+.play__banner-text {
+  display: grid;
+  width: 100%;
+  padding: 28px 14px 12px;
+  background: linear-gradient(transparent, #000c);
+}
+.play__banner-text strong {
+  color: var(--seat);
+  font-size: 1.7rem;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px #000;
+}
+.play__banner-text span { color: #f3e9dc; text-shadow: 0 1px 3px #000; }
+
+/* The seat's counter chips. */
+.play__ribbon { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.play__chipc {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  overflow: hidden;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: .95rem;
+}
+.play__chipc-icon { color: var(--chip); font-size: 1.1rem; }
+.play__chipc small { font-size: .7rem; }
+.play__chipc.has-value { color: var(--text); border-color: var(--chip); }
+.play__chipc b { font-variant-numeric: tabular-nums; }
+.play__chipc.has-value {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--chip) 30%, transparent) calc(var(--fill) * 100%), transparent 0),
+    color-mix(in srgb, var(--chip) 12%, var(--panel));
+}
+.play__chipc.is-warn { --chip: var(--warn); border-color: var(--warn); }
+.play__chipc.is-lethal { --chip: var(--danger); border-color: var(--danger); animation: lethal-pulse 1.4s ease-in-out infinite; }
+.play__chipc-meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(var(--fill) * 100%);
+  height: 4px;
+  background: var(--chip);
+  box-shadow: 0 0 6px var(--chip);
+}
+@keyframes lethal-pulse {
+  50% { box-shadow: 0 0 12px var(--danger); }
+}
+
+.play__out { display: flex; flex-wrap: wrap; gap: 10px; }
+.play__out-note { width: 100%; margin: 0; color: var(--muted); }
+
+/* Commander damage and poison rows fill toward lethal, as on the table. */
+.play__row.has-meter {
+  position: relative;
+  padding: 6px 8px 10px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.play__row.has-meter::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(var(--fill) * 100%);
+  height: 5px;
+  background: var(--row);
+  box-shadow: 0 0 8px var(--row);
+  transition: width 200ms ease;
+}
+.play__row.is-warn { border-color: var(--warn); }
+.play__row.is-warn::after { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.play__row.is-lethal { border-color: var(--danger); }
+.play__row.is-lethal::after { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+/* The commander card, in the table's style: tap to flip it. */
+#play-commanders { display: flex; flex-wrap: wrap; gap: 14px; }
+.pcard-wrap { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 12px; flex: 1 1 260px; }
+.pcard {
+  position: relative;
+  width: 120px;
+  aspect-ratio: 5 / 7;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  perspective: 600px;
+  filter: drop-shadow(0 4px 8px #000b);
+  touch-action: manipulation;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pcard:disabled { opacity: .6; }
+.pcard__flipper {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(.3, .7, .3, 1.15);
+}
+.pcard.is-face-up .pcard__flipper { transform: rotateY(180deg); }
+.pcard__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #16100c center / cover no-repeat;
+  border: 1px solid #97886d;
+  border-radius: 6px;
+  box-shadow: inset 0 0 6px #000b;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.pcard__face--back { background-image: url("/Backgrounds/Commander/mtgback.jpg"); }
+.pcard__face--front { transform: rotateY(180deg); }
+.pcard__name { padding: 8px; color: var(--text); font-weight: 800; text-align: center; }
+.pcard__caption strong { display: block; font-size: 1.05rem; }
+.pcard__caption small { display: block; margin-top: 4px; color: var(--muted); }
+.commander-fx { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
