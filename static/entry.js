@@ -55,7 +55,7 @@ function renderRecent() {
     return `<div class="recent-row">
       <span class="recent-date">${escapeHtml(formatDate(game.date))}</span>
       <span class="recent-winner">${escapeHtml(summary)}</span>
-      <button class="delete-game" type="button" data-delete-game="${escapeHtml(game.id)}">Remove</button>
+      <span class="game-actions"><button class="edit-game" type="button" data-edit-game="${escapeHtml(game.id)}">Edit</button><button class="delete-game" type="button" data-delete-game="${escapeHtml(game.id)}">Remove</button></span>
     </div>`;
   }).join("");
 }

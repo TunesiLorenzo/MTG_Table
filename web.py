@@ -15,6 +15,7 @@ import io
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -28,7 +29,7 @@ import urllib.request
 from urllib.parse import quote, urlencode
 from uuid import uuid4
 
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 import bledom_led
@@ -197,7 +198,13 @@ DEFAULT_TARGETS = ["top_left", "center", "bottom_right"]
 # Numeric limits for one light's settings, shared by validation and the page.
 LIGHT_RANGES = (("hue", 0, 360), ("saturation", 0, 100), ("brightness", 1, 100))
 DISPLAY_BRIGHTNESS_MIN = 20
-DISPLAY_BRIGHTNESS_MAX = 150
+# A dark picture can be boosted to three times its brightness. The lights
+# page offers the commander card only up to 150%; the background goes the
+# whole way.
+DISPLAY_BRIGHTNESS_MAX = 300
+# How far a seat's background can be zoomed into, past filling the panel.
+BACKGROUND_ZOOM_MIN = 1.0
+BACKGROUND_ZOOM_MAX = 3.0
 # A seat's pictures on the table display: the panel background and each
 # commander's card, as paths from the repository root into Backgrounds.
 PLAYER_PICTURE_KEYS = ("background_image", "commander_image", "second_commander_image")
@@ -277,7 +284,7 @@ def default_player(base):
     return dict(base, announcer_sound="", commander_sound="", second_commander_sound="",
                 commander_name="", second_commander_name="", two_commanders=False,
                 background_brightness=100, commander_brightness=70,
-                deck="", background_focus="", **{key: "" for key in PLAYER_PICTURE_KEYS},
+                deck="", background_focus="", background_zoom=1.0, **{key: "" for key in PLAYER_PICTURE_KEYS},
                 **{key: default_commander_fx() for key in COMMANDER_FX_KEYS},
                 lights={light_id: default_light(base, light_id) for light_id in LIGHT_IDS})
 
@@ -289,6 +296,8 @@ table_state = {
     "fade_seconds": 1.5,
     # How each game moment looks on the lights: the Moments tab, see cues.py.
     "cues": cues.default_settings(),
+    # A new game's seats being claimed from phones: see the JOIN section.
+    "lobby": {"active": False, "keys": [""] * PLAYER_COUNT, "claimed": [False] * PLAYER_COUNT, "revision": 0},
 }
 state_lock = threading.Lock()
 
@@ -313,6 +322,10 @@ house_lights = False
 # Bumped by every switch of the house lights, so a slow fade to them that has
 # since been overtaken does not finish on top of whatever came next.
 house_generation = 0
+# The life tracker owns the seat names, but the lights page can rename a seat
+# too. Each rename from there bumps this, and the tracker takes the server's
+# names whenever it sees it move; the tracker's own pushes leave it alone.
+names_revision = 0
 
 
 def resolve_device(device_id):
@@ -375,6 +388,15 @@ def load_table_state():
                 float(seconds), lighting.EFFECT_SECONDS_MIN, lighting.EFFECT_SECONDS_MAX
             )
 
+    # Seats still being claimed when the server stopped stay claimable with
+    # the codes already on the table.
+    lobby = saved.get("lobby") if isinstance(saved.get("lobby"), dict) else {}
+    keys, claimed = lobby.get("keys"), lobby.get("claimed")
+    if (isinstance(keys, list) and len(keys) == PLAYER_COUNT and all(isinstance(key, str) for key in keys)
+            and isinstance(claimed, list) and len(claimed) == PLAYER_COUNT):
+        table_state["lobby"] = {"active": lobby.get("active") is True, "keys": keys,
+                                "claimed": [seat is True for seat in claimed], "revision": time.time_ns() // 1_000_000}
+
     table_state["cues"] = cues.merge_settings(saved.get("cues"))
     table_state["fade_enabled"] = bool(saved.get("fade_enabled", True))
     value = saved.get("fade_seconds")
@@ -426,6 +448,12 @@ def apply_deck_details(target, saved):
             target[key] = known_or_blank(validate_picture, saved.get(key))
     if "background_focus" in saved:
         target["background_focus"] = known_or_blank(clean_focus, saved.get("background_focus"))
+    # The zoom belongs to the picture it was set for: a new picture without
+    # one of its own starts unzoomed.
+    if "background_zoom" in saved:
+        target["background_zoom"] = known_or_blank(clean_zoom, saved.get("background_zoom")) or 1.0
+    elif "background_image" in saved:
+        target["background_zoom"] = 1.0
 
 
 def apply_saved_player(target, saved, *, keep_name=False):
@@ -1291,6 +1319,67 @@ def delete_game(game_id):
     return ok("Game removed from the leaderboard")
 
 
+def edited_game(original, payload):
+    """A saved game with the corrections from the leaderboard's editor.
+
+    Checked like any new result. It keeps its id, so the Drive inbox still
+    knows the game and never imports the uncorrected copy over it, and when
+    it was first recorded; `edited_at` says it was corrected since."""
+    game = game_from_payload({**payload, "id": original["id"]})
+    game["created_at"] = original.get("created_at") or game["created_at"]
+    game["edited_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    return game
+
+
+@app.put("/api/games/<game_id>")
+def edit_game(game_id):
+    payload = request.get_json(force=True, silent=True) or {}
+    with history_lock:
+        index = next((index for index, game in enumerate(game_history)
+                      if game.get("id") == game_id), None)
+        if index is None:
+            raise ValueError("Game not found")
+        original = game_history[index]
+        game = edited_game(original, payload)
+        game_history[index] = game
+        try:
+            save_game_history()
+        except Exception:
+            game_history[index] = original
+            raise
+    return ok("Game corrected", game=game)
+
+
+def history_publish_state():
+    """Whether the results have anything GitHub does not: a changed
+    game_history.json or commits not pushed yet."""
+    changed = bool(run_git("status", "--porcelain", "--", HISTORY_FILE.name))
+    try:
+        unpushed = int(run_git("rev-list", "--count", "@{upstream}..HEAD"))
+    except (RuntimeError, ValueError):
+        unpushed = 0
+    return {"changed": changed, "unpushed": unpushed}
+
+
+@app.get("/api/games/publish")
+def games_publish_status():
+    try:
+        state = history_publish_state()
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        # No git here: the leaderboard simply offers no Publish button.
+        return ok("Publishing is not available", publish=None, error=str(error))
+    return ok("Publish status", publish=state)
+
+
+@app.post("/api/games/publish")
+def publish_games():
+    """Push the results alone to the public site, as the Drive import does."""
+    if not any(history_publish_state().values()):
+        return ok("Nothing to publish: the site already has these results", publish=history_publish_state())
+    publish_game_history(f"Correct game results ({datetime.now():%Y-%m-%d})")
+    return ok("Pushed. The public site updates in a minute or two", publish=history_publish_state())
+
+
 def import_submissions(payload):
     """Every game submission in an imported file, in file order.
 
@@ -1552,7 +1641,7 @@ def fetch_drive_inbox(url):
     return inbox
 
 
-def publish_game_history():
+def publish_game_history(message=None):
     """Commit game_history.json alone and push it.
 
     Only the results go out by themselves. Roster edits, pictures and sounds
@@ -1567,7 +1656,7 @@ def publish_game_history():
         if run_git("status", "--porcelain", "--", HISTORY_FILE.name):
             run_git("add", "--", HISTORY_FILE.name)
             # With paths, git commits only those: anything else staged stays staged.
-            run_git("commit", "-m", f"Add games from the Drive inbox ({datetime.now():%Y-%m-%d})",
+            run_git("commit", "-m", message or f"Add games from the Drive inbox ({datetime.now():%Y-%m-%d})",
                     "--", HISTORY_FILE.name)
         if publish_state()["unpushed"]:
             run_git("push", timeout=180)
@@ -1851,6 +1940,17 @@ def clean_focus(value):
     if not match or any(float(number) > 100 for number in match.groups()):
         raise ValueError("A crop is two percentages, like 50% 25%")
     return f"{float(match[1]):g}% {float(match[2]):g}%"
+
+
+def clean_zoom(value):
+    """How far a background is zoomed past filling its panel: 1 is not at all."""
+    try:
+        zoom = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Zoom must be a number") from error
+    if not BACKGROUND_ZOOM_MIN <= zoom <= BACKGROUND_ZOOM_MAX:
+        raise ValueError(f"Zoom must be between {BACKGROUND_ZOOM_MIN:g} and {BACKGROUND_ZOOM_MAX:g}")
+    return round(zoom, 3)
 
 
 def clean_colors(value):
@@ -2468,6 +2568,7 @@ def status():
         },
         "strip_connected": strip.is_ready(),
         "players": players_payload(),
+        "names_revision": names_revision,
         "current_player": table_state["current_player"],
         "lights": [{"id": key, "label": LIGHT_LABELS[key], "ready": resolve_device(key) is not None}
                    for key in LIGHT_IDS],
@@ -2485,6 +2586,10 @@ def status():
         "profiles": profiles,
         # Deck presets come from the saved profiles and the leaderboard roster.
         "decks": list_roster_decks(profiles),
+        # The lights page seats a player with a deck from these, as the
+        # hosted tracker's picker does.
+        "seat_catalog": seat_catalog(),
+        "lobby": lobby_payload(),
         "pictures": list_roster_pictures(),
         "announcer_sounds": list_announcer_sounds(),
         "announcer_winner": announcer_winner_sound(),
@@ -2874,6 +2979,8 @@ def set_player_deck(index):
             details[key] = validate_picture(payload[key])
     if "background_focus" in payload:
         details["background_focus"] = clean_focus(payload["background_focus"])
+    if "background_zoom" in payload:
+        details["background_zoom"] = clean_zoom(payload["background_zoom"])
     # A new background was not cropped for.
     if "background_image" in payload and "background_focus" not in payload:
         details["background_focus"] = ""
@@ -2929,6 +3036,336 @@ def add_player_deck_to_roster(index):
               publish=publish_state())
 
 
+# -----------------------------
+# NEW GAME: PLAYERS JOIN FROM THEIR PHONES
+# -----------------------------
+# "New game" on the table blanks every seat and puts a QR code in each corner.
+# Scanning it opens /join/<seat> on that player's phone, where they say who
+# they are and what they play: the seat is dressed as that deck and the table
+# swaps the code for their name plaque. Each code carries a key that changes
+# with every new game, so a code photographed last week, or a guessed URL,
+# cannot take a seat in this one. The lights page seats players the same way.
+SEAT_NAME_MAX = 18
+THUMB_EDGE = 360
+SCRYFALL_PICTURE = re.compile(r"^https://cards\.scryfall\.io/[A-Za-z0-9_./-]+\.(?:jpg|jpeg|png)(?:\?\d+)?$")
+thumb_cache = {}
+thumb_lock = threading.Lock()
+
+
+def bump_lobby():
+    table_state["lobby"]["revision"] = time.time_ns() // 1_000_000
+
+
+def lobby_payload():
+    lobby = table_state["lobby"]
+    return {"active": lobby["active"], "revision": lobby["revision"],
+            "seats": [{"claimed": lobby["claimed"][index], "name": table_state["players"][index]["name"],
+                       "deck": table_state["players"][index]["deck"]} for index in range(PLAYER_COUNT)]}
+
+
+def clean_seat_name(value):
+    name = re.sub(r"\s+", " ", str(value or "")).strip()[:SEAT_NAME_MAX]
+    if not name:
+        raise ValueError("Choose who is sitting here")
+    return name
+
+
+def picture_thumb(path):
+    """A small copy of a Backgrounds picture for menus on a phone, or "" for none."""
+    return "/thumb/" + quote(path) if isinstance(path, str) and path and (BASE_DIR / path).is_file() else ""
+
+
+def seat_catalog():
+    """The players and decks a seat can be set to, as the hosted tracker lists them.
+
+    Everyone on the roster or in a recorded game, each with the decks they
+    play: the roster's list, then what they have played, then decks whose
+    preset was saved for them. See build_site.tracker_catalog.
+    """
+    roster = load_roster()
+    decks = roster["decks"]
+    deck_list = []
+    for name in sorted(decks, key=str.casefold):
+        entry = decks[name]
+        cards = [card for card in entry.get("cards") or [] if isinstance(card, str)]
+        deck_list.append({"name": name, "commander": str(entry.get("commander") or ""),
+                          "discontinued": entry.get("discontinued") is True,
+                          "thumb": picture_thumb(entry.get("art") or (cards[0] if cards else ""))})
+
+    players = {}
+    for name, entry in roster["players"].items():
+        players[name.casefold()] = {"name": name, "portrait": picture_thumb(entry.get("portrait")),
+                                    "decks": [deck for deck in entry.get("decks") or [] if isinstance(deck, str)]}
+    with history_lock:
+        games = list(game_history)
+    for game in games:
+        for seat in game.get("players") or []:
+            name = str(seat.get("name") or "").strip() if isinstance(seat, dict) else ""
+            if name:
+                player = players.setdefault(name.casefold(), {"name": name, "portrait": "", "decks": []})
+                player["decks"].append(str(seat.get("deck") or ""))
+    for deck, profile in build_site.deck_profiles(decks).items():
+        owner = str(profile.get("name") or "").strip().casefold()
+        if owner in players:
+            players[owner]["decks"].append(deck)
+
+    by_key = {deck_key(name): name for name in decks}
+    for player in players.values():
+        known = []
+        for deck in player["decks"]:
+            name = by_key.get(deck_key(deck))
+            if name and name not in known:
+                known.append(name)
+        player["decks"] = known
+    return {"players": sorted(players.values(), key=lambda player: player["name"].casefold()), "decks": deck_list}
+
+
+def announcer_for(player, deck):
+    """The entrance recording of this player with this deck: Players/<Player>_<Deck>.mp3."""
+    for sound in list_announcer_sounds():
+        who, _, what = Path(sound["file"]).stem.partition("_")
+        if who.casefold() == player.casefold() and deck_key(what) == deck_key(deck):
+            return sound["file"]
+    return ""
+
+
+def dress_seat(index, player, deck_name):
+    """Seat `player` at `index` with a leaderboard deck and return the deck's name.
+
+    The deck's saved preset is loaded when it has one, lights included;
+    otherwise the roster's pictures, commanders, sound and card animations.
+    The entrance announcement is this player's recording with this deck, or
+    the preset's when the preset was saved for this player, or none.
+    """
+    global names_revision
+    deck, entry = roster_deck(deck_name)
+    if not deck:
+        raise ValueError(f"The leaderboard has no deck called {deck_name}")
+    details = deck_details_from_roster(deck, entry)
+    profile = build_site.deck_profiles(load_roster()["decks"]).get(deck)
+    announcer = announcer_for(player, deck)
+    if not announcer and profile and str(profile.get("name") or "").strip().casefold() == player.casefold():
+        announcer = known_or_blank(validate_announcer_sound, profile.get("announcer_sound"))
+
+    with state_lock:
+        target = table_state["players"][index]
+        if profile:
+            # A preset saved before presets held pictures takes the roster's.
+            missing = ("background_focus", *PLAYER_PICTURE_KEYS)
+            apply_saved_player(target, {**{key: details[key] for key in missing if key not in profile}, **profile},
+                               keep_name=True)
+        else:
+            apply_deck_details(target, details)
+            target["two_commanders"] = details["two_commanders"]
+            for key in ("commander_name", "second_commander_name"):
+                target[key] = details[key]
+            for key in ("commander_sound", "second_commander_sound"):
+                target[key] = known_or_blank(validate_commander_sound, details[key])
+            saved_fx = entry.get("card_fx") if isinstance(entry.get("card_fx"), list) else []
+            for position, key in enumerate(COMMANDER_FX_KEYS):
+                target[key] = default_commander_fx()
+                apply_commander_fx(target[key], saved_fx[position] if position < len(saved_fx) else None)
+        target["deck"] = deck
+        target["name"] = player
+        target["announcer_sound"] = announcer
+        mark_preset_load(index)
+        names_revision += 1
+        if table_state["lobby"]["active"]:
+            table_state["lobby"]["claimed"][index] = True
+            bump_lobby()
+        save_table_state()
+    if index == table_state["current_player"]:
+        apply_player_lighting(index, fade=False)
+    return deck
+
+
+def fetch_scryfall_picture(url, folder, stem):
+    """Save one of Scryfall's card pictures into Backgrounds and return its path."""
+    if not SCRYFALL_PICTURE.match(str(url or "")):
+        raise ValueError("That picture is not one of Scryfall's")
+    lookup = urllib.request.Request(url, headers={"User-Agent": "MTGTable/1.0"})
+    with urllib.request.urlopen(lookup, timeout=15) as response:
+        data = response.read(ROSTER_UPLOAD_MAX + 1)
+    if len(data) > ROSTER_UPLOAD_MAX:
+        raise ValueError("That picture is too large")
+    suffix = ".png" if url.split("?")[0].lower().endswith(".png") else ".jpg"
+    with roster_lock:
+        folder.mkdir(parents=True, exist_ok=True)
+        target, copy_number = folder / f"{stem}{suffix}", 2
+        while target.exists():
+            target, copy_number = folder / f"{stem}-{copy_number}{suffix}", copy_number + 1
+        target.write_bytes(data)
+    return target.relative_to(BASE_DIR).as_posix()
+
+
+def add_phone_deck(new_deck, player):
+    """Put a deck made on a phone onto the roster, with its commander's art and
+    card from Scryfall saved locally, and return its name.
+
+    It goes online with the next Publish, like any roster change. Without
+    Scryfall the deck is still made, without pictures.
+    """
+    name = clean_game_text(new_deck.get("name"), "Deck name", GAME_DECK_MAX)
+    existing, _ = roster_deck(name)
+    if existing:
+        raise ValueError(f"There is already a deck called {existing}. Pick it from the list")
+    commander = clean_game_text(new_deck.get("commander"), "Commander", ROSTER_COMMANDER_MAX)
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-")[:60] or "deck"
+    entry = {"commander": commander}
+    try:
+        if new_deck.get("art_url"):
+            entry["art"] = fetch_scryfall_picture(new_deck["art_url"], ROSTER_PICTURE_DIR / "Players", stem)
+        if new_deck.get("card_url"):
+            entry["cards"] = [fetch_scryfall_picture(new_deck["card_url"], ROSTER_PICTURE_DIR / "Commander", stem)]
+    except (OSError, urllib.error.URLError) as error:
+        app.logger.warning("Could not fetch %s's pictures from Scryfall (%s)", name, error)
+    roster = save_roster_entry("decks", name, entry)
+    # Listed on its player's page too, as "Put on public leaderboard" does.
+    owner = next((key for key in roster["players"] if key.casefold() == player.casefold()), "")
+    if owner:
+        decks = list(roster["players"][owner].get("decks") or [])
+        if name.casefold() not in {saved.casefold() for saved in decks}:
+            save_roster_entry("players", owner, {**roster["players"][owner], "decks": decks + [name]})
+    return name
+
+
+def joining_seat(seat, key):
+    """The seat index a phone's code is for, if it is still good."""
+    index = player_index(seat - 1)
+    lobby = table_state["lobby"]
+    if not lobby["active"]:
+        raise ValueError("This game has already started. Ask for a New game on the table to join")
+    if not lobby["keys"][index] or not secrets.compare_digest(str(key or ""), lobby["keys"][index]):
+        raise ValueError("This code is from an earlier game. Scan the one on the table again")
+    return index
+
+
+def join_url(index):
+    """The address in a seat's code: the PC's LAN address, which every phone can
+    reach, rather than rpgtable.local, which Android does not always resolve."""
+    port = request.host.rsplit(":", 1)[1] if ":" in request.host else "80"
+    return f"http://{mdns.active_lan_ip()}:{port}/join/{index + 1}?k={table_state['lobby']['keys'][index]}"
+
+
+@app.get("/thumb/<path:filename>")
+def picture_thumbnail(filename):
+    path = (BASE_DIR / filename).resolve()
+    if (ROSTER_PICTURE_DIR.resolve() not in path.parents or not path.is_file()
+            or path.suffix.lower() not in ROSTER_PICTURE_EXTENSIONS):
+        abort(404)
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return send_file(path)
+    key = (str(path), path.stat().st_mtime_ns)
+    with thumb_lock:
+        data = thumb_cache.get(key)
+    if data is None:
+        with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image).convert("RGB")
+            image.thumbnail((THUMB_EDGE, THUMB_EDGE))
+            buffer = io.BytesIO()
+            image.save(buffer, "WEBP", quality=80)
+            data = buffer.getvalue()
+        with thumb_lock:
+            thumb_cache[key] = data
+    return Response(data, mimetype="image/webp")
+
+
+@app.get("/join/<int:seat>")
+def join_page(seat):
+    player_index(seat - 1)
+    return render_template("join.html", seat=seat)
+
+
+@app.get("/api/lobby")
+def get_lobby():
+    return jsonify({"ok": True, **lobby_payload()})
+
+
+@app.post("/api/lobby/start")
+def start_lobby():
+    """A new game: every seat back to its default name with no deck, and a
+    fresh code for each. The seats keep their lights."""
+    global names_revision
+    with state_lock:
+        for index, player in enumerate(table_state["players"]):
+            player["name"] = DEFAULT_PLAYERS[index]["name"]
+            apply_deck_details(player, {"deck": "", "background_focus": "", **{key: "" for key in PLAYER_PICTURE_KEYS}})
+            player.update(two_commanders=False, commander_name="", second_commander_name="",
+                          commander_sound="", second_commander_sound="", announcer_sound="")
+        table_state["lobby"] = {"active": True, "keys": [secrets.token_urlsafe(6) for _ in range(PLAYER_COUNT)],
+                                "claimed": [False] * PLAYER_COUNT, "revision": 0}
+        bump_lobby()
+        names_revision += 1
+        save_table_state()
+    return ok("Waiting for everyone to scan their code", lobby=lobby_payload(), players=players_payload())
+
+
+@app.post("/api/lobby/end")
+def end_lobby():
+    with state_lock:
+        table_state["lobby"]["active"] = False
+        bump_lobby()
+        save_table_state()
+    return ok("Seats closed", lobby=lobby_payload())
+
+
+@app.get("/api/lobby/qr/<int:seat>.svg")
+def lobby_qr(seat):
+    import segno
+
+    index = player_index(seat - 1)
+    buffer = io.BytesIO()
+    segno.make(join_url(index), error="m").save(buffer, kind="svg", scale=10, border=2,
+                                                 dark="#111", light="#fff", xmldecl=False)
+    return Response(buffer.getvalue(), mimetype="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/join/<int:seat>")
+def join_details(seat):
+    index = joining_seat(seat, request.args.get("k"))
+    player = table_state["players"][index]
+    red, green, blue = colorsys.hsv_to_rgb(player["hue"] / 360, player["saturation"] / 100, 1.0)
+    taken = [{"seat": other + 1, "name": table_state["players"][other]["name"]}
+             for other in range(PLAYER_COUNT) if other != index and table_state["lobby"]["claimed"][other]]
+    return jsonify({"ok": True, "seat": seat, "claimed": table_state["lobby"]["claimed"][index],
+                    "name": player["name"], "deck": player["deck"],
+                    "color": "#{:02x}{:02x}{:02x}".format(round(red * 255), round(green * 255), round(blue * 255)),
+                    "taken": taken, "catalog": seat_catalog()})
+
+
+@app.post("/api/join/<int:seat>")
+def claim_seat(seat):
+    """A phone takes its seat: `player` with a roster `deck`, or a `new_deck`
+    { name, commander, art_url, card_url } made there. A seat can be claimed
+    again, to change the pick, until the entrance starts."""
+    payload = request.get_json(force=True, silent=True) or {}
+    index = joining_seat(seat, payload.get("k"))
+    player = clean_seat_name(payload.get("player"))
+    with state_lock:
+        lobby = table_state["lobby"]
+        taken = next((other for other in range(PLAYER_COUNT) if other != index and lobby["claimed"][other]
+                      and table_state["players"][other]["name"].casefold() == player.casefold()), None)
+    if taken is not None:
+        raise ValueError(f"{player} is already at seat {taken + 1}")
+    new_deck = payload.get("new_deck")
+    deck = add_phone_deck(new_deck, player) if isinstance(new_deck, dict) else payload.get("deck")
+    deck = dress_seat(index, player, deck)
+    return ok(f"{player} is at seat {seat} with {deck}", name=player, deck=deck)
+
+
+@app.post("/api/players/<index>/seat")
+def seat_player(index):
+    """The lights page's Load: a player and one of the leaderboard's decks."""
+    payload = request.get_json(force=True, silent=True) or {}
+    index = player_index(index)
+    player = clean_seat_name(payload.get("player"))
+    deck = dress_seat(index, player, payload.get("deck"))
+    return ok(f"{player} plays {deck} at seat {index + 1}", player=player_payload(index),
+              players=players_payload())
+
+
 @app.post("/api/players/names")
 def set_player_names():
     """The life tracker owns player names and pushes them here when edited."""
@@ -2943,6 +3380,23 @@ def set_player_names():
                 table_state["players"][index]["name"] = name.strip()[:18]
         save_table_state()
     return ok("Player names updated", players=players_payload())
+
+
+@app.post("/api/players/<index>/name")
+def set_player_name(index):
+    """Rename one seat from the lights page; the tracker picks it up on its next poll."""
+    global names_revision
+    payload = request.get_json(force=True, silent=True) or {}
+    index = player_index(index)
+    name = re.sub(r"\s+", " ", str(payload.get("name") or "")).strip()[:18]
+    if not name:
+        raise ValueError("Give the player a name")
+
+    with state_lock:
+        table_state["players"][index]["name"] = name
+        names_revision += 1
+        save_table_state()
+    return ok(f"Renamed to {name}", player=player_payload(index))
 
 
 @app.post("/api/turn")
@@ -3363,8 +3817,8 @@ def assign_discovered_bulb():
     return ok(f"Assigned {ip} to the {BULB_NAMES[bulb_id].lower()} bulb", ip=ip, bulb_id=bulb_id)
 
 
-@app.post("/api/strip/connect")
-def connect_strip():
+def connect_strip_device():
+    """Find and connect the LED strip, then light it for the current room."""
     with device_lock:
         label = wait_for(strip.scan_and_connect())
     # A fresh connection is not running whatever effect it was last given.
@@ -3377,7 +3831,105 @@ def connect_strip():
         # The strip was unreachable until now, so it was skipped by the last turn
         # change. Give it the current player's color and effect straight away.
         apply_player_lighting(table_state["current_player"], fade=False)
+    return label
+
+
+@app.post("/api/strip/connect")
+def connect_strip():
+    label = connect_strip_device()
     return ok(f"LED strip connected: {label}", label=label)
+
+
+# ---------- AUTOMATIC LIGHT SETUP ----------
+# On startup the bulbs are placed by the nickname they have in the Tapo app
+# (case ignored, matched anywhere in the name), so a bulb that has picked up a
+# new IP from the router still lands in its own position. Set
+# MTG_AUTO_LIGHTS=0 to skip this and keep the saved positions.
+BULB_NICKNAMES = {
+    "stanza": "center",
+    "armadio": "top_left",
+    "lampada": "bottom_right",
+}
+
+
+def auto_lights_enabled():
+    return os.environ.get("MTG_AUTO_LIGHTS", "1").strip() != "0"
+
+
+def auto_assign_bulbs():
+    """Discover the bulbs and put each named one in its position.
+
+    Returns {bulb_id: ip} for the positions it filled. A position whose bulb is
+    not found keeps whatever it had saved, so one bulb being off does not
+    unmap the others.
+    """
+    global discovered_bulbs
+    with device_lock:
+        candidates = wait_for(discovery_controller.discover_all(), timeout=90)
+    discovered_bulbs = {item["ip"]: item for item in candidates}
+
+    placed = {}
+    for item in candidates:
+        name = str(item.get("name") or "").casefold()
+        for keyword, bulb_id in BULB_NICKNAMES.items():
+            if keyword in name and bulb_id not in placed:
+                placed[bulb_id] = item["ip"]
+                break
+    if not placed:
+        names = ", ".join(f"{item.get('name')} ({item['ip']})" for item in candidates)
+        print(f"Lights: no bulb nicknames matched {', '.join(BULB_NICKNAMES)} — found {names}", flush=True)
+        return placed
+
+    with state_lock:
+        # The same physical bulb must never sit in two positions: a saved
+        # position still holding an IP that has just been placed elsewhere
+        # lets go of it.
+        for bulb_id, controller in bulbs.items():
+            if bulb_id not in placed and controller.current_ip in placed.values():
+                controller.clear_ip()
+        for bulb_id, ip in placed.items():
+            bulbs[bulb_id].set_ip(ip)
+        save_table_state()
+    for bulb_id in BULB_NAMES:
+        where = placed.get(bulb_id)
+        print(f"Lights: {BULB_NAMES[bulb_id].lower()} bulb "
+              f"{'-> ' + where if where else 'not found, kept ' + (bulbs[bulb_id].current_ip or 'unassigned')}",
+              flush=True)
+    return placed
+
+
+def auto_connect_lights():
+    """Startup job: place the bulbs by nickname, then connect the LED strip."""
+    try:
+        placed = auto_assign_bulbs()
+    except Exception as error:
+        placed = {}
+        print(f"Lights: bulb discovery failed ({error}); keeping the saved positions", flush=True)
+
+    try:
+        # Lights the whole room for the current player (or the house lights)
+        # once it is connected, so the bulbs placed above are covered too.
+        label = connect_strip_device()
+        print(f"Lights: LED strip connected: {label}", flush=True)
+        return
+    except Exception as error:
+        print(f"Lights: LED strip not connected ({error})", flush=True)
+
+    # No strip to light the room through: give the newly placed bulbs their
+    # colors directly.
+    if placed:
+        try:
+            if house_lights:
+                apply_house_lights()
+            else:
+                apply_player_lighting(table_state["current_player"], fade=False)
+        except Exception as error:
+            app.logger.warning("Could not light the newly placed bulbs: %s", error)
+
+
+def start_auto_lights():
+    if auto_lights_enabled():
+        threading.Thread(target=auto_connect_lights, name="auto-lights", daemon=True).start()
 
 
 # -----------------------------
@@ -3570,6 +4122,7 @@ if __name__ == "__main__":
     wait_for_previous_server("0.0.0.0", 5001)
     mdns.register(5001)
     start_drive_sync()
+    start_auto_lights()
     try:
         app.run(host="0.0.0.0", port=5001, threaded=True)
     finally:

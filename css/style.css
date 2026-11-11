@@ -647,6 +647,60 @@ html, body {
 
 body.is-entrance-active .hub,
 body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; }
+
+/* New game on the local table: a seat nobody has claimed yet shows
+   Backgrounds/barren.png (the plaque's Sigil.jpg under it, should the file be
+   missing) and a QR code its player scans to choose who they are and their
+   deck. Once claimed it is the usual name plaque. */
+.seat__entrance-join { display: none; }
+.seat.is-lobby-open .seat__entrance {
+  padding: 3vmin;
+  background-image: linear-gradient(#0002, #0005), url("../Backgrounds/barren.png"), url("../Backgrounds/Sigil.jpg");
+  cursor: default;
+}
+.seat.is-lobby-open .seat__entrance::before { display: none; }
+.seat.is-lobby-open .seat__entrance-name { display: none; }
+.seat.is-lobby-open .seat__entrance-join {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 1.2vmin;
+  padding: 2vmin 2.4vmin;
+  background: #120a06d9;
+  border: .28vmin solid var(--accent);
+  border-radius: 1.6vmin;
+  box-shadow: 0 1vmin 3vmin #000c;
+}
+.seat__entrance-qr {
+  display: block;
+  width: 22vmin;
+  height: 22vmin;
+  background: #fff;
+  border-radius: .8vmin;
+  image-rendering: pixelated;
+}
+.seat__entrance-seat {
+  color: var(--accent);
+  font-size: 3vmin;
+  font-weight: 850;
+  letter-spacing: .14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.seat__entrance-hint {
+  color: #f0e2cf;
+  font-size: 2vmin;
+  letter-spacing: .06em;
+}
+/* Everyone is in: the plaques glow, asking for the tap that starts it. */
+body.is-lobby-ready .seat.is-entrance-covered .seat__entrance-name {
+  animation: lobby-ready-glow 1.8s ease-in-out infinite;
+}
+@keyframes lobby-ready-glow {
+  0%, 100% { box-shadow: inset 0 0 0 .22vmin #160a07, 0 1vmin 2.4vmin #000b; }
+  50% { box-shadow: inset 0 0 0 .22vmin #160a07, 0 0 4vmin color-mix(in srgb, var(--accent) 70%, transparent); }
+}
 /* Lift only the in-flow content above the art. The tray positions itself and
    must keep its own `position: absolute`. */
 .seat__inner > .seat__header,

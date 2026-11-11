@@ -101,6 +101,16 @@ average finish, strongest and most-played decks, performance charts, and a
 chronological game archive. Deck charts show each deck's player. Removing an
 incorrect game recalculates every statistic.
 
+**Correcting a game.** Every game in the archive (and under *Recently recorded*
+on the entry page) has an **Edit** button. It opens the whole game: date, win
+or draw, game length, starting life, each player's name, deck and finish, and
+every statistic the tracker saved (times as m:ss, a plain number is minutes;
+a blank stat is unknown). **Save** corrects it on the table; **Save & publish**
+also commits `game_history.json` alone and pushes it, which updates the public
+site. After a plain Save, a **Publish results** button waits by the archive
+heading until the site has the change. A corrected game keeps its id and is
+tagged *edited*, so the Drive inbox never brings the uncorrected copy back.
+
 **Game statistics.** A game saved from the life tracker's result window keeps
 the tracker's statistics with it (game time, starting life, and each player's
 turn times, damage, life gained, eliminations and the rest; see *Game
@@ -176,6 +186,23 @@ writes from `site/roster.json`, `game_history.json` and the deck presets in
 `profiles/` (merged as the table's server does), so pushing a roster change
 updates the phone too.
 
+**Pictures on the phone.** A seat's gear panel has a **Profile picture** row
+and the background controls. Both are kept on that phone (in the browser's
+IndexedDB, apart from the game) for the name on the seat: the picture replaces
+the colour dot beside the name and shows in the player picker, and the
+background, with its framing and brightness, comes back over the deck's art
+whenever that player sits down again. **Clear** forgets the phone's copy
+(back to the roster portrait, or the deck's art). Players with no picture of
+their own show their roster portrait.
+
+**Quiet mode** (the theatre button beside the hourglass, or hub, *Table*) is
+for playing where the music and the show are
+not wanted. Only the click is heard: the sounds that answer a tap (life, poison,
+the turn) become the click, and everything else is silent. Animations and card
+effects stop, the commander card just turns over, and the announced moments go:
+the player entrance is off, an elimination is only marked on the seat, and a
+win or draw goes straight to the recap. It is remembered on the phone.
+
 ## The public copy (GitHub Pages)
 
 `site/` is a read-only version of the leaderboard for GitHub Pages: standings,
@@ -240,7 +267,7 @@ Press **F11** or the hub's *Fullscreen* button to go edge to edge.
 | **Commander damage, poison, tax, seat setup** | Tap any counter chip to open that seat's tray |
 | **Player art** | Drag an image file onto that player's panel |
 | **Player entrance** | Turn it on in the hub, then tap the first player's wooden name cover to start the clockwise sequence |
-| **Skip the entrance** | Ctrl+click (Cmd+click on a Mac) any wooden name cover: they all drop at once, silently, and the first player is picked |
+| **Skip the entrance** | The gold ⏭ button in the middle of the table, there while the covers are up and the introductions run (or Ctrl+click / Cmd+click any cover): every cover drops at once, the drum roll and voices stop, and the first player is picked |
 | **House lights** | The lightbulb left of the turn button, or the hub menu |
 | **Stop / start the clock** | The hourglass left of the lightbulb, which shines yellow while the clock is stopped, or *Stop clock* in the hub |
 | **Resend the lighting** | The `⟳` below the turn button, or *Resend lights* in the hub |

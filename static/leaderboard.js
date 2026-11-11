@@ -1,6 +1,7 @@
 /* The leaderboard display: summary tiles, charts, standings, archive.
  *
- * Read-only apart from removing a game. Recording results lives on
+ * Read-only apart from correcting or removing a game (the editor is
+ * static/game-editor.js, shared with the entry page). Recording results lives on
  * /leaderboard/entry, which stays upright while this page sits tilted on the
  * table screen. Shares its data with that page through leaderboard-core.js,
  * which must be loaded first. */
@@ -73,7 +74,7 @@ function renderHistory() {
       ? `Draw: ${results.filter((result) => result.rank === 1).map((result) => result.name).join(" & ")}`
       : `${winner.name} won with ${winner.deck}`;
     return `<article class="game-card" data-game-id="${escapeHtml(game.id)}">
-      <div class="game-head"><div><span class="game-date">${escapeHtml(formatDate(game.date))}</span><span class="game-winner">${escapeHtml(headline)}</span></div><button class="delete-game" type="button" data-delete-game="${escapeHtml(game.id)}">Remove</button></div>
+      <div class="game-head"><div><span class="game-date">${escapeHtml(formatDate(game.date))}</span><span class="game-winner">${escapeHtml(headline)}</span>${game.edited_at ? '<span class="game-edited" title="Corrected after it was recorded">edited</span>' : ""}</div><div class="game-actions"><button class="edit-game" type="button" data-edit-game="${escapeHtml(game.id)}">Edit</button><button class="delete-game" type="button" data-delete-game="${escapeHtml(game.id)}">Remove</button></div></div>
       <div class="game-results">${results.map((result) => `<div class="game-player${result.rank === 1 ? " is-winner" : ""}"><span class="place">#${result.rank}${result.rank === 1 ? (isDraw ? " · DRAW" : " · WINNER") : ""}</span><strong>${escapeHtml(result.name)}</strong><small title="${escapeHtml(result.deck)}">${escapeHtml(result.deck)}</small></div>`).join("")}</div>
       ${gameStatsPanel(game)}
     </article>`;

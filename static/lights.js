@@ -402,6 +402,8 @@ let whiteTempMax = WHITE_TEMP_MAX;
 let profileCatalog = [];
 /* The leaderboard's decks, each with the profile that is its preset, if any. */
 let deckCatalog = [];
+/* Everyone who can sit at the table and every leaderboard deck (seat_catalog in web.py). */
+let seatCatalog = { players: [], decks: [] };
 let pictureCatalog = [];
 let announcerCatalog = [];
 let commanderSoundCatalog = [];
@@ -418,9 +420,11 @@ function renderPlayers() {
   // an actual change.
   const key = JSON.stringify([players, currentPlayer, lightCatalog]);
   if (key === renderedPlayerKey) return;
+  const list = $("#player-list");
+  // A name being typed would be wiped by a redraw; catch up once it is left.
+  if (list.contains(document.activeElement) && document.activeElement.dataset.playerName !== undefined) return;
   renderedPlayerKey = key;
 
-  const list = $("#player-list");
   list.innerHTML = "";
   players.forEach((player, index) => {
     const targets = player.targets || [];
@@ -437,12 +441,14 @@ function renderPlayers() {
     row.className = "player-row" + (index === currentPlayer ? " is-current" : "");
     row.innerHTML = `
       <span class="player-swatch" style="background:${playerHex(player)}"></span>
-      <span class="player-name"><b>${escapeHtml(player.name)}</b><small>H:${player.hue} S:${player.saturation} B:${player.brightness}%${index === currentPlayer ? ' <span class="turn-tag">· their turn</span>' : ""}</small></span>
+      <span class="player-name"><input class="player-name-input" type="text" maxlength="18"
+        value="${escapeHtml(player.name)}" data-player-name="${index}" enterkeyhint="done"
+        aria-label="Player ${index + 1} name" title="Tap to rename this player"><small>H:${player.hue} S:${player.saturation} B:${player.brightness}%${index === currentPlayer ? ' <span class="turn-tag">· their turn</span>' : ""}</small></span>
       <button class="assign" data-assign-player="${index}" title="Give this player, and every light they drive, the color picked on the Lights tab">Use picked</button>
       <button class="secondary" data-preview-player="${index}">Show</button>
       <div class="player-display-controls">
         <label>Background
-          <input type="range" min="20" max="150" value="${player.background_brightness ?? 100}"
+          <input type="range" min="20" max="300" value="${player.background_brightness ?? 100}"
                  data-display-brightness="${index}:background_brightness"
                  aria-label="${escapeHtml(player.name)} background brightness">
           <output data-display-brightness-value="${index}:background_brightness">${player.background_brightness ?? 100}%</output>
@@ -544,6 +550,76 @@ function pictureRowMarkup(index, field, label) {
         Upload<input type="file" accept=".jpg,.jpeg,.jfif,.png,.webp,image/*" data-picture-upload="${key}" hidden>
       </label>
     </div>`;
+}
+
+/* --- Background framing: where the seat's picture sits, and how close --- */
+
+/* The same crop the table's own crop window sets: a position as a
+   background-position, and a zoom about that point. The preview is a table
+   quadrant on a 16:9 screen, which is close enough to judge by; the table
+   shows the real thing within a few seconds. */
+function parseFocus(focus) {
+  const match = /^\s*(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%\s*$/.exec(focus || "");
+  return match ? { x: Math.min(100, +match[1]), y: Math.min(100, +match[2]) } : { x: 50, y: 50 };
+}
+
+function clampZoom(value) {
+  const zoom = Number(value);
+  return Number.isFinite(zoom) ? Math.min(3, Math.max(1, zoom)) : 1;
+}
+
+function framingRowMarkup(index) {
+  return `
+    <div class="plan-framing" data-framing-row="${index}" hidden>
+      <div class="plan-framing-preview"><span data-framing-art="${index}"></span></div>
+      <div class="plan-framing-sliders">
+        <label>Horizontal <input type="range" min="0" max="100" value="50" data-framing="${index}:x"></label>
+        <label>Vertical <input type="range" min="0" max="100" value="50" data-framing="${index}:y"></label>
+        <label>Zoom <input type="range" min="100" max="300" value="100" data-framing="${index}:zoom"></label>
+        <button class="secondary" type="button" data-framing-reset="${index}" title="Centre the picture and take the zoom off">Reset framing</button>
+      </div>
+    </div>`;
+}
+
+function framingFromSliders(index) {
+  const value = (part) => +document.querySelector(`[data-framing="${index}:${part}"]`).value;
+  return { focus: `${value("x")}% ${value("y")}%`, zoom: clampZoom(value("zoom") / 100) };
+}
+
+function paintFraming(index, image, focus, zoom) {
+  const art = document.querySelector(`[data-framing-art="${index}"]`);
+  if (!art) return;
+  const position = focus || "50% 50%";
+  art.style.backgroundImage = image ? `url("${pictureUrl(image)}")` : "";
+  art.style.backgroundPosition = position;
+  art.style.transformOrigin = position;
+  art.style.transform = zoom > 1 ? `scale(${zoom})` : "";
+}
+
+function updateFramingRow(index, player) {
+  const row = document.querySelector(`[data-framing-row="${index}"]`);
+  if (!row) return;
+  const image = player.background_image || "";
+  row.hidden = !image;
+  if (!image) return;
+  const focus = parseFocus(player.background_focus);
+  const zoom = clampZoom(player.background_zoom);
+  setUnlessHeld(row.querySelector(`[data-framing="${index}:x"]`), focus.x);
+  setUnlessHeld(row.querySelector(`[data-framing="${index}:y"]`), focus.y);
+  setUnlessHeld(row.querySelector(`[data-framing="${index}:zoom"]`), Math.round(zoom * 100));
+  // What the sliders show, which is the saved framing unless one is held.
+  const shown = framingFromSliders(index);
+  paintFraming(index, image, shown.focus, shown.zoom);
+}
+
+async function saveFraming(index, focus, zoom) {
+  const player = players[index];
+  if (!player) return;
+  player.background_focus = focus;
+  player.background_zoom = zoom;
+  paintFraming(index, player.background_image, focus, zoom);
+  await post(`/api/players/${index}/deck`, { background_focus: focus, background_zoom: zoom },
+    `Framing ${player.name}'s background…`);
 }
 
 /* --- Commander animations: an effect per commander card, previewed live --- */
@@ -823,11 +899,12 @@ function buildPlanEditor() {
         <button class="secondary" type="button" data-preview-player="${index}">Show</button>
       </header>
       <div class="plan-profile">
+        <select data-seat-player="${index}" aria-label="Who sits here"></select>
+        <select data-seat-deck="${index}" aria-label="Their deck"></select>
+        <button class="secondary" type="button" data-profile-load="${index}"
+                title="Seat this player with this deck: its saved preset, lights included, or the leaderboard's pictures and sound">Load</button>
         <button class="secondary" type="button" data-profile-save="${index}"
                 title="Save lights, sounds, commanders and pictures as a preset in the profiles folder">Save as…</button>
-        <select data-profile-pick="${index}" aria-label="Deck presets"></select>
-        <button class="secondary" type="button" data-profile-load="${index}"
-                title="Put the chosen preset or leaderboard deck on this player">Load</button>
       </div>
       <label class="plan-announcer">
         <span>Entrance sound</span>
@@ -861,6 +938,7 @@ function buildPlanEditor() {
             value="${escapeHtml(player.deck || "")}" placeholder="Deck name, as on the leaderboard">
         </label>
         ${pictureRowMarkup(index, "background_image", "Background")}
+        ${framingRowMarkup(index)}
         ${pictureRowMarkup(index, "commander_image", player.two_commanders ? "Commander 1 card" : "Commander card")}
         ${commanderFxRowMarkup(index, "commander_fx")}
         ${pictureRowMarkup(index, "second_commander_image", "Commander 2 card")}
@@ -877,61 +955,111 @@ function buildPlanEditor() {
   renderProfileMenus();
 }
 
-/* --- Deck presets: a saved profile per deck, or a leaderboard deck to start one --- */
+/* --- Who sits here, with what: a player and a leaderboard deck ---
+   The same lists the hosted tracker's seat picker shows: everyone on the
+   roster or in a recorded game, then that player's decks first, the others,
+   and retired ones. Load seats them with the deck's saved preset (lights
+   included) or, without one, the roster's pictures and sound. Presets saved
+   for no leaderboard deck stay loadable at the bottom of the deck menu. */
+const NEW_PLAYER = "__new__";
 
-/* Rebuilt only when the set of files changes, so an open menu is not yanked
-   shut by the poll. Each menu keeps whatever the user had chosen. A
-   leaderboard deck with a preset is listed once, as its preset. */
 function presetKey(name) {
   return String(name || "").toLowerCase().replace(/[^0-9a-z]+/g, "");
 }
 
-/* The menu entry for what the seat is playing: its preset, or else its
-   leaderboard deck. */
-function presetValueFor(player) {
-  const deck = presetKey(player && player.deck);
-  if (!deck) return "";
-  const profile = profileCatalog.find((item) => presetKey(item.deck) === deck) ||
-    profileCatalog.find((item) => presetKey(item.name) === deck);
-  if (profile) return `profile:${profile.name}`;
-  const listed = deckCatalog.find((item) => presetKey(item.name) === deck);
-  return listed ? (listed.profile ? `profile:${listed.profile}` : `deck:${listed.name}`) : "";
+function catalogPlayerNamed(name) {
+  const wanted = String(name || "").toLowerCase();
+  return seatCatalog.players.find((player) => player.name.toLowerCase() === wanted) || null;
 }
 
-/* Each menu shows what its seat is playing, until it is used to pick another. */
-function syncPresetMenus() {
-  players.forEach((player, index) => {
-    const menu = document.querySelector(`[data-profile-pick="${index}"]`);
-    if (!menu || menu.dataset.picked || document.activeElement === menu) return;
-    const value = presetValueFor(player);
-    menu.value = [...menu.options].some((option) => option.value === value) ? value : "";
-  });
+function playerMenuMarkup(selected) {
+  const names = seatCatalog.players.map((player) => player.name);
+  if (selected && selected !== NEW_PLAYER && !catalogPlayerNamed(selected)) names.unshift(selected);
+  return names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("") +
+    `<option value="${NEW_PLAYER}">New player…</option>`;
 }
 
+/* Saved presets that belong to no leaderboard deck. */
+function loosePresets() {
+  const listed = new Set(seatCatalog.decks.map((deck) => presetKey(deck.name)));
+  return profileCatalog.filter((profile) => !listed.has(presetKey(profile.deck)));
+}
+
+function seatDeckLists(playerName) {
+  const who = catalogPlayerNamed(playerName);
+  const byKey = new Map(seatCatalog.decks.map((deck) => [presetKey(deck.name), deck]));
+  const theirs = who ? who.decks.map((name) => byKey.get(presetKey(name))).filter(Boolean) : [];
+  return {
+    who,
+    theirs,
+    others: seatCatalog.decks.filter((deck) => !theirs.includes(deck) && !deck.discontinued),
+    retired: seatCatalog.decks.filter((deck) => !theirs.includes(deck) && deck.discontinued),
+  };
+}
+
+function deckMenuMarkup(playerName) {
+  const { who, theirs, others, retired } = seatDeckLists(playerName);
+  const option = (deck) => `<option value="deck:${escapeHtml(deck.name)}">${escapeHtml(deck.name)}</option>`;
+  const group = (label, items) => (items ? `<optgroup label="${escapeHtml(label)}">${items}</optgroup>` : "");
+  const presets = loosePresets().map((profile) =>
+    `<option value="profile:${escapeHtml(profile.name)}">${escapeHtml(profile.name)}</option>`).join("");
+  return `<option value="">Choose a deck…</option>` +
+    group(who ? `${who.name}’s decks` : "", theirs.map(option).join("")) +
+    group(theirs.length ? "Other decks" : "Decks", others.map(option).join("")) +
+    group("Retired", retired.map(option).join("")) +
+    group("Other saved presets", presets);
+}
+
+/* The deck menu's entry for what the seat is playing. */
+function deckValueFor(player) {
+  const wanted = presetKey(player && player.deck);
+  if (!wanted) return "";
+  const deck = seatCatalog.decks.find((item) => presetKey(item.name) === wanted);
+  if (deck) return `deck:${deck.name}`;
+  const profile = loosePresets().find((item) => presetKey(item.deck) === wanted || presetKey(item.name) === wanted);
+  return profile ? `profile:${profile.name}` : "";
+}
+
+function hasOption(menu, value) {
+  return [...menu.options].some((option) => option.value === value);
+}
+
+/* The menus show who sits at each seat and what they play, until they are
+   used to choose someone else; rebuilt only when the lists change, so an open
+   menu is not yanked shut by the poll. */
 function renderProfileMenus() {
-  const menus = document.querySelectorAll("[data-profile-pick]");
-  if (!menus.length) return;
-  const key = JSON.stringify([profileCatalog.map((profile) => [profile.name, profile.deck]), deckCatalog]);
-  if (key === renderedProfileKey) return;
+  const key = JSON.stringify([seatCatalog, profileCatalog.map((profile) => [profile.name, profile.deck])]);
+  const fresh = key !== renderedProfileKey;
   renderedProfileKey = key;
+  players.forEach((player, index) => {
+    const who = document.querySelector(`[data-seat-player="${index}"]`);
+    const deck = document.querySelector(`[data-seat-deck="${index}"]`);
+    if (!who || !deck) return;
+    const editing = !!(who.dataset.picked || deck.dataset.picked) ||
+      document.activeElement === who || document.activeElement === deck;
+    const name = editing ? who.value : player.name;
+    if (document.activeElement !== who && (fresh || !hasOption(who, name))) {
+      who.innerHTML = playerMenuMarkup(name);
+    }
+    if (!editing) who.value = name;
 
-  const presets = profileCatalog.map((profile) => {
-    const label = profile.deck && profile.deck !== profile.name ? `${profile.name} (${profile.deck})` : profile.name;
-    return `<option value="profile:${escapeHtml(profile.name)}">${escapeHtml(label)}</option>`;
-  }).join("");
-  const decks = deckCatalog.filter((deck) => !deck.profile)
-    .map((deck) => `<option value="deck:${escapeHtml(deck.name)}">${escapeHtml(deck.name)}</option>`).join("");
-  const markup = `<option value="">Choose a preset…</option>` +
-    (presets ? `<optgroup label="Saved presets">${presets}</optgroup>` : "") +
-    (decks ? `<optgroup label="Leaderboard decks, no preset yet">${decks}</optgroup>` : "");
-
-  menus.forEach((menu) => {
-    if (document.activeElement === menu) return;
-    const chosen = menu.value;
-    menu.innerHTML = markup;
-    if (chosen && [...menu.options].some((option) => option.value === chosen)) menu.value = chosen;
+    const forPlayer = who.value;
+    if (document.activeElement !== deck && (fresh || deck.dataset.forPlayer !== forPlayer)) {
+      const chosen = deck.value;
+      deck.innerHTML = deckMenuMarkup(forPlayer);
+      deck.dataset.forPlayer = forPlayer;
+      if (chosen && hasOption(deck, chosen)) deck.value = chosen;
+      // A different player chosen: their usual deck, unless one is chosen.
+      if (editing && !deck.value) {
+        const first = seatDeckLists(forPlayer).theirs[0];
+        if (first) deck.value = `deck:${first.name}`;
+      }
+    }
+    if (!editing) {
+      const value = deckValueFor(player);
+      deck.value = hasOption(deck, value) ? value : "";
+    }
   });
-  syncPresetMenus();
 
   let names = document.getElementById("deck-names");
   if (!names) {
@@ -940,6 +1068,10 @@ function renderProfileMenus() {
     document.body.appendChild(names);
   }
   names.innerHTML = deckCatalog.map((deck) => `<option value="${escapeHtml(deck.name)}"></option>`).join("");
+}
+
+function syncPresetMenus() {
+  renderProfileMenus();
 }
 
 async function saveProfile(index) {
@@ -953,21 +1085,30 @@ async function saveProfile(index) {
 }
 
 async function loadProfile(index) {
-  const menu = document.querySelector(`[data-profile-pick="${index}"]`);
-  const value = (menu && menu.value) || "";
-  const [kind, ...rest] = value.split(":");
+  const who = document.querySelector(`[data-seat-player="${index}"]`);
+  const deck = document.querySelector(`[data-seat-deck="${index}"]`);
+  const player = who ? who.value : "";
+  const [kind, ...rest] = ((deck && deck.value) || "").split(":");
   const name = rest.join(":");
+  if (!player || player === NEW_PLAYER) {
+    setStatus("Choose who is sitting here first.", "error");
+    return;
+  }
   if (!name) {
-    setStatus("Choose a saved preset or a leaderboard deck first.", "error");
+    setStatus("Choose a deck first.", "error");
     return;
   }
   if (kind === "deck") {
-    await post(`/api/players/${index}/deck/load`, { deck: name }, `Loading the ${name} deck…`);
+    await post(`/api/players/${index}/seat`, { player, deck: name }, `Seating ${player} with ${name}…`);
   } else {
-    await post(`/api/players/${index}/profile/load`, { profile: name }, `Loading ${name}…`);
+    const loaded = await post(`/api/players/${index}/profile/load`, { profile: name }, `Loading ${name}…`);
+    if (loaded && player !== (players[index] || {}).name) {
+      await post(`/api/players/${index}/name`, { name: player }, `Renaming the seat to ${player}…`);
+    }
   }
-  // The menu goes back to showing what the seat now plays.
-  if (menu) delete menu.dataset.picked;
+  // The menus go back to showing what the seat now plays.
+  if (who) delete who.dataset.picked;
+  if (deck) delete deck.dataset.picked;
   // The plan editor is written from `players`, which the reply just replaced.
   renderedPlayerKey = "";
 }
@@ -1068,6 +1209,7 @@ function updatePlanEditor() {
       }
     });
     document.querySelector(`[data-picture-row="${index}:second_commander_image"]`).hidden = !player.two_commanders;
+    updateFramingRow(index, player);
     COMMANDER_FX_FIELDS.forEach((field) => updateCommanderFxRow(index, field));
     document.querySelector(`[data-picture-label="${index}:commander_image"]`).textContent =
       player.two_commanders ? "Commander 1 card" : "Commander card";
@@ -1349,6 +1491,7 @@ async function refreshStatus() {
       if (Number.isFinite(state.white_temp_max)) whiteTempMax = state.white_temp_max;
       if (Array.isArray(state.profiles)) profileCatalog = state.profiles;
       if (Array.isArray(state.decks)) deckCatalog = state.decks;
+      if (state.seat_catalog && Array.isArray(state.seat_catalog.players)) seatCatalog = state.seat_catalog;
       if (Array.isArray(state.pictures)) pictureCatalog = state.pictures;
       if (Array.isArray(state.announcer_sounds)) announcerCatalog = state.announcer_sounds;
       if (Array.isArray(state.commander_sounds)) commanderSoundCatalog = state.commander_sounds;
@@ -1675,7 +1818,35 @@ playerList.addEventListener("input", (event) => {
   const output = playerList.querySelector(`[data-display-brightness-value="${key}"]`);
   if (output) output.value = event.target.value + "%";
 });
+playerList.addEventListener("keydown", (event) => {
+  if (event.target.dataset.playerName === undefined) return;
+  if (event.key === "Enter") event.target.blur();
+  if (event.key === "Escape") {
+    event.target.value = players[+event.target.dataset.playerName]?.name || "";
+    event.target.blur();
+  }
+});
+playerList.addEventListener("focusout", (event) => {
+  // Redraws held off while typing can happen now.
+  if (event.target.dataset.playerName !== undefined) setTimeout(renderPlayers, 0);
+});
 playerList.addEventListener("change", async (event) => {
+  const nameSeat = event.target.dataset.playerName;
+  if (nameSeat !== undefined) {
+    const index = +nameSeat;
+    const name = event.target.value.replace(/\s+/g, " ").trim().slice(0, 18);
+    if (!players[index]) return;
+    if (!name || name === players[index].name) {
+      event.target.value = players[index].name;
+      return;
+    }
+    const result = await post(`/api/players/${index}/name`, { name }, `Renaming ${players[index].name}…`);
+    if (result) players[index].name = name;
+    else event.target.value = players[index].name;
+    renderedPlayerKey = "";
+    renderPlayers();
+    return;
+  }
   const key = event.target.dataset.displayBrightness;
   if (!key) return;
   const [rawIndex, field] = key.split(":");
@@ -1748,11 +1919,26 @@ async function handleCommanderFxChange(event) {
 }
 
 planGrid.addEventListener("click", (event) => handleCommanderFxClick(event, planGrid));
+planGrid.addEventListener("click", async (event) => {
+  const reset = event.target.closest("[data-framing-reset]");
+  if (!reset) return;
+  const index = +reset.dataset.framingReset;
+  ["x", "y"].forEach((part) => { planGrid.querySelector(`[data-framing="${index}:${part}"]`).value = 50; });
+  planGrid.querySelector(`[data-framing="${index}:zoom"]`).value = 100;
+  await saveFraming(index, "", 1);
+});
 ["pointerup", "pointercancel"].forEach((type) => {
   document.addEventListener(type, () => { planInteracting = false; });
 });
 
 planGrid.addEventListener("input", (event) => {
+  const framing = event.target.dataset.framing;
+  if (framing) {
+    const index = +framing.split(":")[0];
+    const shown = framingFromSliders(index);
+    paintFraming(index, (players[index] || {}).background_image, shown.focus, shown.zoom);
+    return;
+  }
   const brightness = event.target.dataset.planBrightness;
   if (brightness) {
     planGrid.querySelector(`[data-plan-brightness-value="${brightness}"]`).value = event.target.value + "%";
@@ -1770,8 +1956,32 @@ planGrid.addEventListener("input", (event) => {
 });
 
 planGrid.addEventListener("change", async (event) => {
+  const framing = event.target.dataset.framing;
+  if (framing) {
+    const index = +framing.split(":")[0];
+    const shown = framingFromSliders(index);
+    await saveFraming(index, shown.focus, shown.zoom);
+    return;
+  }
   if (await handleCommanderFxChange(event)) return;
-  if (event.target.dataset.profilePick !== undefined) {
+  if (event.target.dataset.seatPlayer !== undefined) {
+    const menu = event.target;
+    menu.dataset.picked = "1";
+    if (menu.value === NEW_PLAYER) {
+      const name = (window.prompt("Who is sitting here?") || "").replace(/\s+/g, " ").trim().slice(0, 18);
+      if (name) {
+        menu.insertAdjacentHTML("afterbegin", `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+        menu.value = name;
+      } else {
+        delete menu.dataset.picked;
+        menu.value = (players[+menu.dataset.seatPlayer] || {}).name || "";
+      }
+    }
+    menu.blur();
+    renderProfileMenus();
+    return;
+  }
+  if (event.target.dataset.seatDeck !== undefined) {
     event.target.dataset.picked = "1";
     return;
   }

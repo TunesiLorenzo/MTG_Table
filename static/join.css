@@ -1,0 +1,171 @@
+/* The phone page a player opens from their seat's QR code. Dark, like the
+   table, with the seat's own colour as the accent. */
+:root {
+  --seat: #c8a35a;
+  --bg: #120d0a;
+  --panel: #1f1712;
+  --line: #3a2c22;
+  --text: #f3e9dc;
+  --muted: #b3a291;
+  --danger: #ff8a7a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.join {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 20px 16px calc(96px + env(safe-area-inset-bottom));
+}
+
+.join__head { margin-bottom: 12px; }
+.join__seat {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid var(--seat);
+  border-radius: 999px;
+  color: var(--seat);
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.join__head h1 { margin: 10px 0 0; font-size: 1.7rem; }
+
+.join__status { margin: 8px 0 12px; color: var(--muted); }
+.join__status[hidden] { display: none; }
+.join__status.is-error { color: var(--danger); }
+
+.join__group {
+  margin: 20px 0 8px;
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.join__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.join__tile {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 10px;
+  overflow: hidden;
+  color: inherit;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.join__tile.is-selected { border-color: var(--seat); box-shadow: 0 0 0 2px color-mix(in srgb, var(--seat) 40%, transparent); }
+.join__tile:disabled { opacity: .4; cursor: default; }
+.join__tile.is-retired .join__pic { filter: grayscale(.8); }
+.join__tile--new { border-style: dashed; }
+
+.join__pic {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  background: #2b2019 center / cover no-repeat;
+  color: var(--muted);
+  font-size: 2rem;
+  font-weight: 800;
+}
+.join__label { padding: 0 10px; font-weight: 700; overflow-wrap: anywhere; }
+.join__sub { padding: 0 10px; color: var(--muted); font-size: .85rem; }
+
+.join__new { display: grid; gap: 12px; margin-top: 16px; }
+.join__new[hidden] { display: none; }
+.join__new label { display: grid; gap: 6px; color: var(--muted); font-size: .9rem; }
+.join__new input {
+  width: 100%;
+  padding: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 1rem;
+}
+.join__new input:focus { outline: 2px solid var(--seat); outline-offset: 1px; }
+
+.join__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.join__cards:empty { display: none; }
+.join__card {
+  padding: 0;
+  background: none;
+  border: 3px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.join__card img { display: block; width: 100%; border-radius: 7px; }
+.join__card.is-selected { border-color: var(--seat); }
+
+.join__back {
+  padding: 6px 0;
+  color: var(--seat);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.join__foot {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 30%);
+}
+.join__foot[hidden] { display: none; }
+.join__primary, .join__secondary {
+  display: block;
+  width: 100%;
+  max-width: 608px;
+  margin: 0 auto;
+  padding: 15px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.join__primary { color: #120d0a; background: var(--seat); border: 0; }
+.join__primary:disabled { opacity: .35; cursor: default; }
+.join__secondary { color: var(--text); background: var(--panel); border: 1px solid var(--line); }
+
+.join__done { text-align: center; }
+.join__done-pic {
+  aspect-ratio: 4 / 3;
+  margin: 8px 0 16px;
+  background: var(--panel) center / cover no-repeat;
+  border: 2px solid var(--seat);
+  border-radius: 14px;
+}
+.join__done-name { margin: 0; color: var(--seat); font-size: 1.8rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.join__done-deck { margin: 4px 0 0; font-size: 1.1rem; }
+.join__hint { margin: 18px 0; color: var(--muted); }

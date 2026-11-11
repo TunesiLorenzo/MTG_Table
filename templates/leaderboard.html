@@ -89,7 +89,7 @@
     <section class="history-section">
       <div class="section-heading history-heading">
         <div><span class="eyebrow">ARCHIVE</span><h2>Game history</h2></div>
-        <span id="history-count" class="muted"></span>
+        <div class="history-tools"><span id="history-count" class="muted"></span><button type="button" class="publish-results" data-publish-results hidden>Publish results</button></div>
       </div>
       <div id="history-list" class="history-list"></div>
     </section>
@@ -101,5 +101,6 @@
   <script src="/js/game-stats.js"></script>
   <script src="{{ url_for('static', filename='leaderboard-core.js') }}"></script>
   <script src="{{ url_for('static', filename='leaderboard.js') }}"></script>
+  <script src="{{ url_for('static', filename='game-editor.js') }}"></script>
 </body>
 </html>

@@ -208,6 +208,45 @@ td:first-child { color: var(--gold); font-weight: 800; }
 .game-stats .table-wrap { padding: 0 6px 8px; }
 .game-stats .stats-table { font-size: .8rem; }
 .game-stats .stats-table th, .game-stats .stats-table td { padding: 8px 7px; }
+/* ----------------------------------------------------------- game editor --
+   Correcting a saved game (static/game-editor.js). The dialog sits in the top
+   layer, outside the rotated stage, so it turns with the page itself. */
+.game-actions { display: flex; flex: none; gap: 6px; }
+.edit-game { min-height: 34px; padding: 0 12px; background: transparent; border-color: #4a3d63; color: #d4c3f5; font-size: .72rem; }
+.edit-game:hover { border-color: #9b76db; color: #fff; }
+.game-edited { margin-left: 8px; padding: 1px 7px; border: 1px solid #4a3d63; border-radius: 99px; color: var(--muted); font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }
+.history-tools { display: flex; align-items: center; gap: 12px; }
+.publish-results { min-height: 36px; padding: 0 14px; font-size: .8rem; }
+.publish-results[hidden] { display: none; }
+.publish-results.is-published { background: transparent; border-color: #2f5c47; color: var(--green); opacity: 1; cursor: default; }
+.recent-publish { width: 100%; margin-top: 12px; }
+.game-editor { width: min(880px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; border: 1px solid #5b4777; border-radius: 20px; background: #17121f; color: inherit; box-shadow: 0 30px 80px #000a; }
+.game-editor::backdrop { background: #05030acc; backdrop-filter: blur(3px); }
+:root[data-rot] .game-editor { rotate: var(--page-rot, 0deg); }
+:root[data-rot="90"] .game-editor, :root[data-rot="270"] .game-editor { width: min(880px, calc(100vh - 24px)); max-height: calc(100vw - 24px); }
+.game-editor form { display: grid; gap: 14px; padding: 20px 22px; }
+.editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.editor-close { width: 38px; min-height: 38px; padding: 0; background: transparent; border-color: #4a3d63; color: #d4c3f5; font-size: 1.4rem; line-height: 1; }
+.editor-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.editor-meta label { display: grid; gap: 5px; color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.editor-meta input, .editor-meta select { min-height: 40px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.editor-table { font-size: .84rem; }
+.editor-table th, .editor-table td { padding: 3px 4px; border-bottom: 0; text-align: left; }
+.editor-table td { width: 23%; }
+.editor-table th[scope="row"] { position: sticky; left: 0; z-index: 1; padding-right: 10px; background: #17121f; color: var(--muted); font-size: .74rem; letter-spacing: .02em; text-transform: none; }
+.editor-table input, .editor-table select { min-width: 92px; min-height: 34px; padding: 0 9px; border-radius: 9px; }
+.editor-names input { font-weight: 800; }
+.editor-section th { padding-top: 12px; color: #b791ff; font-size: .66rem; letter-spacing: .18em; }
+.game-editor .is-invalid { border-color: #d0607e; box-shadow: 0 0 0 2px #d0607e44; }
+.editor-note { margin: 0; color: var(--muted); font-size: .76rem; }
+.editor-error { margin: 0; color: #ffb5c5; font-size: .84rem; }
+.editor-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.editor-actions button { min-height: 42px; }
+.game-editor .is-quiet { background: transparent; border-color: #4a3d63; color: #d4c3f5; }
+@media (max-width: 620px) {
+  .game-editor form { padding: 16px 14px; }
+  .editor-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 #status { position: fixed; z-index: 10; bottom: 16px; left: 50%; translate: -50%; width: min(520px, calc(100% - 32px)); padding: 13px 16px; border: 1px solid #443b53; border-radius: 14px; background: #1b1725f5; text-align: center; box-shadow: 0 10px 30px #0008; }
 #status.success { border-color: #347656; } #status.error { border-color: #a3445f; color: #ffb5c5; }
 @container (max-width: 780px) {

@@ -88,12 +88,13 @@
 
       <details class="card tool-card">
         <summary class="tool-summary">
-          <span class="tool-title"><span class="eyebrow">UNDO</span><span class="tool-heading">Recently recorded</span></span>
+          <span class="tool-title"><span class="eyebrow">FIX OR UNDO</span><span class="tool-heading">Recently recorded</span></span>
           <span class="tool-hint" id="recent-count"></span>
           <span class="tool-chevron" aria-hidden="true">&#9662;</span>
         </summary>
         <div class="tool-body">
           <div id="recent-list" class="recent-list"></div>
+          <button type="button" class="publish-results recent-publish" data-publish-results hidden>Publish results to the site</button>
         </div>
       </details>
 
@@ -107,5 +108,6 @@
   <div id="status" role="status" aria-live="polite" hidden></div>
   <script src="{{ url_for('static', filename='leaderboard-core.js') }}"></script>
   <script src="{{ url_for('static', filename='entry.js') }}"></script>
+  <script src="{{ url_for('static', filename='game-editor.js') }}"></script>
 </body>
 </html>

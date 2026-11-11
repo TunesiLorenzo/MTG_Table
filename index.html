@@ -127,6 +127,8 @@
                     title="End the game as a draw between all players still alive">Declare draw</button>
             <button class="hub__action hub__action--reset" data-action="reset" type="button"
                     title="Every life total back to the start and the clock stopped at 0:00; the public tracker also starts a fresh player and deck selection">Reset game</button>
+            <button class="hub__action hub__action--new-game" data-action="new-game" type="button" data-needs-server
+                    title="Clear every seat and show a QR code in each corner: players scan theirs to choose who they are and their deck">New game</button>
           </div>
         </section>
 
@@ -219,6 +221,12 @@
         </button>
         <button class="seat__entrance" type="button" aria-label="Reveal player panel">
           <span class="seat__entrance-name"></span>
+          <!-- After New game on the local table: this seat's code until a phone claims it. -->
+          <span class="seat__entrance-join" aria-hidden="true">
+            <img class="seat__entrance-qr" alt="">
+            <span class="seat__entrance-seat"></span>
+            <span class="seat__entrance-hint">Scan to choose your deck</span>
+          </span>
         </button>
         <header class="seat__header">
           <span class="seat__plate">

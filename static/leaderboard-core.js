@@ -87,5 +87,6 @@ async function deleteGame(id) {
   if (!response.ok || !result.ok) throw new Error(result.message || "Could not remove game");
   games = games.filter((item) => item.id !== id);
   render();
+  if (typeof GameEditor !== "undefined") GameEditor.refreshPublish();
   return result.message;
 }

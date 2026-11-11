@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#120d0a">
+  <title>Seat {{ seat }} · MTG Table</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='join.css') }}">
+</head>
+<body data-seat="{{ seat }}">
+  <main class="join">
+    <header class="join__head">
+      <span class="join__seat" id="join-seat">Seat {{ seat }}</span>
+      <h1 id="join-title">Who's playing?</h1>
+    </header>
+
+    <p class="join__status" id="join-status" role="status">Loading…</p>
+
+    <section class="join__step" id="step-player" hidden>
+      <div class="join__grid" id="join-players"></div>
+      <div class="join__new" id="join-new-player" hidden>
+        <label>Your name<input type="text" id="join-player-name" maxlength="18" autocomplete="nickname"></label>
+      </div>
+    </section>
+
+    <section class="join__step" id="step-deck" hidden>
+      <button class="join__back" type="button" id="join-back-player">&larr; <span id="join-who"></span></button>
+      <div id="join-decks"></div>
+      <div class="join__new" id="join-new-deck" hidden>
+        <label>Commander<input type="text" id="join-commander" maxlength="120" autocomplete="off"
+                               placeholder="Start typing, then tap the card"></label>
+        <div class="join__cards" id="join-results"></div>
+        <label>Deck name<input type="text" id="join-deck-name" maxlength="80" autocomplete="off"></label>
+      </div>
+    </section>
+
+    <section class="join__step join__done" id="step-done" hidden>
+      <div class="join__done-pic" id="join-done-pic"></div>
+      <p class="join__done-name" id="join-done-name"></p>
+      <p class="join__done-deck" id="join-done-deck"></p>
+      <p class="join__hint">You're in. Watch the table for the introductions.</p>
+      <button class="join__secondary" type="button" id="join-change">Change my pick</button>
+    </section>
+
+    <footer class="join__foot" id="join-foot" hidden>
+      <button class="join__primary" type="button" id="join-save" disabled>Take my seat</button>
+    </footer>
+  </main>
+  <script src="{{ url_for('static', filename='join.js') }}"></script>
+</body>
+</html>

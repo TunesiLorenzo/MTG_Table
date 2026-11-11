@@ -9,7 +9,8 @@ from uuid import uuid4
 
 FUNCTIONS = {'import_submissions', 'imported_created_at', 'game_signature', 'plan_game_import',
              'game_from_payload', 'clean_game_text', 'clean_game_stats',
-             'deck_names_match', 'renamed_deck_roster', 'deleted_deck_roster', 'deck_game_count'}
+             'deck_names_match', 'renamed_deck_roster', 'deleted_deck_roster', 'deck_game_count',
+             'edited_game'}
 CONSTANTS = {'IMPORTABLE_STATUSES', 'GAME_STAT_FIELDS', 'GAME_STAT_MAX', 'GAME_ID_PATTERN',
              'GAME_PLAYER_COUNT', 'GAME_NAME_MAX', 'GAME_DECK_MAX', 'ROSTER_COMMANDER_MAX'}
 
@@ -153,6 +154,27 @@ class GameImportTests(unittest.TestCase):
         self.assertEqual(count(history, 'Niv-Mizzet'), 2)
         self.assertEqual(count(history, 'Urza'), 1)
         self.assertEqual(count(history, 'Ghave'), 0)
+
+
+    def test_editing_a_game_keeps_its_id_and_record_time(self):
+        edit = self.scope['edited_game']
+        saved = {**game(A, duration_seconds=2569, starting_life=40), 'created_at': '2026-11-10T23:05:08+01:00'}
+        saved['players'][1]['stats'] = {'damage_dealt': 25, 'biggest_hit': 25}
+        changes = game(B, date='2026-11-11', ranks=(2, 1, 3, 4), duration_seconds=2600, starting_life=40)
+        changes['players'][1]['stats'] = {'damage_dealt': 200, 'biggest_hit': 200, 'eliminated_by': 'Milli'}
+        edited = edit(saved, changes)
+        self.assertEqual(edited['id'], A)
+        self.assertEqual(edited['created_at'], saved['created_at'])
+        self.assertTrue(edited['edited_at'])
+        self.assertEqual((edited['date'], edited['duration_seconds'], edited['starting_life']), ('2026-11-11', 2600, 40))
+        self.assertEqual(edited['players'][1], {'name': 'Coach', 'deck': 'Zndrsplt', 'rank': 1,
+                                                'stats': {'damage_dealt': 200, 'biggest_hit': 200, 'eliminated_by': 'Milli'}})
+        # Stats left out of the edit are gone, not kept from before.
+        self.assertNotIn('stats', edited['players'][0])
+        for broken in ({**changes, 'date': '11/11/2026'}, {**changes, 'players': changes['players'][:3]},
+                       game(B, ranks=(2, 2, 3, 4))):
+            with self.assertRaises(ValueError):
+                edit(saved, broken)
 
 
 if __name__ == '__main__':

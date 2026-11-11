@@ -59,7 +59,7 @@ h2 { margin: 0 0 18px; font-size: 1.05rem; } h2 small { color: #8f89a1; font-wei
 .plan-title { min-width: 0; font-size: .95rem; font-weight: 700; }
 .plan-title small { display: block; color: #8f89a1; font-size: .68rem; font-weight: 500; }
 /* Save this player's plan to a file, or put a saved one on them. */
-.plan-profile { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 10px; }
+.plan-profile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto; align-items: center; gap: 7px; margin-top: 10px; }
 .plan-profile button { min-height: 32px; padding-inline: 9px; font-size: .72rem; }
 .plan-profile select { min-width: 0; min-height: 32px; padding: 0 8px; font-size: .75rem; }
 .plan-announcer { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 9px; margin: 9px 0 0; color: #aaa2b8; font-size: .74rem; }
@@ -99,6 +99,14 @@ h2 { margin: 0 0 18px; font-size: 1.05rem; } h2 small { color: #8f89a1; font-wei
 .player-name { min-width: 0; font-weight: 700; font-size: .92rem; }
 /* Only the name itself truncates; the detail line below it wraps instead. */
 .player-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Reads as the plain name until it is tapped to rename. */
+.player-name-input {
+  display: block; width: 100%; min-width: 0; min-height: 0; margin: 0 0 1px; padding: 2px 6px; margin-left: -6px;
+  font: inherit; font-weight: 700; color: inherit; text-overflow: ellipsis;
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+}
+.player-name-input:hover { border-color: #3f364d; }
+.player-name-input:focus { outline: none; background: #100d19; border-color: #8e6ad2; }
 .player-name small { display: block; color: #8f89a1; font-size: .68rem; font-weight: 500; letter-spacing: .04em; }
 .player-name .turn-tag { color: #c9afff; font-weight: 700; }
 .player-row button { min-height: 38px; padding-inline: 12px; font-size: .78rem; }
@@ -215,6 +223,16 @@ button.danger { background: #50243c; border-color: #81405e; }
 /* The column stays when there is no picture, so the menus line up. */
 .plan-thumb { grid-column: 1; width: 34px; height: 34px; border-radius: 6px; object-fit: cover; border: 1px solid #4b425e; background: #07090d; }
 .plan-thumb[hidden] { display: block; visibility: hidden; }
+/* The background's framing: a table quadrant in miniature beside its sliders. */
+.plan-framing { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 10px; margin-top: 8px; }
+.plan-framing[hidden] { display: none; }
+.plan-framing-preview { position: relative; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid #4b425e; border-radius: 8px; background: #07090d; }
+.plan-framing-preview span { position: absolute; inset: 0; background-size: cover; background-repeat: no-repeat; background-position: center; }
+.plan-framing-sliders { display: grid; gap: 4px; min-width: 0; }
+.plan-framing-sliders label { display: grid; grid-template-columns: 70px minmax(0, 1fr); align-items: center; gap: 6px; margin: 0; color: #aaa2b8; font-size: .72rem; }
+.plan-framing-sliders input { min-width: 0; }
+.plan-framing-sliders button { min-height: 30px; margin-top: 2px; font-size: .72rem; }
+@media (max-width: 420px) { .plan-framing { grid-template-columns: 1fr; } }
 .plan-upload { display: inline-flex; align-items: center; min-height: 34px; padding: 0 9px; border: 1px solid #4b425e; border-radius: 9px; background: #171122; color: #d8d2e6; font-size: .72rem; cursor: pointer; }
 .plan-roster { width: 100%; min-height: 32px; margin-top: 10px; font-size: .72rem; }
 

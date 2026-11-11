@@ -1105,6 +1105,11 @@
       entranceMode: false,
       quietMode: false,
       entranceRevealed: [false, false, false, false],
+      // Local table only: after New game, seats are claimed from phones by
+      // the QR code on each cover (see the New game section). lobbyGame
+      // tells this game's codes from the last one's.
+      lobby: false,
+      lobbyGame: '',
       eliminationOrder: [],
       gameResultPrompted: false,
       // Who holds each roaming designation, or null while nobody does.
@@ -1220,6 +1225,8 @@
       if (typeof saved.lightsFollowTurn === 'boolean') base.lightsFollowTurn = saved.lightsFollowTurn;
       if (typeof saved.entranceMode === 'boolean') base.entranceMode = saved.entranceMode;
       if (typeof saved.quietMode === 'boolean') base.quietMode = saved.quietMode;
+      if (!STATIC_SITE && typeof saved.lobby === 'boolean') base.lobby = saved.lobby;
+      if (typeof saved.lobbyGame === 'string') base.lobbyGame = saved.lobbyGame;
       if (Array.isArray(saved.entranceRevealed) && saved.entranceRevealed.length === base.seats.length) {
         base.entranceRevealed = saved.entranceRevealed.map(function (revealed) { return revealed === true; });
       }
@@ -1334,6 +1341,8 @@
         name: seatEl.querySelector('.seat__name'),
         entrance: seatEl.querySelector('.seat__entrance'),
         entranceName: seatEl.querySelector('.seat__entrance-name'),
+        lobbyQr: seatEl.querySelector('.seat__entrance-qr'),
+        lobbySeat: seatEl.querySelector('.seat__entrance-seat'),
         number: seatEl.querySelector('.seat__number'),
         delta: seatEl.querySelector('.seat__delta'),
         timer: seatEl.querySelector('.seat__timer'),
@@ -6573,8 +6582,8 @@
   var serverAvailable = false;
 
   function syncHouseLights() {
-    if (STATIC_SITE || !window.fetch) return;
-    window.fetch('/api/status', { cache: 'no-store' }).then(function (response) {
+    if (STATIC_SITE || !window.fetch) return Promise.resolve();
+    return window.fetch('/api/status', { cache: 'no-store' }).then(function (response) {
       return response.json();
     }).then(function (status) {
       serverAvailable = !!(status && status.ok);
@@ -6844,6 +6853,16 @@
      rest of it short. */
   function skipEntrance() {
     if (!state.entranceMode) return;
+    if (state.lobby && !lobbyReady()) {
+      gameConfirm('Start without waiting?\n\nSeats nobody has claimed keep their default name and no deck.',
+        { yes: 'Start now' }).then(function (yes) {
+        if (!yes) return;
+        closeLobby(true);
+        skipEntrance();
+      });
+      return;
+    }
+    if (state.lobby) closeLobby(true);
     var covered = TABLE_RING.filter(function (index) { return !state.entranceRevealed[index]; });
     if (!covered.length) {
       // Every plaque is down and the last call is still going: cut it short
@@ -6881,6 +6900,12 @@
 
   function revealEntrance(seatIndex) {
     if (!state.entranceMode || state.entranceRevealed[seatIndex] || entranceSequence) return;
+    // Joining from phones: nothing starts until every seat is claimed, and
+    // then a tap on the table starts the introductions.
+    if (state.lobby) {
+      if (!lobbyReady()) return;
+      closeLobby(true);
+    }
 
     var token = {
       current: seatIndex,
@@ -7084,6 +7109,7 @@
 
   function setEntranceMode(enabled) {
     if (quietMode()) enabled = false;
+    if (!enabled) closeLobby(true);
     cancelEntranceSequence();
     state.entranceMode = !!enabled;
     if (enabled) {
@@ -7097,6 +7123,110 @@
       view.el.classList.remove('is-entrance-revealing');
     });
     closeTrays();
+    render();
+    saveState();
+  }
+
+  /* --- New game: players join from their phones (local table only) ---
+     Every seat is cleared and covered with barren.png and a QR code for that
+     seat. A phone that scans it says who is playing and with what deck
+     (/join/<seat>, see web.py); the server dresses the seat and this page,
+     polling, swaps the code for the player's name plaque. Once every seat is
+     claimed, a tap on any plaque runs the usual entrance. The hosted tracker
+     keeps its own seat picker and never shows any of this. */
+  var LOBBY_POLL_MS = 1000;
+  var lobbySeats = [false, false, false, false];
+  var lobbyRevision = null;
+  var lobbyTimer = null;
+
+  function lobbyReady() {
+    return lobbySeats.every(Boolean);
+  }
+
+  function syncLobbyStage() {
+    document.body.classList.toggle('is-lobby-ready', !!state.lobby && lobbyReady());
+  }
+
+  function startNewGame() {
+    resetGame();
+    lobbySeats = [false, false, false, false];
+    lobbyRevision = null;
+    state.lobby = true;
+    state.lobbyGame = '';
+    setEntranceMode(true);
+    syncLobbyStage();
+    postJSON('/api/lobby/start', {}, function (result) {
+      if (!state.lobby) return;
+      if (!result || !result.ok) {
+        closeLobby(false);
+        gameAlert('Could not start a new game\n\n' + ((result && result.message) || 'The table server did not answer.'));
+        return;
+      }
+      state.lobbyGame = String(result.lobby.revision);
+      // What the last game left on the seats goes; the server, which has just
+      // cleared them too, sends the default names and empty decks.
+      state.seats.forEach(function (seat, index) {
+        seat.name = SEAT_DEFAULTS[index].name;
+        seat.deck = '';
+        seat.image = null;
+        seat.imageFocus = '';
+        seat.imageZoom = 1;
+        seat.commanderImage = null;
+        seat.secondCommander.commanderImage = null;
+        seat.commanderNames = ['', ''];
+        seat.twoCommanders = false;
+      });
+      render();
+      saveState();
+      syncHouseLights();
+      startLobbyPolling();
+    });
+    // Between games the room goes to plain working light.
+    enableHouseLights();
+  }
+
+  function startLobbyPolling() {
+    window.clearTimeout(lobbyTimer);
+    lobbyTimer = null;
+    if (STATIC_SITE || !state.lobby) return;
+    pollLobby();
+  }
+
+  function pollLobby() {
+    lobbyTimer = null;
+    if (!state.lobby || !window.fetch) return;
+    window.fetch('/api/lobby', { cache: 'no-store' }).then(function (response) {
+      return response.json();
+    }).then(function (lobby) {
+      if (!state.lobby || !lobby || !lobby.ok || lobby.revision === lobbyRevision) return null;
+      lobbyRevision = lobby.revision;
+      if (!lobby.active) {
+        closeLobby(false);
+        return null;
+      }
+      var claimed = lobby.seats.map(function (seat) { return seat.claimed === true; });
+      // The seat's name, deck and pictures first, so a plaque never shows
+      // "Player 2" on its way to the player's name.
+      return syncHouseLights().then(function () {
+        if (!state.lobby) return;
+        lobbySeats = claimed;
+        syncLobbyStage();
+        render();
+      });
+    }).catch(function () {
+      /* The server is restarting: try again on the next tick. */
+    }).then(function () {
+      if (state.lobby && !lobbyTimer) lobbyTimer = window.setTimeout(pollLobby, LOBBY_POLL_MS);
+    });
+  }
+
+  function closeLobby(tellServer) {
+    window.clearTimeout(lobbyTimer);
+    lobbyTimer = null;
+    if (!state.lobby) return;
+    state.lobby = false;
+    if (tellServer) postJSON('/api/lobby/end', {});
+    syncLobbyStage();
     render();
     saveState();
   }
@@ -7312,6 +7442,19 @@
       view.entrance.setAttribute('aria-hidden', String(!entranceCovered));
     }
     view.entrance.setAttribute('aria-label', 'Reveal ' + seat.name + "'s player panel");
+    var lobbyOpen = !STATIC_SITE && state.lobby && !lobbySeats[index];
+    view.el.classList.toggle('is-lobby-open', lobbyOpen);
+    if (lobbyOpen) {
+      view.entrance.setAttribute('aria-label', 'Seat ' + (index + 1) + ': scan the code to join');
+      if (view.lobbySeat) view.lobbySeat.textContent = 'Seat ' + (index + 1);
+      // The code is only asked for once the server has made this game's keys.
+      var qr = state.lobbyGame ? '/api/lobby/qr/' + (index + 1) + '.svg?g=' + encodeURIComponent(state.lobbyGame) : '';
+      if (view.lobbyQr && view.lobbyQrSrc !== qr) {
+        view.lobbyQrSrc = qr;
+        if (qr) view.lobbyQr.src = qr;
+        else view.lobbyQr.removeAttribute('src');
+      }
+    }
     view.el.style.setProperty('--accent', seatColor(index));
     view.el.style.setProperty('--background-brightness', displayBrightness[index].background / 100);
     paintBackground(view.bgArt, seat);
@@ -7619,6 +7762,14 @@
         gameConfirm('Restart the local table server?\n\nEvery page goes offline for a few seconds while it turns off and back on. This game is saved first.',
           { yes: 'Restart' }).then(function (yes) { if (yes) restartServer(); });
       }
+      if (action === 'new-game' && !STATIC_SITE) {
+        gameConfirm('Start a new game?\n\nEvery seat is cleared and shows a QR code. Each player scans theirs to say who they are and pick their deck. When everyone is in, tap the table to start the introductions.',
+          { yes: 'New game', danger: true }).then(function (yes) {
+          if (!yes) return;
+          setHubOpen(false);
+          startNewGame();
+        });
+      }
       if (action === 'reset') {
         gameConfirm('Reset the game?\n\nAll life totals go back to ' + state.startingLife + ', the clock to 0:00' +
           (STATIC_SITE
@@ -7866,6 +8017,8 @@
     postJSON('/api/turn', { player: state.currentPlayer, apply_lights: false });
     syncHouseLights();
     window.setInterval(syncHouseLights, 5000);
+    syncLobbyStage();
+    startLobbyPolling();
   }
   window.setInterval(renderTurnClock, 1000);
   window.setInterval(refreshLiveStats, 1000);
