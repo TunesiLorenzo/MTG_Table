@@ -8,6 +8,12 @@
 
   var seat = Number(document.body.dataset.seat);
   var key = new URLSearchParams(window.location.search).get('k') || '';
+  // Opened from the table controls (/host), whose code this is.
+  var hostKey = new URLSearchParams(window.location.search).get('host') || '';
+  if (hostKey) {
+    document.getElementById('join-host-link').href = '/host?k=' + encodeURIComponent(hostKey);
+    document.getElementById('join-host-link').hidden = false;
+  }
   var details = null;
   var pick = { player: '', newPlayer: false, deck: '', newDeck: false, card: null };
   var results = [];
@@ -284,7 +290,7 @@
   }
 
   function send(action) {
-    if (!game || game.seats[mySeat()].locked) return;
+    if (!game || (game.seats[mySeat()].locked && action.action !== 'overlay')) return;
     var entry = { id: null, seq: ++localSeq, action: action };
     if (action.action === 'life' || action.action === 'counter') {
       pending.push(entry);
@@ -306,17 +312,183 @@
   }
 
   var LETHAL_WARN_FRACTION = 0.7;
+  var MARKS = {
+    monarch: { icon: '👑', label: 'Monarch', color: '#c9a13f' },
+    initiative: { icon: '⚔', label: 'Initiative', color: '#d9884f' },
+    blessing: { icon: '✦', label: "City's blessing", color: '#6fa8ff' }
+  };
+  /* The small menu that is open: a counter, a designation, an emblem, or
+     adding an emblem. */
+  var sheet = null;
 
-  function counterRow(attrs, label, color, value, display, lethal, max) {
-    var fill = max ? Math.min(1, value / max) : 0;
-    var warn = max && !lethal && fill >= LETHAL_WARN_FRACTION;
-    return '<div class="play__row' + (lethal ? ' is-lethal' : '') + (warn ? ' is-warn' : '') + (max ? ' has-meter' : '') + '"' +
-      ' style="--row:' + escapeHtml(color) + ';--fill:' + fill.toFixed(3) + '">' +
-      '<span class="play__label"><span class="play__dot"></span>' + escapeHtml(label) + '</span>' +
-      '<button type="button" class="play__btn"' + attrs + ' data-amount="-1" aria-label="Less ' + escapeHtml(label) + '">&minus;</button>' +
-      '<span class="play__value">' + escapeHtml(display) + '</span>' +
-      '<button type="button" class="play__btn"' + attrs + ' data-amount="1" aria-label="More ' + escapeHtml(label) + '">+</button>' +
-      '</div>';
+  /* The seat's counters as the table lists them (counterModel in app.js):
+     damage from each opponent's commander, partners side by side, then
+     poison, energy, experience and commander tax. */
+  function counterModel(me) {
+    var index = mySeat();
+    var rows = [];
+    game.seats.forEach(function (other, source) {
+      if (source === index) return;
+      rows.push({
+        kind: 'commander', source: source, icon: '♛', label: other.commanderNames[0] || other.name,
+        owner: other.name, color: other.color, value: me.commander[source] || 0, max: COMMANDER_LETHAL,
+        slot: other.twoCommanders ? 1 : 0
+      });
+      if (other.twoCommanders) {
+        rows.push({
+          kind: 'commander', source: source + 4, icon: '♛', label: other.commanderNames[1] || other.name + ' #2',
+          owner: other.name, color: other.color, value: me.commander[source + 4] || 0, max: COMMANDER_LETHAL, slot: 2
+        });
+      }
+    });
+    rows.sort(function (a, b) { return (a.source % 4) - (b.source % 4) || a.source - b.source; });
+    rows.push({ kind: 'poison', source: -1, icon: '☣', label: 'Poison', color: '#8fbf4a', value: me.poison, max: POISON_LETHAL });
+    rows.push({ kind: 'energy', source: -1, icon: '⚡', label: 'Energy', color: '#3fc7c7', value: me.energy });
+    rows.push({ kind: 'experience', source: -1, icon: '★', label: 'Experience', color: '#a374d9', value: me.experience });
+    rows.push({
+      kind: 'tax', source: me.twoCommanders ? 0 : -1, icon: '⬆', label: (me.commanderNames[0] || 'Commander') + ' tax',
+      color: me.color, value: me.tax, display: '+' + me.tax, slot: me.twoCommanders ? 1 : 0
+    });
+    if (me.twoCommanders) {
+      rows.push({
+        kind: 'tax', source: 1, icon: '⬆', label: (me.commanderNames[1] || 'Commander 2') + ' tax',
+        color: me.color, value: me.secondTax, display: '+' + me.secondTax, slot: 2
+      });
+    }
+    rows.forEach(function (row) {
+      row.fill = row.max ? Math.min(1, row.value / row.max) : 0;
+      row.lethal = !!row.max && row.value >= row.max;
+      row.warn = !!row.max && !row.lethal && row.fill >= LETHAL_WARN_FRACTION;
+      row.display = row.display || String(row.value);
+    });
+    return rows;
+  }
+
+  function chipState(row) {
+    return (row.value > 0 ? ' has-value' : '') + (row.lethal ? ' is-lethal' : '') + (row.warn ? ' is-warn' : '');
+  }
+
+  function findRow(me, kind, source) {
+    return counterModel(me).filter(function (row) { return row.kind === kind && row.source === source; })[0] || null;
+  }
+
+  function holderOf(key) {
+    var holder = game[key];
+    return typeof holder === 'number' && game.seats[holder] ? holder : null;
+  }
+
+  /* ---- the sheet: one small menu at a time, over the bottom of the page ---- */
+  function openSheet(next) {
+    sheet = next;
+    renderSheet(true);
+  }
+
+  function closeSheet() {
+    sheet = null;
+    $('play-sheet').hidden = true;
+    $('play-sheet-panel').innerHTML = '';
+  }
+
+  function sheetHead(icon, color, title, sub) {
+    return '<div class="sheet__head" style="--chip:' + escapeHtml(color) + '"><span class="sheet__icon">' + escapeHtml(icon) + '</span>' +
+      '<div><strong>' + escapeHtml(title) + '</strong>' + (sub ? '<small>' + escapeHtml(sub) + '</small>' : '') + '</div></div>';
+  }
+
+  /* `full` builds the menu; otherwise a counter only has its number and bar
+     brought up to date, so the buttons are never pulled from under a finger. */
+  function renderSheet(full) {
+    if (!sheet || !game) return;
+    var me = shownSeat();
+    var index = mySeat();
+    var panel = $('play-sheet-panel');
+    $('play-sheet').hidden = false;
+
+    if (sheet.type === 'counter') {
+      var row = findRow(me, sheet.kind, sheet.source);
+      if (!row) { closeSheet(); return; }
+      if (full) {
+        var sub = row.kind === 'commander' ? 'Commander damage from ' + row.owner + (row.max ? ' · ' + row.max + ' is lethal' : '')
+          : row.kind === 'poison' ? row.max + ' is lethal'
+          : row.kind === 'tax' ? 'Each step is +2 to cast' : '';
+        var attrs = ' data-counter="' + row.kind + '" data-source="' + row.source + '"';
+        panel.innerHTML = sheetHead(row.icon, row.color, row.label, sub) +
+          '<div class="sheet__counter">' +
+          '<button type="button" class="sheet__step"' + attrs + ' data-amount="-1" aria-label="Less">&minus;</button>' +
+          '<output class="sheet__value" data-sheet-value></output>' +
+          '<button type="button" class="sheet__step"' + attrs + ' data-amount="1" aria-label="More">+</button></div>' +
+          (row.max ? '<div class="sheet__meter" data-sheet-meter><i></i></div>' : '') +
+          '<button type="button" class="join__secondary sheet__done" data-sheet-close>Done</button>';
+      }
+      panel.style.setProperty('--chip', row.color);
+      panel.querySelector('[data-sheet-value]').textContent = row.display;
+      var meter = panel.querySelector('[data-sheet-meter]');
+      if (meter) {
+        meter.className = 'sheet__meter' + chipState(row);
+        meter.style.setProperty('--fill', row.fill.toFixed(3));
+      }
+      return;
+    }
+
+    if (sheet.type === 'mark') {
+      var mark = MARKS[sheet.key];
+      var html;
+      if (sheet.key === 'blessing') {
+        html = sheetHead(mark.icon, mark.color, mark.label, me.blessing ? 'You have it. It stays with you for the game.' : "You don't have it.") +
+          '<div class="sheet__actions">' +
+          (me.blessing
+            ? '<button type="button" class="play__act play__act--quiet" data-designation="blessing" data-to="' + index + '">Remove it</button>'
+            : '<button type="button" class="play__act" style="--row:' + mark.color + '" data-designation="blessing" data-to="' + index + '">Get it</button>') +
+          '</div>';
+      } else {
+        var holder = holderOf(sheet.key);
+        var status = holder === null ? 'Nobody has it.' : holder === index ? 'You have it.' : game.seats[holder].name + ' has it.';
+        var actions;
+        if (holder === index) {
+          actions = game.seats.map(function (other, to) {
+            if (to === index || !other.alive) return '';
+            return '<button type="button" class="play__act" style="--row:' + escapeHtml(other.color) + '" data-designation="' +
+              sheet.key + '" data-to="' + to + '">Give to ' + escapeHtml(other.name) + '</button>';
+          }).join('') +
+            '<button type="button" class="play__act play__act--quiet" data-designation="' + sheet.key + '" data-to="-1">Drop it</button>';
+        } else {
+          // Only one player holds it: taking it takes it from them.
+          actions = '<button type="button" class="play__act" style="--row:' + mark.color + '" data-designation="' + sheet.key +
+            '" data-to="' + index + '">Take it' + (holder === null ? '' : ' from ' + escapeHtml(game.seats[holder].name)) + '</button>';
+        }
+        html = sheetHead(mark.icon, mark.color, mark.label, status) + '<div class="sheet__actions">' + actions + '</div>';
+      }
+      panel.innerHTML = html + '<button type="button" class="join__secondary sheet__done" data-sheet-close>Close</button>';
+      return;
+    }
+
+    if (sheet.type === 'emblem') {
+      var emblem = emblemNamed(sheet.id);
+      if (me.emblems.indexOf(sheet.id) === -1 || !emblem) { closeSheet(); return; }
+      panel.innerHTML = sheetHead(emblem.symbol, '#c8a35a', emblem.name, 'Emblem') +
+        '<p class="sheet__text">' + escapeHtml(emblem.text) + '</p>' +
+        '<div class="sheet__actions"><button type="button" class="play__act play__act--kill" data-emblem-remove="' +
+        escapeHtml(sheet.id) + '">Remove it</button></div>' +
+        '<button type="button" class="join__secondary sheet__done" data-sheet-close>Close</button>';
+      return;
+    }
+
+    if (sheet.type === 'coin') {
+      panel.innerHTML = sheetHead('🪙', '#d9b45a', 'Coin toss', 'It lands on the table') +
+        '<div class="sheet__actions sheet__actions--coin">' +
+        '<button type="button" class="play__act" style="--row:#d9b45a" data-coin="heads">Heads</button>' +
+        '<button type="button" class="play__act" style="--row:#d9b45a" data-coin="tails">Tails</button>' +
+        '<button type="button" class="play__act play__act--quiet" data-coin="double">Two coins</button></div>' +
+        '<button type="button" class="join__secondary sheet__done" data-sheet-close>Close</button>';
+      return;
+    }
+
+    if (sheet.type === 'emblem-add' && full) {
+      panel.innerHTML = sheetHead('◈', '#c8a35a', 'Add an emblem', 'Type the planeswalker') +
+        '<div class="join__new"><input type="search" id="sheet-emblem-search" autocomplete="off" placeholder="Elspeth, Teferi…"></div>' +
+        '<div class="play__results" id="sheet-emblem-results"></div>' +
+        '<button type="button" class="join__secondary sheet__done" data-sheet-close>Close</button>';
+      $('sheet-emblem-search').focus();
+    }
   }
 
   /* Each commander as a card, in the table's style and with its animation:
@@ -325,6 +497,7 @@
      again only when the cards change, so a running animation is not torn
      down by every update. */
   var lastAskId = '';
+  var lastDeathId = '';
   var cardKey = '';
   var cardFx = [];
   var cardPending = {};
@@ -370,8 +543,7 @@
       if (button) button.classList.toggle('is-face-up', revealed);
       var status = holder.querySelector('[data-card-status="' + slot + '"]');
       if (status) {
-        status.textContent = revealed ? 'On the battlefield. Tap the card if it dies.'
-          : 'In the command zone. Tap the card to cast it.';
+        status.textContent = revealed ? 'Tap if it dies' : 'Tap to cast';
       }
     });
   }
@@ -382,6 +554,50 @@
     cardPending[slot] = { revealed: revealed, until: Date.now() + CARD_PENDING_MS };
     button.classList.toggle('is-face-up', revealed);
     send({ action: 'commander', slot: slot, play: revealed });
+  }
+
+  /* What the table is showing that only a tap would close (statistics, the
+     coin, the recap, the result form): a bar here with the same buttons. */
+  function renderTableBar(barId, overlay) {
+    var bar = document.getElementById(barId);
+    if (!bar) return;
+    var text = '';
+    var steps = [];
+    if (overlay && overlay.kind === 'stats') {
+      text = 'The statistics are open on the table.';
+      steps = [['close', 'Close', true]];
+    } else if (overlay && overlay.kind === 'recap') {
+      text = 'The game recap is on the table.';
+      steps = [['continue', 'Continue', true]];
+    } else if (overlay && overlay.kind === 'result') {
+      text = overlay.title + (overlay.canSave ? '. Save the result to the leaderboard?' : '.') +
+        (overlay.status ? ' ' + overlay.status : '');
+      if (overlay.canSave) steps.push(['save', 'Save result', true]);
+      steps.push(['later', 'Not now', false]);
+    } else if (overlay && overlay.kind === 'coin') {
+      if (overlay.calling) {
+        text = 'Coin toss: call it.';
+        steps = [['heads', 'Heads', true], ['tails', 'Tails', true], ['close', 'Close', false]];
+      } else if (overlay.landed) {
+        text = overlay.duel ? 'The coins have landed.' : 'The coin has landed.';
+        steps = [['again', 'Toss again', true], ['close', 'Close', false]];
+      } else {
+        text = 'The coin is in the air…';
+        steps = [['close', 'Close', false]];
+      }
+    }
+    bar.hidden = !text;
+    if (!text) return;
+    var html = '<span class="tablebar__text">' + escapeHtml(text) + '</span><span class="tablebar__actions">' +
+      steps.map(function (step) {
+        return '<button type="button" class="tablebar__btn' + (step[2] ? ' is-main' : '') + '" data-overlay="' + step[0] + '">' +
+          escapeHtml(step[1]) + '</button>';
+      }).join('') + '</span>';
+    // Only redrawn when it changes, so a button is never pulled from under a finger.
+    if (bar.dataset.shown !== html) {
+      bar.dataset.shown = html;
+      bar.innerHTML = html;
+    }
   }
 
   function emblemList() {
@@ -407,42 +623,6 @@
     // The banner carries the name and deck while the controls are up.
     $('join-title').hidden = true;
     $('join-deck').hidden = true;
-    $('play-life').textContent = String(me.life);
-
-    var turn = $('play-turn');
-    var mine = game.current === index && me.alive;
-    turn.disabled = locked || !mine;
-    turn.textContent = mine ? 'End my turn' : (game.seats[game.current] ? game.seats[game.current].name + "'s turn" : 'End my turn');
-
-    var damage = [];
-    game.seats.forEach(function (other, source) {
-      if (source === index) return;
-      var first = other.commanderNames[0] || other.name;
-      damage.push({ source: source, label: first, color: other.color });
-      if (other.twoCommanders) {
-        damage.push({ source: source + 4, label: other.commanderNames[1] || other.name + ' #2', color: other.color });
-      }
-    });
-    damage.sort(function (a, b) { return (a.source % 4) - (b.source % 4) || a.source - b.source; });
-    $('play-damage').innerHTML = damage.map(function (row) {
-      var value = me.commander[row.source] || 0;
-      return counterRow(' data-counter="commander" data-source="' + row.source + '"', row.label, row.color,
-        value, String(value), value >= COMMANDER_LETHAL, COMMANDER_LETHAL);
-    }).join('');
-
-    var counters = counterRow(' data-counter="poison" data-source="-1"', 'Poison', '#8fbf4a', me.poison,
-      String(me.poison), me.poison >= POISON_LETHAL, POISON_LETHAL);
-    counters += counterRow(' data-counter="energy" data-source="-1"', 'Energy', '#e8c547', me.energy, String(me.energy), false);
-    counters += counterRow(' data-counter="experience" data-source="-1"', 'Experience', '#b18cf0', me.experience,
-      String(me.experience), false);
-    var firstTax = me.commanderNames[0] || 'Commander';
-    counters += counterRow(' data-counter="tax" data-source="' + (me.twoCommanders ? 0 : -1) + '"', firstTax + ' tax',
-      me.color, me.tax, '+' + me.tax, false);
-    if (me.twoCommanders) {
-      counters += counterRow(' data-counter="tax" data-source="1"', (me.commanderNames[1] || 'Commander 2') + ' tax',
-        me.color, me.secondTax, '+' + me.secondTax, false);
-    }
-    $('play-counters').innerHTML = counters;
 
     // The seat's wallpaper, framed and dimmed as on the table.
     var banner = $('play-banner');
@@ -453,81 +633,91 @@
     $('play-banner-name').textContent = me.name;
     $('play-banner-deck').textContent = me.deck || '';
 
-    // The same chips as the seat's ribbon: commander damage, poison and the rest.
-    $('play-ribbon').innerHTML = (me.chips || []).map(function (chip) {
-      var fill = chip.max ? Math.min(1, chip.value / chip.max) : 0;
-      return '<span class="play__chipc' + (chip.value > 0 ? ' has-value' : '') + (chip.lethal ? ' is-lethal' : '') +
-        (chip.warn ? ' is-warn' : '') + '"' +
-        ' style="--chip:' + escapeHtml(chip.color) + ';--fill:' + fill.toFixed(3) + '" title="' + escapeHtml(chip.title) + '">' +
-        '<span class="play__chipc-icon">' + escapeHtml(chip.icon) + '</span>' +
-        (chip.slot ? '<small>#' + chip.slot + '</small>' : '') +
-        (chip.value > 0 ? '<b>' + escapeHtml(chip.display) + '</b>' : '') +
-        (chip.max && chip.value > 0 ? '<i class="play__chipc-meter"></i>' : '') + '</span>';
+    $('play-life').textContent = String(me.life);
+    var turn = $('play-turn');
+    var mine = game.current === index && me.alive;
+    turn.disabled = locked || !mine;
+    turn.textContent = mine ? 'End my turn' : (game.seats[game.current] ? game.seats[game.current].name + "'s turn" : 'End my turn');
+
+    // The table's chips, filling toward lethal: a tap opens its − and +.
+    $('play-ribbon').innerHTML = counterModel(me).map(function (row) {
+      return '<button type="button" class="play__chipc' + chipState(row) + '" data-chip-kind="' + row.kind + '"' +
+        ' data-chip-source="' + row.source + '" style="--chip:' + escapeHtml(row.color) + ';--fill:' + row.fill.toFixed(3) + '"' +
+        ' aria-label="' + escapeHtml(row.label + ': ' + row.display) + '">' +
+        '<span class="play__chipc-icon">' + escapeHtml(row.icon) + '</span>' +
+        (row.slot ? '<small>#' + row.slot + '</small>' : '') +
+        (row.value > 0 ? '<b>' + escapeHtml(row.display) + '</b>' : '') +
+        (row.max && row.value > 0 ? '<i class="play__chipc-meter"></i>' : '') + '</button>';
     }).join('');
-
-    $('play-out').innerHTML = me.out
-      ? '<p class="play__out-note">You ' + (me.outReason === 'conceded' ? 'conceded' : 'are eliminated') + '.</p>' +
-        '<button type="button" class="play__act play__act--quiet" data-out="back">Back in the game</button>'
-      : '<button type="button" class="play__act play__act--quiet" data-out="conceded">Concede</button>' +
-        '<button type="button" class="play__act play__act--kill" data-out="out">I\'m eliminated</button>';
-
-    var ask = me.taxAsk;
-    $('play-ask').hidden = !ask;
-    if (ask) {
-      $('play-ask-text').textContent = ask.name + ' died. Raise its commander tax to +' + ask.next + '?';
-      if (ask.id !== lastAskId && navigator.vibrate) navigator.vibrate([60, 40, 60]);
-    }
-    lastAskId = ask ? ask.id : '';
 
     renderCommanderCards(me);
 
-    var marks = [
-      { key: 'monarch', label: '👑 Monarch' },
-      { key: 'initiative', label: '⚔ Initiative' }
-    ].map(function (mark) {
-      var holder = game[mark.key];
-      var held = typeof holder === 'number' && game.seats[holder];
-      var status = !held ? 'Nobody' : holder === index ? 'You' : game.seats[holder].name;
-      var buttons;
-      if (holder === index) {
-        buttons = game.seats.map(function (other, to) {
-          if (to === index || !other.alive) return '';
-          return '<button type="button" class="play__act" data-designation="' + mark.key + '" data-to="' + to + '"' +
-            ' style="--row:' + escapeHtml(other.color) + '">Give to ' + escapeHtml(other.name) + '</button>';
-        }).join('') +
-          '<button type="button" class="play__act play__act--quiet" data-designation="' + mark.key + '" data-to="-1">Drop</button>';
-      } else {
-        buttons = '<button type="button" class="play__act" data-designation="' + mark.key + '" data-to="' + index + '">Take</button>';
-      }
-      return '<div class="play__mark"><div class="play__mark-head"><strong>' + mark.label + '</strong>' +
-        '<span>' + escapeHtml(status) + '</span></div><div class="play__mark-actions">' + buttons + '</div></div>';
-    }).join('');
-    marks += '<div class="play__mark"><div class="play__mark-head"><strong>✦ City\'s blessing</strong>' +
-      '<span>' + (me.blessing ? 'You have it' : 'Not yet') + '</span></div><div class="play__mark-actions">' +
-      '<button type="button" class="play__act' + (me.blessing ? ' play__act--quiet' : '') + '" data-designation="blessing" data-to="' +
-      index + '">' + (me.blessing ? 'Remove' : 'Get it') + '</button></div></div>';
-    $('play-designations').innerHTML = marks;
-
+    // Designations and emblems as icons: a tap opens what can be done.
+    var marks = ['monarch', 'initiative', 'blessing'].map(function (key) {
+      var mark = MARKS[key];
+      var holder = key === 'blessing' ? null : holderOf(key);
+      var mineNow = key === 'blessing' ? !!me.blessing : holder === index;
+      var who = key === 'blessing' ? (mineNow ? 'Yours' : '–') : holder === null ? 'Nobody' : mineNow ? 'You' : game.seats[holder].name;
+      return '<button type="button" class="play__mark' + (mineNow ? ' is-mine' : '') + '" data-mark="' + key + '"' +
+        ' style="--chip:' + mark.color + '"><span class="play__mark-icon">' + mark.icon + '</span>' +
+        '<span class="play__mark-text">' + escapeHtml(mark.label) + '<small>' + escapeHtml(who) + '</small></span></button>';
+    });
     var counts = {};
     me.emblems.forEach(function (id) { counts[id] = (counts[id] || 0) + 1; });
-    $('play-emblems').innerHTML = Object.keys(counts).map(function (id) {
+    Object.keys(counts).forEach(function (id) {
       var emblem = emblemNamed(id);
-      return '<button type="button" class="play__chip" data-emblem-remove="' + escapeHtml(id) + '" title="Remove">' +
-        escapeHtml(emblem ? emblem.symbol + ' ' + emblem.name : id) + (counts[id] > 1 ? ' ×' + counts[id] : '') +
-        ' <span aria-hidden="true">✕</span></button>';
-    }).join('') || '<span class="play__empty">None</span>';
+      marks.push('<button type="button" class="play__mark is-mine" data-emblem-open="' + escapeHtml(id) + '" style="--chip:#c8a35a">' +
+        '<span class="play__mark-icon">' + escapeHtml(emblem ? emblem.symbol : '◈') + '</span>' +
+        '<span class="play__mark-text">' + escapeHtml(emblem ? emblem.name.split(',')[0] : id) +
+        '<small>Emblem' + (counts[id] > 1 ? ' ×' + counts[id] : '') + '</small></span></button>');
+    });
+    marks.push('<button type="button" class="play__mark" data-coin-open="1" style="--chip:#d9b45a">' +
+      '<span class="play__mark-icon">🪙</span><span class="play__mark-text">Coin<small>Flip</small></span></button>');
+    marks.push('<button type="button" class="play__mark play__mark--add" data-emblem-new="1">' +
+      '<span class="play__mark-icon">+</span><span class="play__mark-text">Emblem</span></button>');
+    $('play-marks').innerHTML = marks.join('');
+
+    $('play-out').innerHTML =
+      '<button type="button" class="play__link" id="play-change">Change player or deck</button>' +
+      (me.out
+        ? '<button type="button" class="play__link" data-out="back">Back in the game</button>'
+        : '<button type="button" class="play__link" data-out="conceded">Concede</button>' +
+          '<button type="button" class="play__link play__link--danger" data-out="out">I\'m eliminated</button>');
+
+    // Lethal numbers come first: the tax question waits behind them.
+    var death = me.deathAsk;
+    $('play-death').hidden = !death;
+    if (death) {
+      $('play-death-text').textContent = 'You have ' + death.reason + '. Are you out?';
+      if (death.id !== lastDeathId && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
+    lastDeathId = death ? death.id : '';
+
+    var ask = me.taxAsk;
+    $('play-ask').hidden = !ask || !!death;
+    if (ask) {
+      $('play-ask-text').textContent = ask.name + ' died. Raise its commander tax to +' + ask.next + '?';
+      if (ask.id !== lastAskId && !death && navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    }
+    lastAskId = ask && !death ? ask.id : '';
 
     Array.prototype.forEach.call(document.querySelectorAll('#step-play button:not(#play-change)'), function (button) {
       if (button.id !== 'play-turn') button.disabled = locked;
     });
+    renderTableBar('play-tablebar', game.overlay);
+    if (sheet && locked) closeSheet();
+    else if (sheet && sheet.type !== 'emblem-add') renderSheet(sheet.type !== 'counter');
   }
 
   function renderEmblemResults() {
-    var text = $('play-emblem-search').value.trim().toLowerCase();
+    var input = $('sheet-emblem-search');
+    var holder = $('sheet-emblem-results');
+    if (!input || !holder) return;
+    var text = input.value.trim().toLowerCase();
     var found = text.length < 2 ? [] : emblemList().filter(function (emblem) {
       return emblem.name.toLowerCase().indexOf(text) !== -1 || emblem.text.toLowerCase().indexOf(text) !== -1;
     }).slice(0, 8);
-    $('play-emblem-results').innerHTML = found.map(function (emblem) {
+    holder.innerHTML = found.map(function (emblem) {
       return '<button type="button" class="play__result" data-emblem-add="' + escapeHtml(emblem.id) + '">' +
         '<strong>' + escapeHtml(emblem.symbol + ' ' + emblem.name) + '</strong>' +
         '<span>' + escapeHtml(emblem.text) + '</span></button>';
@@ -538,16 +728,34 @@
     var button = event.target.closest('button');
     if (!button || button.disabled) return;
     var data = button.dataset;
-    if (data.life !== undefined) {
+    if (data.overlay !== undefined) {
+      send({ action: 'overlay', do: data.overlay });
+    } else if (data.life !== undefined) {
       send({ action: 'life', amount: Number(data.life) });
     } else if (data.counter !== undefined) {
       send({ action: 'counter', kind: data.counter, source: Number(data.source), amount: Number(data.amount) });
+    } else if (data.chipKind !== undefined) {
+      openSheet({ type: 'counter', kind: data.chipKind, source: Number(data.chipSource) });
+    } else if (data.mark !== undefined) {
+      openSheet({ type: 'mark', key: data.mark });
+    } else if (data.emblemOpen !== undefined) {
+      openSheet({ type: 'emblem', id: data.emblemOpen });
+    } else if (data.coinOpen !== undefined) {
+      openSheet({ type: 'coin' });
+    } else if (data.coin !== undefined) {
+      send(data.coin === 'double' ? { action: 'coin', double: true, call: '' }
+        : { action: 'coin', double: false, call: data.coin });
+      closeSheet();
+    } else if (data.emblemNew !== undefined) {
+      openSheet({ type: 'emblem-add' });
+    } else if (data.sheetClose !== undefined) {
+      closeSheet();
     } else if (data.emblemAdd !== undefined) {
       send({ action: 'emblem_add', emblem: data.emblemAdd });
-      $('play-emblem-search').value = '';
-      renderEmblemResults();
+      closeSheet();
     } else if (data.emblemRemove !== undefined) {
       send({ action: 'emblem_remove', emblem: data.emblemRemove });
+      closeSheet();
     } else if (button.id === 'play-turn') {
       send({ action: 'end_turn' });
     } else if (data.out !== undefined) {
@@ -561,12 +769,19 @@
       flipCommander(button);
     } else if (data.designation !== undefined) {
       send({ action: 'designation', key: data.designation, to: Number(data.to) });
+      closeSheet();
     } else if (data.taxRaise !== undefined) {
       var asked = game && game.seats[mySeat()].taxAsk;
       if (!asked) return;
       // Gone here at once; the table's next snapshot agrees.
       $('play-ask').hidden = true;
       send({ action: 'tax_answer', id: asked.id, raise: data.taxRaise === '1' });
+    } else if (data.deathOut !== undefined) {
+      var lethal = game && game.seats[mySeat()].deathAsk;
+      if (!lethal) return;
+      // Gone here at once; the table closes its own window when it takes this.
+      $('play-death').hidden = true;
+      send({ action: 'death_answer', id: lethal.id, out: data.deathOut === '1' });
     } else if (button.id === 'play-change') {
       setStatus('');
       show('player');
@@ -612,7 +827,13 @@
   });
 
   $('join-player-name').addEventListener('input', render);
-  $('play-emblem-search').addEventListener('input', renderEmblemResults);
+  document.addEventListener('input', function (event) {
+    if (event.target.id === 'sheet-emblem-search') renderEmblemResults();
+  });
+  // A tap on the dimmed page around the sheet closes it.
+  $('play-sheet').addEventListener('click', function (event) {
+    if (event.target === $('play-sheet')) closeSheet();
+  });
   $('join-deck-name').addEventListener('input', render);
   $('join-commander').addEventListener('input', function (event) {
     // A different commander typed: the card picked for the old one goes.

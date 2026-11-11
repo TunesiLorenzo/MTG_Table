@@ -6,10 +6,13 @@
   <meta name="theme-color" content="#120d0a">
   <title>Seat {{ seat }} · MTG Table</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='join.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='host.css') }}">
 </head>
 <body data-seat="{{ seat }}">
   <main class="join">
     <header class="join__head">
+      <!-- Opened from the table controls: the way back to them. -->
+      <a class="join__hostlink" id="join-host-link" href="#" hidden>&larr; Table controls</a>
       <span class="join__seat" id="join-seat">Seat {{ seat }}</span>
       <h1 id="join-title">Who's playing?</h1>
       <p class="join__deck" id="join-deck" hidden></p>
@@ -37,24 +40,16 @@
 
     <!-- The seat's controls once it is claimed: they drive the table's own buttons. -->
     <section class="join__step play" id="step-play" hidden>
-      <!-- The seat as the table shows it: its wallpaper, and the same counter chips. -->
+      <!-- The seat as the table shows it: its wallpaper, name, deck and life. -->
       <div class="play__banner" id="play-banner">
         <div class="play__banner-text">
           <strong id="play-banner-name"></strong>
           <span id="play-banner-deck"></span>
         </div>
       </div>
-      <div class="play__ribbon" id="play-ribbon"></div>
 
       <p class="play__note" id="play-note" hidden></p>
-      <!-- A commander died: asked here and on the table, the first answer counts. -->
-      <div class="play__ask" id="play-ask" hidden>
-        <p id="play-ask-text"></p>
-        <div class="play__ask-actions">
-          <button type="button" class="join__primary" data-tax-raise="1">Raise tax</button>
-          <button type="button" class="join__secondary" data-tax-raise="0">No</button>
-        </div>
-      </div>
+
       <div class="play__life" id="play-life-row">
         <button type="button" class="play__step" data-life="-5">&minus;5</button>
         <button type="button" class="play__step" data-life="-1">&minus;1</button>
@@ -64,30 +59,45 @@
       </div>
       <button type="button" class="join__primary play__turn" id="play-turn" disabled>End my turn</button>
 
-      <h2 class="join__group">Your commander</h2>
-      <div class="play__rows" id="play-commanders"></div>
+      <!-- The seat's counters as the table's chips: tap one to change it. -->
+      <div class="play__ribbon" id="play-ribbon"></div>
 
-      <h2 class="join__group">Monarch, initiative, city's blessing</h2>
-      <div class="play__rows" id="play-designations"></div>
-
-      <h2 class="join__group">Commander damage taken</h2>
-      <div class="play__rows" id="play-damage"></div>
-
-      <h2 class="join__group">Counters</h2>
-      <div class="play__rows" id="play-counters"></div>
-
-      <h2 class="join__group">Emblems</h2>
-      <div class="play__chips" id="play-emblems"></div>
-      <div class="join__new">
-        <input type="search" id="play-emblem-search" placeholder="Add an emblem: type a planeswalker" autocomplete="off">
+      <div class="play__board">
+        <div class="play__cards" id="play-commanders"></div>
+        <!-- Monarch, initiative, city's blessing and emblems: tap for what can be done. -->
+        <div class="play__marks" id="play-marks"></div>
       </div>
-      <div class="play__results" id="play-emblem-results"></div>
 
-      <h2 class="join__group">Leaving the game</h2>
-      <div class="play__out" id="play-out"></div>
-
-      <button class="join__secondary play__change" type="button" id="play-change">Change player or deck</button>
+      <nav class="play__links" id="play-out"></nav>
     </section>
+
+    <!-- Something on the table only a tap would close (statistics, coin, recap, result): close it from here. -->
+    <div class="tablebar" id="play-tablebar" hidden role="status"></div>
+
+    <!-- One sheet for every small menu: a counter's − and +, a designation, an emblem. -->
+    <div class="sheet" id="play-sheet" hidden>
+      <div class="sheet__panel" id="play-sheet-panel" role="dialog" aria-modal="true"></div>
+    </div>
+
+    <!-- Lethal numbers (life, poison, commander damage): asked here and on the
+         table, the first answer counts. -->
+    <div class="play__ask play__ask--death" id="play-death" hidden>
+      <p id="play-death-text"></p>
+      <small>Stay in if an effect keeps you in the game.</small>
+      <div class="play__ask-actions">
+        <button type="button" class="join__primary play__ask-out" data-death-out="1">I'm out</button>
+        <button type="button" class="join__secondary" data-death-out="0">Keep me in</button>
+      </div>
+    </div>
+
+    <!-- A commander died: asked here and on the table, the first answer counts. -->
+    <div class="play__ask" id="play-ask" hidden>
+      <p id="play-ask-text"></p>
+      <div class="play__ask-actions">
+        <button type="button" class="join__primary" data-tax-raise="1">Raise tax</button>
+        <button type="button" class="join__secondary" data-tax-raise="0">No</button>
+      </div>
+    </div>
 
     <footer class="join__foot" id="join-foot" hidden>
       <button class="join__primary" type="button" id="join-save" disabled>Take my seat</button>

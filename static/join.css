@@ -300,6 +300,9 @@ html, body {
 .play__ask[hidden] { display: none; }
 .play__ask p { margin: 0 0 12px; font-weight: 700; }
 .play__ask-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.play__ask--death { border-color: var(--danger); }
+.play__ask small { display: block; margin: -6px 0 12px; color: var(--muted); }
+.play__ask .play__ask-out { color: #fff; background: var(--danger); border-color: var(--danger); }
 
 /* Commanders and designations. */
 .play__cmd {
@@ -480,3 +483,177 @@ html, body {
 .pcard__caption strong { display: block; font-size: 1.05rem; }
 .pcard__caption small { display: block; margin-top: 4px; color: var(--muted); }
 .commander-fx { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+
+/* ---- compact controls: chips and icons open a sheet ---- */
+.play__ribbon { gap: 8px; margin: 12px 0 14px; }
+button.play__chipc {
+  min-height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 1rem;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+button.play__chipc:active { transform: scale(.96); }
+button.play__chipc:disabled { opacity: .45; }
+
+.play__board { display: grid; gap: 14px; }
+.play__cards { display: flex; gap: 12px; }
+.play__cards .pcard-wrap { display: grid; grid-template-columns: 1fr; justify-items: center; gap: 6px; flex: 0 0 auto; }
+.play__cards .pcard { width: 104px; }
+.play__cards .pcard__caption { text-align: center; }
+.play__cards .pcard__caption strong { font-size: .9rem; }
+.play__cards .pcard__caption small { margin-top: 0; font-size: .75rem; }
+
+.play__marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.play__mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 6px 10px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  text-align: left;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.play__mark-icon { flex: none; color: var(--chip, var(--seat)); font-size: 1.35rem; line-height: 1; }
+.play__mark-text { display: grid; min-width: 0; font-size: .85rem; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.play__mark-text small { color: var(--muted); font-size: .72rem; font-weight: 500; }
+.play__mark.is-mine {
+  color: var(--text);
+  background: color-mix(in srgb, var(--chip) 18%, var(--panel));
+  border-color: var(--chip);
+}
+.play__mark--add { border-style: dashed; }
+.play__mark:disabled { opacity: .45; }
+
+.play__links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin: 26px 0 8px; }
+.play__link {
+  padding: 8px 2px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: .9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.play__link--danger { color: var(--danger); }
+
+/* The sheet: one small menu at a time, over a dimmed page. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: #000a;
+}
+.sheet[hidden] { display: none; }
+.sheet__panel {
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: var(--panel);
+  border-top: 2px solid var(--chip, var(--seat));
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -10px 40px #000c;
+  animation: sheet-in 220ms cubic-bezier(.2, .9, .3, 1);
+}
+@keyframes sheet-in {
+  from { transform: translateY(40px); opacity: 0; }
+}
+.sheet__head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.sheet__icon { color: var(--chip); font-size: 2rem; line-height: 1; }
+.sheet__head strong { display: block; font-size: 1.2rem; }
+.sheet__head small { display: block; color: var(--muted); }
+.sheet__counter { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.sheet__step {
+  min-height: 72px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font: inherit;
+  font-size: 2rem;
+  font-weight: 800;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.sheet__step:active { background: color-mix(in srgb, var(--chip) 30%, var(--bg)); }
+.sheet__value {
+  min-width: 3ch;
+  color: var(--chip);
+  font-size: 3rem;
+  font-weight: 850;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.sheet__meter {
+  position: relative;
+  height: 8px;
+  margin: 16px 0 4px;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: 99px;
+}
+.sheet__meter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--fill, 0) * 100%);
+  background: var(--chip);
+  box-shadow: 0 0 10px var(--chip);
+  transition: width 200ms ease;
+}
+.sheet__meter.is-warn i { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+.sheet__meter.is-lethal i { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+.sheet__actions { display: grid; gap: 8px; }
+.sheet__actions--coin { grid-template-columns: 1fr 1fr; }
+.sheet__actions--coin .play__act--quiet { grid-column: 1 / -1; }
+.sheet__text { margin: 0 0 14px; color: var(--muted); }
+.sheet__done { margin-top: 14px; }
+
+/* Something on the table only a tap would close: a bar to close it from here. */
+.tablebar {
+  position: fixed;
+  z-index: 45;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 8px;
+  right: 8px;
+  max-width: 624px;
+  margin: 0 auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 2px solid var(--seat);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px #000c;
+  animation: ask-in 220ms ease-out;
+}
+.tablebar[hidden] { display: none; }
+.tablebar__text { font-weight: 700; }
+.tablebar__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tablebar__btn {
+  flex: 1 1 auto;
+  min-height: 46px;
+  padding: 0 14px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.tablebar__btn.is-main { color: #120d0a; background: var(--seat); border-color: var(--seat); }

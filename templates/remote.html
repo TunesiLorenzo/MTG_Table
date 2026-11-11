@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#120d0a">
+  <title>Table remote · MTG Table</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='join.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='host.css') }}">
+</head>
+<body>
+  <!-- What the hub's remote code opens: how would you like to drive the table? -->
+  <main class="join">
+    <header class="join__head">
+      <span class="join__seat">Table remote</span>
+      <h1>How do you want to control the table?</h1>
+    </header>
+    <div class="remote__choices">
+      <a class="remote__choice" id="choice-host" href="/host">
+        <span class="remote__icon" aria-hidden="true">🎛</span>
+        <strong>Table controls</strong>
+        <span>Phone buttons for the whole table: turns, new game, coin, day and night, lights, and every seat's life and counters. Best on a phone.</span>
+      </a>
+      <a class="remote__choice" id="choice-mirror" href="/mirror">
+        <span class="remote__icon" aria-hidden="true">🖥</span>
+        <strong>Screen mirror</strong>
+        <span>The table screen itself, live: tap anywhere on it as if you were at the table. Best on a tablet, with the table window in front on the PC.</span>
+      </a>
+    </div>
+  </main>
+  <script>
+    // Both keep the code this page was opened with.
+    (function () {
+      var key = new URLSearchParams(location.search).get('k') || '';
+      document.getElementById('choice-host').href = '/host?k=' + encodeURIComponent(key);
+      document.getElementById('choice-mirror').href = '/mirror?k=' + encodeURIComponent(key);
+    })();
+  </script>
+</body>
+</html>

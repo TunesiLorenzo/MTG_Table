@@ -616,6 +616,31 @@ rotated 180°, the bottom two 0°. If players sit on all four sides, rotate the 
 quadrant to 90° and the right to 270° with `↺`. Rotated panels swap their width
 and height so they still fill the quadrant exactly.
 
+### Table remote
+
+**Table remote** in the hub's *Display & system* section shows a QR code. A
+phone or tablet that scans it opens `/remote`, which asks how to drive the
+table:
+
+- **Table controls** (`/host`): phone buttons for everything the hub does
+  (turns, new game, reset, draw, coin, day and night, entrance, clock, lights)
+  and the four seats, each opening that seat's own phone controls. Questions
+  the table asks, and anything it shows that only a tap would close
+  (statistics, coin, recap, result form), can be answered from the phone.
+- **Screen mirror** (`/mirror`), below.
+
+The screen mirror is the table screen live, where a
+tap is a click on the table, a hold is a held click, a drag is a mouse drag and
+two fingers scroll. The ⋮ menu has a keyboard (type, then Send; plus Backspace,
+Enter and Esc), a 90° rotate for whichever side of the table you sit on, and
+full screen.
+
+The server takes a picture of the browser window titled *MTG Commander Table*
+(the main screen if that tab is not showing) and plays the taps as the PC's
+mouse, so it works on Windows only and the cursor moves on the table screen.
+Unlike the seat codes, this one lasts from game to game; **New code** in the
+QR window retires it and every device that scanned it.
+
 ---
 
 # The lights (`/lights`)

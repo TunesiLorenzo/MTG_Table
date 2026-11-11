@@ -38,6 +38,7 @@ import bulb_control
 import cues
 import lighting
 import mdns
+import screen_mirror
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -298,6 +299,8 @@ table_state = {
     "cues": cues.default_settings(),
     # A new game's seats being claimed from phones: see the JOIN section.
     "lobby": {"active": False, "keys": [""] * PLAYER_COUNT, "claimed": [False] * PLAYER_COUNT, "revision": 0},
+    # The screen remote's code: see the SCREEN REMOTE section.
+    "mirror_key": "",
 }
 state_lock = threading.Lock()
 
@@ -396,6 +399,9 @@ def load_table_state():
             and isinstance(claimed, list) and len(claimed) == PLAYER_COUNT):
         table_state["lobby"] = {"active": lobby.get("active") is True, "keys": keys,
                                 "claimed": [seat is True for seat in claimed], "revision": time.time_ns() // 1_000_000}
+
+    if isinstance(saved.get("mirror_key"), str) and re.fullmatch(r"[A-Za-z0-9_-]{8,40}", saved["mirror_key"]):
+        table_state["mirror_key"] = saved["mirror_key"]
 
     table_state["cues"] = cues.merge_settings(saved.get("cues"))
     table_state["fade_enabled"] = bool(saved.get("fade_enabled", True))
@@ -2609,9 +2615,15 @@ def status():
 # -----------------------------
 # PLAYER COLORS AND TURN ORDER
 # -----------------------------
+def shared_table_state():
+    """table_state for the pages, without the screen remote's code: that one
+    only goes out inside its QR picture."""
+    return {key: value for key, value in table_state.items() if key != "mirror_key"}
+
+
 @app.get("/api/table")
 def get_table_state():
-    return jsonify({"ok": True, **table_state, "players": players_payload(),
+    return jsonify({"ok": True, **shared_table_state(), "players": players_payload(),
                     "announcer_sounds": list_announcer_sounds(),
                     "announcer_winner": announcer_winner_sound(),
                     "announcer_death": announcer_death_sounds(),
@@ -3390,6 +3402,17 @@ remote_last_id = 0
 remote_snapshot = {"version": 0, "game": None}
 
 
+OVERLAY_STEPS = {"close", "continue", "save", "later", "heads", "tails", "again"}
+
+
+def overlay_step(payload):
+    """What to do with what the table is showing (statistics, coin, recap, result)."""
+    step = payload.get("do")
+    if step not in OVERLAY_STEPS:
+        raise ValueError("Unknown step")
+    return step
+
+
 def remote_action_from_payload(index, payload):
     action = payload.get("action")
     entry = {"seat": index, "action": action}
@@ -3424,11 +3447,24 @@ def remote_action_from_payload(index, payload):
         if payload.get("mode") not in ("out", "conceded", "back"):
             raise ValueError("Unknown way out")
         entry["mode"] = payload["mode"]
+    elif action == "coin":
+        # One coin, called heads or tails, or the two-coin duel.
+        if payload.get("call") not in ("heads", "tails", ""):
+            raise ValueError("Call heads or tails")
+        entry.update(double=payload.get("double") is True, call=payload.get("call"))
+    elif action == "overlay":
+        entry["do"] = overlay_step(payload)
     elif action == "tax_answer":
         ask = str(payload.get("id") or "")
         if not re.fullmatch(r"[a-z0-9]{1,24}", ask):
             raise ValueError("Unknown question")
         entry.update(id_asked=ask, raise_tax=payload.get("raise") is True)
+    elif action == "death_answer":
+        # Lethal numbers: out, or kept in by an effect. Asked on the table too.
+        ask = str(payload.get("id") or "")
+        if not re.fullmatch(r"[a-z0-9]{1,24}", ask):
+            raise ValueError("Unknown question")
+        entry.update(id_asked=ask, out=payload.get("out") is True)
     elif action != "end_turn":
         raise ValueError("Unknown action")
     return entry
@@ -3491,6 +3527,199 @@ def remote_get_state(seat):
         remote_changed.wait_for(lambda: remote_snapshot["version"] > after and remote_snapshot["game"] is not None,
                                 timeout=REMOTE_WAIT_SECONDS)
         return jsonify({"ok": True, "version": remote_snapshot["version"], "game": remote_snapshot["game"]})
+
+
+# -----------------------------
+# SCREEN REMOTE: THE WHOLE TABLE ON A TABLET
+# -----------------------------
+# The hub's "Screen remote" QR opens /mirror on a tablet or phone: a live
+# picture of the table's browser window, where every tap is played back on
+# this PC as the mouse (see screen_mirror.py). Unlike the seat codes it lasts
+# from game to game, so a touch display by the table scans it once; "New code"
+# on the table retires it, and with it every device that scanned it.
+def mirror_key():
+    with state_lock:
+        if not table_state["mirror_key"]:
+            table_state["mirror_key"] = secrets.token_urlsafe(12)
+            save_table_state()
+        return table_state["mirror_key"]
+
+
+def check_mirror_key(key):
+    if not secrets.compare_digest(str(key or ""), mirror_key()):
+        abort(403, "This screen remote code has been replaced. Scan the one on the table again")
+    if not screen_mirror.AVAILABLE:
+        abort(503, "The screen remote only works when the table runs on Windows")
+
+
+@app.get("/mirror")
+def mirror_page():
+    return render_template("mirror.html")
+
+
+@app.get("/api/mirror/qr.svg")
+def mirror_qr():
+    import segno
+
+    port = request.host.rsplit(":", 1)[1] if ":" in request.host else "80"
+    # /remote asks: table controls on the phone, or the screen mirror.
+    url = f"http://{mdns.active_lan_ip()}:{port}/remote?k={mirror_key()}"
+    buffer = io.BytesIO()
+    segno.make(url, error="m").save(buffer, kind="svg", scale=10, border=2, dark="#111", light="#fff", xmldecl=False)
+    return Response(buffer.getvalue(), mimetype="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/mirror/key/new")
+def new_mirror_key():
+    with state_lock:
+        table_state["mirror_key"] = secrets.token_urlsafe(12)
+        save_table_state()
+    return ok("New screen remote code: devices with the old one are locked out")
+
+
+# -----------------------------
+# TABLE REMOTE: THE WHOLE TABLE FROM A PHONE
+# -----------------------------
+# The hub's remote code opens /remote, which asks how to drive the table:
+# "Table controls" (/host), phone buttons for everything the hub does, or the
+# screen mirror (/mirror). Table controls ride the same relay as the seat
+# phones: actions queued here with seat -1, applied by the table page, and
+# the game's snapshot back by long poll. The code is the screen remote's.
+HOST_ACTIONS = {"turn_next", "turn_back", "first_player", "start_entrance", "skip_entrance", "entrance_mode",
+                "cover_again", "new_game", "reset", "draw", "coin", "daytime", "clock_stop", "clock_reset",
+                "turn_timer", "house_lights", "lights_follow", "resend_lights", "starting_life", "direction",
+                "stats", "ask_answer", "overlay"}
+
+
+def check_host_key(key):
+    if not secrets.compare_digest(str(key or ""), mirror_key()):
+        abort(403, "This table remote code has been replaced. Scan the one on the table again")
+
+
+def host_action_from_payload(payload):
+    action = payload.get("action")
+    if action not in HOST_ACTIONS:
+        raise ValueError("Unknown table action")
+    entry = {"seat": -1, "host": True, "action": action}
+    if action == "coin":
+        if payload.get("call") not in ("heads", "tails", ""):
+            raise ValueError("Call heads or tails")
+        entry.update(double=payload.get("double") is True, call=payload.get("call"))
+    elif action == "daytime":
+        if payload.get("value") not in ("none", "day", "night"):
+            raise ValueError("Day, night or neither")
+        entry["value"] = payload["value"]
+    elif action == "direction":
+        if payload.get("value") not in ("cw", "ccw"):
+            raise ValueError("Clockwise or counter-clockwise")
+        entry["value"] = payload["value"]
+    elif action == "starting_life":
+        value = payload.get("value")
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 999:
+            raise ValueError("Starting life is a whole number")
+        entry["value"] = value
+    elif action == "overlay":
+        entry["do"] = overlay_step(payload)
+    elif action == "ask_answer":
+        ask = payload.get("ask")
+        if isinstance(ask, bool) or not isinstance(ask, int) or ask < 1:
+            raise ValueError("Unknown question")
+        # `id` is the queue's own number; the table's question is ask_id.
+        entry.update(ask_id=ask, yes=payload.get("yes") is True)
+    return entry
+
+
+@app.get("/remote")
+def remote_choice_page():
+    """What the hub's remote code opens: table controls or the screen mirror."""
+    return render_template("remote.html")
+
+
+@app.get("/host")
+def host_page():
+    return render_template("host.html")
+
+
+@app.post("/api/host")
+def host_action():
+    global remote_last_id
+    payload = request.get_json(force=True, silent=True) or {}
+    check_host_key(payload.get("k"))
+    entry = host_action_from_payload(payload)
+    with remote_changed:
+        remote_last_id += 1
+        entry["id"] = remote_last_id
+        remote_actions.append(entry)
+        del remote_actions[:-REMOTE_KEEP]
+        remote_changed.notify_all()
+    return jsonify({"ok": True, "id": entry["id"]})
+
+
+@app.get("/api/host/state")
+def host_state():
+    """The game for the table remote, once it is newer than `after`."""
+    check_host_key(request.args.get("k"))
+    try:
+        after = int(request.args.get("after", "0"))
+    except ValueError:
+        after = 0
+    with remote_changed:
+        remote_changed.wait_for(lambda: remote_snapshot["version"] > after and remote_snapshot["game"] is not None,
+                                timeout=REMOTE_WAIT_SECONDS)
+        return jsonify({"ok": True, "version": remote_snapshot["version"], "game": remote_snapshot["game"]})
+
+
+@app.get("/api/host/seats")
+def host_seats():
+    """Each seat's own controls, for the table remote to open: its join page and code."""
+    check_host_key(request.args.get("k"))
+    return jsonify({"ok": True, "seats": [{"seat": index + 1, "url": f"/join/{index + 1}?k={seat_key(index)}"}
+                                         for index in range(PLAYER_COUNT)]})
+
+
+@app.post("/api/mirror/page")
+def mirror_page_size():
+    """The table page's visible size in physical pixels, so the screen remote
+    shows the page alone and not the browser's tabs and address bar."""
+    payload = request.get_json(force=True, silent=True) or {}
+    width, height = payload.get("width"), payload.get("height")
+    if not all(isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 10000
+               for value in (width, height)):
+        raise ValueError("A page size is two whole numbers of pixels")
+    screen_mirror.set_page_size(width, height)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/mirror/frame.jpg")
+def mirror_frame():
+    """The table screen as it is now, or 204 when it is the picture with crc `since`."""
+    check_mirror_key(request.args.get("k"))
+    try:
+        width = int(request.args.get("w", "1280"))
+        since = int(request.args["since"]) if request.args.get("since") else None
+    except ValueError:
+        raise ValueError("w and since are whole numbers")
+    try:
+        crc, jpeg, rect, found = screen_mirror.frame(width, since)
+    except OSError:
+        abort(503, "The table screen cannot be seen: is the PC locked or asleep?")
+    headers = {"Cache-Control": "no-store", "X-Frame": str(crc), "X-Table-Found": "1" if found else "0",
+               "X-Region": f"{rect[2] - rect[0]}x{rect[3] - rect[1]}"}
+    if jpeg is None:
+        return Response(status=204, headers=headers)
+    return Response(jpeg, mimetype="image/jpeg", headers=headers)
+
+
+@app.post("/api/mirror/input")
+def mirror_input():
+    """Taps, drags, scrolls and typing from the tablet, played on this PC in order."""
+    payload = request.get_json(force=True, silent=True) or {}
+    check_mirror_key(payload.get("k"))
+    events = payload.get("events")
+    if not isinstance(events, list) or len(events) > 100:
+        raise ValueError("Send up to 100 screen remote events")
+    screen_mirror.play(events)
+    return jsonify({"ok": True})
 
 
 @app.post("/api/players/<index>/seat")
@@ -3847,7 +4076,7 @@ def update_table_settings():
             notes.append(f"Fade over {table_state['fade_seconds']:.1f}s")
         save_table_state()
 
-    return ok("; ".join(notes) or "No change", **{**table_state, "players": players_payload()})
+    return ok("; ".join(notes) or "No change", **{**shared_table_state(), "players": players_payload()})
 
 
 @app.post("/api/bulbs/<bulb_id>/ip")

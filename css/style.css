@@ -728,6 +728,49 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .seat__qr-close { color: #f0e2cf99; font-size: 1.6vmin; letter-spacing: .08em; }
 .tray__btn--qr { color: #ffd98a; border-color: #8f6f2a; }
 
+/* The screen remote's code, from the hub. Upright for whoever opened it. */
+.mirror-qr {
+  display: none;
+  padding: 3vmin 3.4vmin;
+  color: #f0e2cf;
+  background: #0b0705f2;
+  border: .3vmin solid #8f6f2a;
+  border-radius: 2vmin;
+  text-align: center;
+}
+.mirror-qr[open] { display: grid; justify-items: center; gap: 1.4vmin; }
+.mirror-qr::backdrop { background: #000a; }
+.mirror-qr__code {
+  display: block;
+  width: 34vmin;
+  height: 34vmin;
+  background: #fff;
+  border-radius: 1vmin;
+  image-rendering: pixelated;
+}
+.mirror-qr__title {
+  color: #ffd98a;
+  font-size: 3.2vmin;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.mirror-qr__hint { max-width: 40vmin; font-size: 2vmin; }
+.mirror-qr__actions { display: flex; gap: 1.2vmin; margin-top: .6vmin; }
+.mirror-qr__btn {
+  min-height: 5vmin;
+  padding: 0 2.4vmin;
+  color: #f0e2cf;
+  background: #2a1f17;
+  border: .2vmin solid #5a4630;
+  border-radius: 1vmin;
+  font: inherit;
+  font-size: 2vmin;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mirror-qr__btn--close { color: #120a06; background: #ffd98a; border-color: #ffd98a; }
+
 /* A commander died: raise its tax? Over the middle of the seat, turned to its
    player; play goes on around it. */
 .seat__ask {
@@ -1149,16 +1192,23 @@ html.is-quiet *, html.is-quiet *::before, html.is-quiet *::after {
   gap: 0.6vmin 0.7vmin;
 }
 
-/* Designation and emblem tokens, above the life total. Round and chunky so
+/* Designation and emblem tokens, under the life total. Round and chunky so
    they read as objects on the table rather than as more status text, and so
-   there is something worth putting a finger on. */
+   there is something worth putting a finger on.
+   The row takes no height: the tokens sit on the footer and stack upward over
+   the bottom of the life area, so taking the monarch or an emblem never
+   shrinks the life total or moves the buttons around it. */
 .seat__marks {
+  flex: none;
+  height: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  /* Lines past the first grow upward, out of the zero-height row. */
+  align-content: flex-end;
   justify-content: center;
   gap: 0.8vmin;
-  padding: 0.7vmin 2vmin 0;
+  padding: 0 2vmin;
   min-width: 0;
 }
 .seat__marks:empty { display: none; }

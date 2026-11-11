@@ -1,0 +1,77 @@
+/* The table remote: the choice page (/remote) and table controls (/host).
+   Built on join.css, the seat phones' styles. */
+
+/* ---- /remote: how to drive the table ---- */
+.remote__choices { display: grid; gap: 12px; margin-top: 16px; }
+.remote__choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  align-items: center;
+  padding: 16px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-decoration: none;
+}
+.remote__choice:active { border-color: var(--seat); }
+.remote__icon { grid-row: span 2; font-size: 2.2rem; }
+.remote__choice strong { font-size: 1.2rem; }
+.remote__choice span:last-child { grid-column: 2; color: var(--muted); font-size: .9rem; }
+
+/* ---- /host: the whole table ---- */
+.host__stage {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 14px;
+  text-align: center;
+  background: var(--panel);
+  border: 2px solid var(--seat);
+  border-radius: 14px;
+}
+.host__stage[hidden] { display: none; }
+.host__stage span { color: var(--muted); }
+
+.host__seats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.host__seat {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-height: 110px;
+  padding: 12px;
+  color: var(--text);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--row) 22%, var(--panel)), var(--panel) 70%);
+  border: 2px solid color-mix(in srgb, var(--row) 55%, var(--line));
+  border-radius: 14px;
+  font: inherit;
+  text-align: left;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.host__seat.is-turn { border-color: var(--row); box-shadow: 0 0 16px color-mix(in srgb, var(--row) 60%, transparent); }
+.host__seat.is-out { opacity: .5; }
+.host__seat-name { color: var(--row); font-weight: 850; letter-spacing: .04em; text-transform: uppercase; overflow-wrap: anywhere; }
+.host__seat-deck { color: var(--muted); font-size: .8rem; }
+.host__seat-life { font-size: 2.2rem; font-weight: 850; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.host__seat-tag { color: var(--row); font-size: .75rem; font-weight: 700; }
+
+.host__turn { display: grid; grid-template-columns: 64px 1fr; gap: 10px; margin: 14px 0 4px; }
+.host__turn .join__secondary, .host__turn .join__primary { max-width: none; margin: 0; }
+.host__turn button:disabled { opacity: .35; }
+
+.host .play__marks { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.host__ask-text { margin: -6px 0 12px; color: var(--muted); font-weight: 400 !important; font-size: .95rem !important; }
+.host__ask-text[hidden] { display: none; }
+.join__primary.is-danger { color: #fff; background: #a3362b; }
+
+/* A seat page opened from the table controls: the way back. */
+.join__hostlink {
+  display: inline-block;
+  margin: 0 0 10px;
+  color: var(--seat);
+  font-weight: 700;
+  text-decoration: none;
+}
+.join__hostlink[hidden] { display: none; }

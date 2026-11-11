@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Screen remote · MTG Table</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='mirror.css') }}">
+</head>
+<body>
+  <!-- The table screen, live. Every tap on it is a click on the table. -->
+  <div class="mirror" id="mirror">
+    <img class="mirror__screen" id="mirror-screen" alt="The table screen" draggable="false">
+  </div>
+
+  <p class="mirror__status" id="mirror-status" role="status">Connecting to the table…</p>
+
+  <!-- Android Chrome only goes full screen after a tap: this asks for it. -->
+  <div class="mirror__start" id="mirror-start" hidden>
+    <div class="mirror__start-card">
+      <strong>Screen remote</strong>
+      <span>Full screen, turned to match the table, so taps land exactly where you touch.</span>
+      <button type="button" class="mirror__start-go" data-start="full">Tap to start</button>
+      <button type="button" class="mirror__start-skip" data-start="windowed">Stay in the browser</button>
+    </div>
+  </div>
+
+  <div class="mirror__tools" id="mirror-tools">
+    <button type="button" class="mirror__tool mirror__tool--menu" id="mirror-menu" aria-expanded="false" aria-label="Screen remote options">&#8942;</button>
+    <div class="mirror__menu" id="mirror-menu-items" hidden>
+      <button type="button" class="mirror__tool" data-tool="keyboard">&#9000; Keyboard</button>
+      <button type="button" class="mirror__tool" data-tool="rotate">&#10227; Rotate</button>
+      <button type="button" class="mirror__tool" data-tool="fullscreen">&#9974; Full screen</button>
+    </div>
+  </div>
+
+  <!-- Typing into the table: names, searches. Sent when you press Send. -->
+  <form class="mirror__keys" id="mirror-keys" hidden autocomplete="off">
+    <input type="text" id="mirror-text" placeholder="Type, then Send" enterkeyhint="send" autocapitalize="sentences">
+    <button type="submit" class="mirror__key mirror__key--send">Send</button>
+    <button type="button" class="mirror__key" data-key="backspace" aria-label="Backspace">&#9003;</button>
+    <button type="button" class="mirror__key" data-key="enter" aria-label="Enter">&#9166;</button>
+    <button type="button" class="mirror__key" data-key="escape">Esc</button>
+    <button type="button" class="mirror__key" data-close-keys aria-label="Close the keyboard">&times;</button>
+  </form>
+
+  <script src="{{ url_for('static', filename='mirror.js') }}"></script>
+</body>
+</html>

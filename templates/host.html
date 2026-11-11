@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#120d0a">
+  <title>Table controls · MTG Table</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='join.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='host.css') }}">
+</head>
+<body>
+  <!-- The whole table from a phone: the hub's buttons, and each seat's controls. -->
+  <main class="join host">
+    <header class="join__head">
+      <span class="join__seat">Table controls</span>
+      <h1 id="host-title">The table</h1>
+      <p class="join__deck" id="host-sub"></p>
+    </header>
+
+    <p class="join__status" id="host-status" role="status">Connecting to the table…</p>
+
+    <section id="host-main" hidden>
+      <!-- New game: who has joined, and the start of the introductions. -->
+      <div class="host__stage" id="host-stage" hidden></div>
+
+      <!-- The seats as they sit at the table: tap one for its own controls. -->
+      <div class="host__seats" id="host-seats"></div>
+
+      <div class="host__turn">
+        <button type="button" class="join__secondary host__back" data-host="turn_back" aria-label="Back a turn">&#9664;</button>
+        <button type="button" class="join__primary" data-host="turn_next" id="host-next">Next turn &#9654;</button>
+      </div>
+
+      <h2 class="join__group">Game</h2>
+      <div class="play__marks" id="host-game"></div>
+      <h2 class="join__group">Table</h2>
+      <div class="play__marks" id="host-table"></div>
+      <h2 class="join__group">Clock and lights</h2>
+      <div class="play__marks" id="host-lights"></div>
+    </section>
+
+    <!-- Something on the table only a tap would close (statistics, coin, recap, result): close it from here. -->
+    <div class="tablebar" id="host-tablebar" hidden role="status"></div>
+
+    <!-- Small menus: coin, day and night, starting life, direction. -->
+    <div class="sheet" id="host-sheet" hidden>
+      <div class="sheet__panel" id="host-sheet-panel" role="dialog" aria-modal="true"></div>
+    </div>
+
+    <!-- A question the table is asking (an elimination, a draw): answer it here or there. -->
+    <div class="play__ask" id="host-ask" hidden>
+      <p id="host-ask-title"></p>
+      <p class="host__ask-text" id="host-ask-text"></p>
+      <div class="play__ask-actions">
+        <button type="button" class="join__primary" data-ask="yes" id="host-ask-yes">Yes</button>
+        <button type="button" class="join__secondary" data-ask="no" id="host-ask-no">Cancel</button>
+      </div>
+    </div>
+  </main>
+  <script src="{{ url_for('static', filename='host.js') }}"></script>
+</body>
+</html>

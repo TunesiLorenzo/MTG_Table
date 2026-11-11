@@ -189,6 +189,8 @@
           <h3 class="hub__section-title" id="hub-section-system">Display &amp; system</h3>
           <div class="hub__row">
             <button class="hub__action" data-action="fullscreen" type="button">Fullscreen</button>
+            <button class="hub__action" data-action="mirror-qr" type="button" data-needs-server
+                    title="A QR code for a phone or tablet: table controls as phone buttons, or this screen mirrored to drive by touch">Table remote</button>
           </div>
           <div class="hub__row">
             <a class="hub__action hub__action--lights" href="/lights" target="_blank" rel="noopener" data-needs-server>Light controls &rarr;</a>
@@ -204,6 +206,19 @@
       </div>
     </div>
   </div>
+
+  <!-- The screen remote's code: a tablet that scans it shows this screen and
+       drives all of it by touch. It lasts from game to game until New code. -->
+  <dialog class="mirror-qr" id="mirror-qr" aria-label="Table remote code">
+    <img class="mirror-qr__code" id="mirror-qr-code" alt="">
+    <strong class="mirror-qr__title">Table remote</strong>
+    <span class="mirror-qr__hint">Scan with a phone or tablet, then choose: table controls as phone buttons, or this screen mirrored to control by touch.</span>
+    <span class="mirror-qr__actions">
+      <button type="button" class="mirror-qr__btn" data-mirror="new"
+              title="Make a fresh code: devices that scanned this one stop working">New code</button>
+      <button type="button" class="mirror-qr__btn mirror-qr__btn--close" data-mirror="close">Close</button>
+    </span>
+  </dialog>
 
   <template id="seat-template">
     <section class="seat" data-seat="">

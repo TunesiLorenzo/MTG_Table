@@ -1630,20 +1630,38 @@
 
      options: { yes: 'Eliminate', no: 'Keep them in', danger: true } */
   var askQueue = [];
+  var askSeq = 0;
 
   function gameConfirm(message, options) {
     // A held life button must not keep counting behind the question.
     stopAllLifeHolds();
     return new Promise(function (resolve) {
-      askQueue.push({ message: message, options: options || {}, resolve: resolve, notice: false });
+      var ask = { id: ++askSeq, message: message, options: options || {}, resolve: resolve, notice: false };
+      // A question a phone can answer too keeps hold of its place in the queue.
+      if (ask.options.handle) ask.options.handle.ask = ask;
+      askQueue.push(ask);
       if (askQueue.length === 1) showNextAsk();
     });
+  }
+
+  /* A question answered somewhere else (a player's phone): it goes from the
+     table as if tapped here, and the next one, if any, takes its place. */
+  function answerAskElsewhere(ask, value) {
+    var at = askQueue.indexOf(ask);
+    if (at === -1) return;
+    if (at === 0) {
+      answerAsk(value);
+      return;
+    }
+    askQueue.splice(at, 1);
+    ask.resolve(value);
+    scheduleRemoteSnapshot();
   }
 
   function gameAlert(message) {
     stopAllLifeHolds();
     return new Promise(function (resolve) {
-      askQueue.push({ message: message, options: {}, resolve: resolve, notice: true });
+      askQueue.push({ id: ++askSeq, message: message, options: {}, resolve: resolve, notice: true });
       if (askQueue.length === 1) showNextAsk();
     });
   }
@@ -1672,6 +1690,7 @@
     yes.classList.toggle('is-danger', !!ask.options.danger);
     if (!dialog.open) dialog.showModal();
     yes.focus();
+    scheduleRemoteSnapshot();
   }
 
   function answerAsk(value) {
@@ -1680,6 +1699,8 @@
     if (dialog && dialog.open && !askQueue.length) dialog.close();
     if (ask) ask.resolve(ask.notice ? true : value);
     if (askQueue.length) showNextAsk();
+    // The table remote shows the question while it is up.
+    scheduleRemoteSnapshot();
   }
 
   function bindAskDialog() {
@@ -2497,11 +2518,14 @@
        only for the automatic reasons: eliminating by hand is already a
        deliberate act and asks nothing. */
     if (wasAlive && !seat.out && !seat.spared && lethalReason(seat)) {
-      // The rest waits for the answer: the table window does not block.
+      // The rest waits for the answer: the table window does not block. The
+      // player's phone is asked too; the first answer counts.
+      var deathAsk = offerDeathAsk(changedIndex, lethalReason(seat));
       gameConfirm(
         seat.name + ' has ' + lethalReason(seat) + '. Eliminate them?\n\n' +
         'Keep them in if an effect keeps them in the game.',
-        { yes: 'Eliminate', no: 'Keep them in', danger: true }).then(function (confirmedOut) {
+        { yes: 'Eliminate', no: 'Keep them in', danger: true, handle: deathAsk.handle }).then(function (confirmedOut) {
+        settleDeathAsk(changedIndex, deathAsk);
         if (confirmedOut) {
           // Match the tray's own Eliminate button exactly, not just the numbers:
           // isAlive() already treated this seat as gone, but without `out` set
@@ -6489,6 +6513,7 @@
   function setHouseLights(enabled) {
     houseLights = !!enabled;
     renderHub();
+    scheduleRemoteSnapshot();
   }
 
   function toggleHouseLights() {
@@ -7170,6 +7195,7 @@
 
   function syncLobbyStage() {
     document.body.classList.toggle('is-lobby-ready', !!state.lobby && lobbyReady());
+    scheduleRemoteSnapshot();
   }
 
   function startNewGame() {
@@ -7288,6 +7314,57 @@
     seatQr = null;
   }
 
+  /* The screen remote's code, from the hub: a tablet that scans it gets this
+     whole screen, live, and its taps come back as clicks (the server plays
+     them as the PC's mouse, see screen_mirror.py). Tap outside to close. */
+  /* The screen remote shows only this page, not the browser around it: the
+     server crops its picture of the window to the size reported here. */
+  var mirrorPageTimer = null;
+
+  function reportPageSize() {
+    if (STATIC_SITE) return;
+    window.clearTimeout(mirrorPageTimer);
+    mirrorPageTimer = window.setTimeout(function () {
+      var ratio = window.devicePixelRatio || 1;
+      postJSON('/api/mirror/page', {
+        width: Math.round(window.innerWidth * ratio),
+        height: Math.round(window.innerHeight * ratio)
+      });
+    }, 300);
+  }
+
+  if (!STATIC_SITE) {
+    window.addEventListener('resize', reportPageSize);
+    document.addEventListener('fullscreenchange', reportPageSize);
+    reportPageSize();
+  }
+
+  function openMirrorQr() {
+    var dialog = document.getElementById('mirror-qr');
+    if (!dialog || dialog.open) return;
+    document.getElementById('mirror-qr-code').src = '/api/mirror/qr.svg?t=' + Date.now();
+    dialog.showModal();
+  }
+
+  (function () {
+    var dialog = document.getElementById('mirror-qr');
+    if (!dialog) return;
+    dialog.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-mirror]');
+      if (event.target === dialog || (button && button.dataset.mirror === 'close')) {
+        dialog.close();
+      } else if (button && button.dataset.mirror === 'new') {
+        gameConfirm('Make a new screen remote code?\n\nEvery tablet or phone that scanned the old one stops working until it scans the new one.',
+          { yes: 'New code' }).then(function (yes) {
+          if (!yes) return;
+          fetch('/api/mirror/key/new', { method: 'POST' }).then(function () {
+            document.getElementById('mirror-qr-code').src = '/api/mirror/qr.svg?t=' + Date.now();
+          });
+        });
+      }
+    });
+  })();
+
   /* --- Remote control: each player's phone drives their own seat ---
      The phone page (/join/<seat>, after the seat is claimed) queues taps on
      the server; this page takes them with a long poll and applies them
@@ -7335,6 +7412,15 @@
   }
 
   function applyRemoteAction(action) {
+    // Closing what the table shows works for any phone, even with the game over.
+    if (action.action === 'overlay') {
+      applyOverlayAction(action.do);
+      return;
+    }
+    if (action.host) {
+      applyHostAction(action);
+      return;
+    }
     var index = action.seat;
     var seat = state.seats[index];
     if (!seat || remoteSeatLocked(index)) return;
@@ -7384,9 +7470,19 @@
       // Conceded or eliminated from the phone (it asked first), or back in.
       if (action.mode === 'back' ? !seat.out : seat.out) return;
       setOut(index, action.mode);
+    } else if (action.action === 'coin') {
+      // The table's own toss: one coin (called heads or tails when the table
+      // asks for a call), or the two-coin duel.
+      openCoinToss(!!action.double);
+      if (!action.double && coinToss.calling && (action.call === 'heads' || action.call === 'tails')) {
+        armCoinRun(false);
+        tossCoin(action.call);
+      }
     } else if (action.action === 'tax_answer') {
       // `id` is the queue's own number; the question's is id_asked.
       answerTaxRaise(index, action.id_asked, !!action.raise_tax);
+    } else if (action.action === 'death_answer') {
+      answerDeathAsk(index, action.id_asked, !!action.out);
     }
   }
 
@@ -7398,6 +7494,135 @@
     if (!image || image.indexOf('data:') === 0 || image.indexOf('blob:') === 0) return '';
     var origin = window.location.origin + '/';
     return image.indexOf(origin) === 0 ? '/' + image.slice(origin.length) : image;
+  }
+
+  /* The table remote (/host): what the hub does, from a phone. It asked
+     first for anything that ends or resets a game, so the table does not ask
+     again; questions the table asks by itself show on the remote too. */
+  function applyHostAction(action) {
+    var name = action.action;
+    if (name === 'ask_answer') {
+      var ask = askQueue[0];
+      if (ask && ask.id === action.ask_id) answerAskElsewhere(ask, !!action.yes);
+      return;
+    }
+    if (name === 'turn_next' || name === 'turn_back') {
+      if (!state.lobby && !entranceSequence) advanceTurn(name === 'turn_next' ? 1 : -1);
+    } else if (name === 'first_player') {
+      pickRandomFirstPlayer();
+    } else if (name === 'start_entrance') {
+      var first = TABLE_RING.filter(function (seat) { return !state.entranceRevealed[seat]; })[0];
+      if (state.entranceMode && first !== undefined) revealEntrance(first);
+    } else if (name === 'skip_entrance') {
+      skipEntrance();
+    } else if (name === 'entrance_mode') {
+      setEntranceMode(!state.entranceMode);
+    } else if (name === 'cover_again') {
+      setEntranceMode(true);
+    } else if (name === 'new_game') {
+      startNewGame();
+    } else if (name === 'reset') {
+      resetGame();
+      enableHouseLights();
+    } else if (name === 'draw') {
+      declareDraw();
+    } else if (name === 'coin') {
+      openCoinToss(!!action.double);
+      if (!action.double && coinToss.calling && (action.call === 'heads' || action.call === 'tails')) {
+        armCoinRun(false);
+        tossCoin(action.call);
+      }
+    } else if (name === 'daytime') {
+      setDaytime(action.value);
+    } else if (name === 'clock_stop') {
+      setClockStopped(!isClockStopped());
+    } else if (name === 'clock_reset') {
+      resetClockToZero();
+    } else if (name === 'turn_timer') {
+      setTurnClock(!state.turnClock);
+    } else if (name === 'house_lights') {
+      toggleHouseLights();
+    } else if (name === 'lights_follow') {
+      setLightsFollowTurn(!state.lightsFollowTurn);
+    } else if (name === 'resend_lights') {
+      resendLights();
+    } else if (name === 'starting_life') {
+      if (START_CHOICES.indexOf(action.value) !== -1) setStartingLife(action.value);
+    } else if (name === 'direction') {
+      if (action.value === 'cw' || action.value === 'ccw') setDirection(action.value);
+    } else if (name === 'stats') {
+      if (lastRecap && state.stats.endedAt) showGameRecap(lastRecap.outcome, lastRecap.ranking, null);
+      else openStatsDialog();
+    }
+    scheduleRemoteSnapshot();
+  }
+
+  /* What the table is showing that only a tap on it would close: the
+     statistics, the coin, the recap and the result form. The phones show a
+     bar for it with the same buttons, so nothing a phone opens strands the
+     table waiting for someone to walk over. */
+  function tableOverlay() {
+    var result = document.getElementById('game-result-dialog');
+    var stats = document.getElementById('stats-dialog');
+    var coin = coinDom();
+    if (result && result.open) {
+      var status = document.getElementById('game-result-status');
+      return {
+        kind: 'result',
+        title: document.getElementById('game-result-title').textContent,
+        status: status ? status.textContent : '',
+        canSave: serverAvailable
+      };
+    }
+    if (gameRecap) return { kind: 'recap' };
+    if (stats && stats.open) return { kind: 'stats' };
+    if (coin && !coin.overlay.hidden && coin.overlay.classList.contains('is-active')) {
+      return { kind: 'coin', calling: !!coinToss.calling, landed: !!coinToss.landed, duel: !!coinToss.duel };
+    }
+    return null;
+  }
+
+  function applyOverlayAction(what) {
+    var overlay = tableOverlay();
+    if (!overlay) return;
+    if (overlay.kind === 'stats' && what === 'close') {
+      document.getElementById('stats-dialog').close();
+    } else if (overlay.kind === 'recap' && what === 'continue') {
+      var next = gameRecap.onContinue;
+      hideGameRecap();
+      if (next) next();
+    } else if (overlay.kind === 'result') {
+      var form = document.getElementById('game-result-form');
+      // As the form's own buttons: Save checks the deck names first.
+      if (what === 'save' && overlay.canSave && form.requestSubmit) form.requestSubmit();
+      else if (what === 'later') document.getElementById('game-result-dialog').close();
+    } else if (overlay.kind === 'coin') {
+      if (what === 'close') {
+        closeCoinToss();
+      } else if ((what === 'heads' || what === 'tails') && coinToss.calling) {
+        armCoinRun(false);
+        tossCoin(what);
+      } else if (what === 'again' && coinToss.landed) {
+        // As a tap on the coin: both again in a duel, else the usual next toss.
+        if (coinToss.duel) tossCoin(null);
+        else if (coinToss.run) tossCoin(coinToss.run.call);
+        else if (coinSettings.call) askCoinCall();
+        else tossCoin(null);
+      }
+    }
+    scheduleRemoteSnapshot();
+  }
+
+  /* Those open and close in many ways (a tap, a timer, the end of a game), so
+     the phones hear about it by watching rather than by every one of them. */
+  var overlaySent = 'null';
+  if (!STATIC_SITE) {
+    window.setInterval(function () {
+      var now = JSON.stringify(tableOverlay());
+      if (now === overlaySent) return;
+      overlaySent = now;
+      scheduleRemoteSnapshot();
+    }, 400);
   }
 
   function setDesignationHolder(key, to) {
@@ -7439,6 +7664,36 @@
     scheduleRemoteSnapshot();
   }
 
+  /* --- Lethal numbers: is this player out? ---
+     The table's own window asks, and so does the player's phone; whichever
+     answers first settles it and the other's question goes. */
+  var deathAsks = [null, null, null, null];
+
+  function offerDeathAsk(index, reason) {
+    var ask = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      reason: reason,
+      handle: {}
+    };
+    if (!STATIC_SITE) {
+      deathAsks[index] = ask;
+      scheduleRemoteSnapshot();
+    }
+    return ask;
+  }
+
+  function settleDeathAsk(index, ask) {
+    if (deathAsks[index] !== ask) return;
+    deathAsks[index] = null;
+    scheduleRemoteSnapshot();
+  }
+
+  function answerDeathAsk(index, id, out) {
+    var ask = deathAsks[index];
+    if (!ask || ask.id !== id || !ask.handle.ask) return;
+    answerAskElsewhere(ask.handle.ask, out);
+  }
+
   function clearTaxAsks() {
     taxAsks.forEach(function (_, index) {
       taxAsks[index] = null;
@@ -7473,6 +7728,30 @@
       // own taps the numbers already include.
       applied: remoteAfter,
       current: state.currentPlayer,
+      table: {
+        lobby: !!state.lobby,
+        joined: lobbySeats.filter(Boolean).length,
+        lobbyReady: !!state.lobby && lobbyReady(),
+        entranceMode: !!state.entranceMode,
+        covered: !!state.entranceMode && state.entranceRevealed.some(function (revealed) { return !revealed; }),
+        entranceRunning: !!entranceSequence,
+        clockStopped: isClockStopped(),
+        turnClock: !!state.turnClock,
+        daytime: state.daytime || 'none',
+        lightsFollow: !!state.lightsFollowTurn,
+        houseLights: !!houseLights,
+        startingLife: state.startingLife,
+        startChoices: START_CHOICES,
+        direction: state.direction
+      },
+      ask: askQueue[0] ? {
+        id: askQueue[0].id,
+        message: String(askQueue[0].message),
+        yes: askQueue[0].notice ? 'OK' : (askQueue[0].options.yes || 'Yes'),
+        no: askQueue[0].notice ? '' : (askQueue[0].options.no || 'Cancel'),
+        danger: !!askQueue[0].options.danger
+      } : null,
+      overlay: tableOverlay(),
       monarch: state.monarch,
       initiative: state.initiative,
       started: !state.stats.waiting,
@@ -7518,6 +7797,7 @@
           out: !!seat.out,
           outReason: seat.outReason,
           taxAsk: taxAsks[index] ? { id: taxAsks[index].id, name: taxAsks[index].name, next: taxAsks[index].next } : null,
+          deathAsk: deathAsks[index] ? { id: deathAsks[index].id, reason: deathAsks[index].reason } : null,
           alive: isAlive(seat),
           locked: remoteSeatLocked(index)
         };
@@ -8015,6 +8295,10 @@
       var action = control ? control.dataset.action : null;
       if (action === 'close') setHubOpen(false);
       if (action === 'fullscreen') toggleFullscreen();
+      if (action === 'mirror-qr' && !STATIC_SITE) {
+        setHubOpen(false);
+        openMirrorQr();
+      }
       if (action === 'lights-follow') setLightsFollowTurn(!state.lightsFollowTurn);
       if (action === 'turn-timer') setTurnClock(!state.turnClock);
       if (action === 'clock-stop') setClockStopped(!isClockStopped());
