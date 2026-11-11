@@ -2296,6 +2296,58 @@ html.is-quiet *, html.is-quiet *::before, html.is-quiet *::after {
   opacity: 1;
 }
 .hub__satellite--left.is-active .hub__icon-bulb { fill: currentColor; fill-opacity: .4; }
+/* The phone tracker's show switch, in the lightbulb's place beside the
+   hourglass: a lit stage (red curtains, gold, confetti) while the show is on;
+   quiet mode draws the curtains bare and strikes them through. */
+.hub__satellite--show .hub__icon-curtain { fill: #d8323f; stroke-width: 1.1; stroke-linejoin: round; }
+.hub__satellite--show .hub__icon-tie { stroke: #ffd36b; stroke-width: 1.6; }
+.hub__satellite--show .hub__icon-confetti { stroke-width: 2.2; }
+.hub__satellite--show .hub__icon-confetti--a { stroke: #ffd36b; }
+.hub__satellite--show .hub__icon-confetti--b { stroke: #ff7ab6; }
+.hub__satellite--show .hub__icon-confetti--c { stroke: #6fe3d2; }
+.hub__satellite--show .hub__icon-mute { display: none; }
+.hub__satellite--show.is-on,
+.hub__satellite--show.is-on:hover {
+  color: #ffe3a3;
+  background: radial-gradient(circle at 50% 45%, #3a2a12e6, #0d0a0ae6 70%);
+  border-color: #e6b85a;
+  box-shadow: 0 0 1.8vmin #e6b85a70, inset 0 0 1vmin #e6b85a33;
+  opacity: 1;
+}
+.hub__satellite--show:not(.is-on) .hub__icon-curtain { fill: none; }
+.hub__satellite--show:not(.is-on) .hub__icon-tie { stroke: currentColor; }
+.hub__satellite--show:not(.is-on) .hub__icon-confetti { display: none; }
+.hub__satellite--show:not(.is-on) .hub__icon-mute { display: inline; }
+
+/* Skip the introductions: the middle of the table while they run, above the
+   title cards, in the show's gold. */
+.entrance-skip {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  width: 9vmin;
+  height: 9vmin;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  translate: -50% -50%;
+  color: #fff1cf;
+  background: radial-gradient(circle at 50% 35%, #2a1d0ef2, #0b0e14f2);
+  border: .3vmin solid #e6b85a;
+  border-radius: 50%;
+  box-shadow: 0 0 0 .7vmin #0b0e1480, 0 0 3vmin #e6b85a66;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.entrance-skip[hidden] { display: none; }
+.entrance-skip:hover { box-shadow: 0 0 0 .7vmin #0b0e1480, 0 0 4vmin #e6b85aaa; }
+.entrance-skip:active { scale: .93; }
+.entrance-skip svg { width: 4.4vmin; height: 4.4vmin; min-width: 22px; min-height: 22px; fill: currentColor; }
+.entrance-skip__bar { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+
 /* The hourglass, just outside the lightbulb: stops and starts the game clock.
    Stopped, it is a bright, shining yellow, so nobody forgets the clock is off. */
 .hub__satellite--left.hub__satellite--outer { right: calc(100% + 6.2vmin); }

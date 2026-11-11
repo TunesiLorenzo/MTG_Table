@@ -6845,7 +6845,15 @@
   function skipEntrance() {
     if (!state.entranceMode) return;
     var covered = TABLE_RING.filter(function (index) { return !state.entranceRevealed[index]; });
-    if (!covered.length) return;
+    if (!covered.length) {
+      // Every plaque is down and the last call is still going: cut it short
+      // and get on with the game.
+      if (!entranceSequence) return;
+      cancelEntranceSequence();
+      render();
+      pickRandomFirstPlayer();
+      return;
+    }
     cancelEntranceSequence();
     covered.forEach(function (index) {
       var view = seatViews[index];
@@ -6882,6 +6890,7 @@
       crowdIndex: 0
     };
     entranceSequence = token;
+    syncEntranceStage();
     sendLightCue('entrance_start');
 
     playEntranceLayer('sound/drumroll.wav', false, null);
@@ -6944,6 +6953,7 @@
             playBaseAnnouncer('Fight.mp3', function () {
               if (entranceSequence !== token) return;
               entranceSequence = null;
+              syncEntranceStage();
               pickRandomFirstPlayer();
             });
           }
@@ -7042,13 +7052,19 @@
       overlay.classList.remove('is-active', 'is-leaving');
       overlay.hidden = true;
     }
+    syncEntranceStage();
   }
 
+  /* While covers are up or the introductions run, the hub steps aside and the
+     skip button takes the middle of the table. */
   function syncEntranceStage() {
     var hasCovers = state.entranceMode && state.entranceRevealed.some(function (revealed) {
       return !revealed;
     });
-    document.body.classList.toggle('is-entrance-active', hasCovers);
+    var showing = hasCovers || (state.entranceMode && !!entranceSequence);
+    document.body.classList.toggle('is-entrance-active', showing);
+    var skip = document.getElementById('entrance-skip');
+    if (skip) skip.hidden = !showing;
   }
 
   function setQuietMode(enabled) {
@@ -7527,6 +7543,13 @@
     document.getElementById('quick-clock').addEventListener('click', function () {
       if (!state.stats.endedAt) setClockStopped(!isClockStopped());
     });
+    document.getElementById('quick-show').addEventListener('click', function () {
+      setQuietMode(!state.quietMode);
+    });
+    document.getElementById('entrance-skip').addEventListener('click', function (event) {
+      event.stopPropagation();
+      skipEntrance();
+    });
 
     panel.addEventListener('click', function (event) {
       // The switches have their label and track as children, so the tap can
@@ -7701,6 +7724,14 @@
     setSwitch(document.getElementById('lights-follow'), state.lightsFollowTurn);
     setSwitch(document.getElementById('entrance-mode'), state.entranceMode);
     setSwitch(document.getElementById('quiet-mode'), quietMode());
+    var showButton = document.getElementById('quick-show');
+    if (showButton) {
+      showButton.classList.toggle('is-on', !quietMode());
+      showButton.setAttribute('aria-pressed', String(!quietMode()));
+      showButton.title = quietMode()
+        ? 'Quiet mode: only the click, no announcements or effects. Tap to bring the show back'
+        : 'The show is on: music, announcements and effects. Tap for quiet mode';
+    }
     ['entrance-mode', 'entrance-reset'].forEach(function (id) {
       var button = document.getElementById(id);
       if (button) button.disabled = quietMode();
