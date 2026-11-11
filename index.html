@@ -118,6 +118,12 @@
               <span class="hub__action-text">Player entrance</span><span class="hub__switch" aria-hidden="true"></span>
             </button>
           </div>
+          <div class="hub__row" data-static-only>
+            <button class="hub__action hub__action--switch" id="quiet-mode" data-action="quiet-mode" type="button"
+                    title="Only the click: no music, announcements, card effects or animations" aria-pressed="false">
+              <span class="hub__action-text">Quiet mode</span><span class="hub__switch" aria-hidden="true"></span>
+            </button>
+          </div>
           <div class="hub__row">
             <button class="hub__action hub__action--entrance-reset" id="entrance-reset" data-action="entrance-reset" type="button"
                     title="Put the name covers back over every player panel">Cover players again</button>
@@ -180,7 +186,7 @@
   <template id="seat-template">
     <section class="seat" data-seat="">
       <div class="seat__inner">
-        <div class="seat__bg"></div>
+        <div class="seat__bg"><span class="seat__bg-art"></span></div>
         <!-- Shades the art where text sits, and carries the light sweep that
              marks the start of this player's turn. -->
         <div class="seat__fx" aria-hidden="true"></div>
@@ -197,6 +203,7 @@
         <header class="seat__header">
           <span class="seat__plate">
             <span class="seat__dot" aria-hidden="true"></span>
+            <span class="seat__avatar" aria-hidden="true"></span>
             <span class="seat__name" contenteditable="true" spellcheck="false"></span>
           </span>
           <span class="seat__status">

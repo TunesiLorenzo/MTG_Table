@@ -215,7 +215,7 @@ def roster_preset(name, entry):
 
 PROFILE_PRESET_KEYS = (
     "two_commanders", "commander_name", "second_commander_name", "commander_sound", "second_commander_sound",
-    "background_image", "background_focus", "commander_image", "second_commander_image",
+    "background_image", "background_focus", "background_zoom", "commander_image", "second_commander_image",
     "commander_fx", "second_commander_fx", "background_brightness", "commander_brightness",
 )
 

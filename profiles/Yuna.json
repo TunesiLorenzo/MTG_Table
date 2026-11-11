@@ -4,6 +4,31 @@
   "saturation": 100,
   "brightness": 80,
   "announcer_sound": "Ny_Yuna.mp3",
+  "commander_sound": "Chimes.mp3",
+  "second_commander_sound": "",
+  "commander_name": "Yuna",
+  "second_commander_name": "",
+  "two_commanders": false,
+  "background_brightness": 69,
+  "commander_brightness": 70,
+  "deck": "Yuna",
+  "background_focus": "",
+  "background_zoom": 1.0,
+  "background_image": "Backgrounds/Players/Yuna.png",
+  "commander_image": "Backgrounds/Commander/Yuna.jpg",
+  "second_commander_image": "",
+  "commander_fx": {
+    "effect": "cosmic",
+    "focus": "35.4% 28%",
+    "glow": "",
+    "area": "card"
+  },
+  "second_commander_fx": {
+    "effect": "foil",
+    "focus": "",
+    "glow": "",
+    "area": "art"
+  },
   "lights": {
     "top_left": {
       "enabled": true,
@@ -19,7 +44,7 @@
       "enabled": true,
       "mode": "color",
       "hue": 287,
-      "saturation": 44,
+      "saturation": 26,
       "brightness": 100,
       "temperature": 2850,
       "effect": "none",
@@ -46,5 +71,5 @@
       "effect_seconds": 5.5
     }
   },
-  "saved_at": "2026-09-10T23:20:41"
+  "saved_at": "2026-11-10T22:24:26"
 }

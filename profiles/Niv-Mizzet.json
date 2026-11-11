@@ -12,7 +12,8 @@
   "background_brightness": 100,
   "commander_brightness": 70,
   "deck": "Niv-Mizzet",
-  "background_focus": "",
+  "background_focus": "56% 100%",
+  "background_zoom": 1.0,
   "background_image": "Backgrounds/Players/Niv-Mizzet.png",
   "commander_image": "Backgrounds/Commander/Niv-Mizzet.jpg",
   "second_commander_image": "",
@@ -70,5 +71,5 @@
       "effect_seconds": 3.2
     }
   },
-  "saved_at": "2026-11-08T21:52:37"
+  "saved_at": "2026-11-10T19:33:33"
 }

@@ -154,9 +154,7 @@ html, body {
   inset: 0;
   z-index: 0;
   border-radius: inherit;
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
+  overflow: hidden;
   opacity: 0.5;
   filter: brightness(var(--background-brightness, 1)) saturate(1.2) contrast(1.08);
   -webkit-mask-image: radial-gradient(125% 100% at 50% 50%, #000 58%, transparent 100%);
@@ -164,6 +162,16 @@ html, body {
   transition: opacity 700ms ease;
 }
 .seat.is-active .seat__bg { opacity: 0.7; }
+/* The picture itself, inside the fading frame above: its crop is a position
+   and a zoom about that point (set from js/app.js), so the zoom never moves
+   the frame's edges or its fade. */
+.seat__bg-art {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
 
 /* Darkens the bands where the name and the counters sit, whatever the art
    underneath is doing. Its ::before is the one-shot sweep of light across the
@@ -687,6 +695,21 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   box-shadow: 0 0 1.1vmin var(--accent), inset 0 0 0 .18vmin #ffffff40;
 }
 
+/* A player with a picture (the phone tracker) shows it in place of the dot,
+   ringed in their colour. */
+.seat__avatar {
+  display: none;
+  flex: none;
+  width: 3.6vmin;
+  height: 3.6vmin;
+  margin: -.35vmin 0 -.35vmin -.55vmin;
+  border-radius: 50%;
+  background: #07090d center / cover no-repeat;
+  box-shadow: 0 0 0 .22vmin var(--accent), 0 0 1.1vmin color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.seat.has-portrait .seat__avatar { display: block; }
+.seat.has-portrait .seat__dot { display: none; }
+
 .seat__name {
   min-width: 4ch;
   max-width: 100%;
@@ -834,10 +857,16 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   line-height: 0.9;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  color: #fff;
+  /* In the seat's colour, lifted a touch towards white so a dark pick still
+     reads, and slightly see-through so it sits on the art rather than over
+     it. A dark rim and a drop shadow keep the edge crisp on any background. */
+  color: color-mix(in srgb, color-mix(in srgb, var(--accent) 82%, #fff) 92%, transparent);
+  -webkit-text-stroke: max(1px, .22vmin) #05070bcc;
+  paint-order: stroke fill;
   text-shadow:
-    0 .5vmin 1.4vmin #000000a6,
-    0 0 5vmin color-mix(in srgb, var(--accent) 40%, transparent);
+    0 0 .35vmin #000000d9,
+    0 .5vmin 1.4vmin #000000b3,
+    0 0 5vmin color-mix(in srgb, var(--accent) 45%, transparent);
   transition: color 300ms ease;
 }
 /* In danger, from a quarter of the starting life down (10 in a 40-life game):
@@ -965,7 +994,16 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 .seat__timer.is-stopped { color: var(--warn); animation: timer-stopped 2s ease-in-out infinite; }
 @keyframes timer-stopped { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .seat__timer.is-stopped { animation: none; } }
-.hub__action--switch:disabled { opacity: .45; cursor: default; }
+.hub__action--switch:disabled, .hub__action:disabled { opacity: .45; cursor: default; }
+/* Quiet mode (the phone tracker): nothing moves on its own. Animations run
+   out at once on their last frame, so everything still ends where it would. */
+html.is-quiet *, html.is-quiet *::before, html.is-quiet *::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  transition-delay: 0s !important;
+}
 
 /* Side seats are too narrow for the badge beside the name: it goes under it.
    (Their counters wrap onto two rows on their own; see .seat__counters.) */
@@ -1213,8 +1251,8 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
   /* Centred while it fits; once it does not, it starts at the top and scrolls,
      rather than spilling past both ends where the top cannot be reached. */
   align-content: safe center;
-  gap: 0.75vmin 1.4vmin;
-  padding: 1vmin 1.3vmin 1.1vmin;
+  gap: 0.55vmin 1.4vmin;
+  padding: .8vmin 1.3vmin .9vmin;
   background: linear-gradient(#131926f7, #0a0d14fa);
   border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
   border-radius: 1.4vmin;
@@ -1347,6 +1385,172 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 /* The designation and emblem blocks are their own full-width sections rather
    than counter rows: neither has a number to increment. */
 .tray__row--marks, .tray__emblems { grid-column: 1 / -1; }
+/* The header's small icons: statistics and the seat's settings. */
+.tray__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 3.4vmin;
+  height: 3.4vmin;
+  padding: 0;
+  color: var(--ink-dim);
+  background: #ffffff0a;
+  border: 1px solid #ffffff1a;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 140ms, border-color 140ms, background 140ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.tray__icon svg {
+  width: 62%;
+  height: 62%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.tray__icon:hover { color: var(--ink); border-color: #ffffff4d; background: #ffffff14; }
+.tray__icon[aria-pressed="true"] {
+  color: #fff;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* What those icons open: a see-through layer over the tray, so the menu
+   underneath stays in view and play is never far away. */
+.tray__panel {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .8vmin;
+  padding: .9vmin 1.3vmin 1vmin;
+  overflow-y: auto;
+  background: color-mix(in srgb, #0a0d14 72%, transparent);
+  -webkit-backdrop-filter: blur(.7vmin);
+  backdrop-filter: blur(.7vmin);
+  border-radius: inherit;
+  animation: tray-in 180ms var(--ease-out);
+}
+.tray__panel[hidden] { display: none; }
+.tray__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1vmin;
+  padding-bottom: .6vmin;
+  border-bottom: 1px solid #ffffff12;
+}
+
+/* Colour: a row of swatches, then any colour at all. */
+.tray__colors { display: flex; flex-wrap: wrap; align-items: center; gap: .8vmin; }
+.tray__colors > .tray__heading { margin-right: .4vmin; }
+.tray__swatch {
+  flex: none;
+  width: 3.4vmin;
+  height: 3.4vmin;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  background: var(--swatch);
+  border: .25vmin solid #ffffff30;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: scale 120ms var(--ease-out), border-color 120ms, box-shadow 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.tray__swatch:hover { scale: 1.12; }
+.tray__swatch[aria-pressed="true"] {
+  border-color: #fff;
+  box-shadow: 0 0 0 .25vmin #000a, 0 0 1.4vmin var(--swatch);
+}
+/* The native picker sits invisibly over its label, so a tap lands on it
+   directly: some phones will not open a colour picker that is hidden. */
+.tray__custom-color { position: relative; overflow: hidden; }
+.tray__custom-color input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Background: the seat in miniature beside its controls. */
+/* The phone tracker's profile picture: one line, the picture as a coin. */
+.tray__portrait { display: flex; flex-wrap: wrap; align-items: center; gap: .8vmin; }
+.tray__portrait > .tray__heading { margin-right: .4vmin; }
+.tray__portrait-pic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 4.6vmin;
+  height: 4.6vmin;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 50%;
+  background: #07090d center / cover no-repeat;
+  box-shadow: 0 0 0 .25vmin var(--accent), 0 0 1.2vmin color-mix(in srgb, var(--accent) 55%, transparent);
+  color: color-mix(in srgb, var(--accent) 40%, #fff);
+  font-family: var(--font-display);
+  font-size: max(12px, 2vmin);
+  font-weight: 700;
+}
+
+.tray__bg { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: 1.4vmin; }
+.tray__bg-preview {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 1vmin;
+  background: #07090d;
+}
+.tray__bg-art {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: brightness(var(--background-brightness, 1)) saturate(1.2) contrast(1.08);
+}
+.tray__bg-empty {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  color: var(--ink-dim);
+  font-size: clamp(.55rem, 1.5vmin, .95rem);
+}
+.tray__bg-preview.is-empty .tray__bg-empty { display: grid; }
+.tray__bg-controls { display: grid; gap: 1.2vmin; min-width: 0; }
+.tray__bg-buttons { display: flex; flex-wrap: wrap; gap: .7vmin; }
+.tray__bg-buttons > * { flex: 1 1 auto; }
+.tray__bg-brightness { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1vmin; }
+.tray__brightness { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
+.tray__brightness-value {
+  min-width: 4.5ch;
+  font-size: clamp(0.55rem, 1.5vmin, .95rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+  text-align: right;
+}
+.tray__btn--file { display: inline-flex; align-items: center; justify-content: center; }
+.tray__hint { margin: 0; color: var(--ink-dim); font-size: clamp(.5rem, 1.3vmin, .85rem); }
+
+/* This game's numbers, large enough to read from across the table. */
+.tray__panel--stats { justify-content: flex-start; }
+.tray__panel .tray__stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2vmin 1.4vmin;
+  padding: 1.6vmin 1vmin;
+  background: transparent;
+  border: 0;
+}
+.tray__panel .tray__stat strong { font-size: clamp(.9rem, 3.6vmin, 2.2rem); }
+.tray__panel .tray__stat small { font-size: clamp(.5rem, 1.4vmin, .9rem); }
 .tray__row--marks { grid-template-columns: auto 1fr; padding: .5vmin .5vmin .5vmin .9vmin; }
 .tray__marks { display: flex; flex-wrap: wrap; gap: 0.6vmin; justify-content: flex-end; }
 .tray__mark {
@@ -1405,6 +1609,28 @@ body.is-entrance-active .daytime-atmosphere { opacity: 0; pointer-events: none; 
 /* Bounded so a long result list scrolls inside the tray instead of pushing the
    seat controls past the edge of the quadrant. */
 .tray__results { display: grid; gap: 0.4vmin; max-height: 22vmin; overflow-y: auto; }
+
+/* A phone on its side leaves each seat a short strip, where the type's
+   minimum sizes win over vmin. The emblem search joins its heading's line and
+   the end-of-game buttons slim down, so the whole menu still fits unscrolled. */
+@media (max-height: 520px) {
+  .tray__emblems { grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 1.4vmin; }
+  .tray__emblems .tray__results { grid-column: 1 / -1; }
+  .tray__search { padding-block: .3vmin; }
+  .tray__group { gap: .3vmin; }
+  /* The rows name themselves (Player 2, Poison, Monarch…), so their section
+     headings are the first thing to go. */
+  .tray__group > .tray__heading, .tray__row--marks > .tray__heading { display: none; }
+  .tray__row--marks { grid-template-columns: 1fr; padding-block: .2vmin; }
+  .tray__marks { justify-content: flex-start; }
+  .tray__row { padding-block: 0; }
+  .tray__done, .tray__out, .tray__winner { padding: .5vmin; }
+  .seat__tray { inset: 1%; row-gap: .45vmin; }
+  /* The settings overlay: its preview already says it is the background. */
+  .tray__panel { gap: .4vmin; padding-block: .5vmin; }
+  .tray__panel .tray__bg-heading { display: none; }
+  .tray__head { padding-bottom: .3vmin; }
+}
 .tray__result {
   display: grid;
   gap: 0.2vmin;

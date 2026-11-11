@@ -9,10 +9,11 @@
   "commander_name": "Jace",
   "second_commander_name": "",
   "two_commanders": false,
-  "background_brightness": 100,
+  "background_brightness": 116,
   "commander_brightness": 70,
   "deck": "Jace",
   "background_focus": "",
+  "background_zoom": 1.0,
   "background_image": "Backgrounds/Players/Jace.png",
   "commander_image": "Backgrounds/Commander/JaceMultiverse.jpg",
   "second_commander_image": "",
@@ -42,9 +43,9 @@
     "center": {
       "enabled": true,
       "mode": "color",
-      "hue": 67,
-      "saturation": 19,
-      "brightness": 90,
+      "hue": 160,
+      "saturation": 25,
+      "brightness": 100,
       "temperature": 2700,
       "effect": "none",
       "effect_seconds": 2.0
@@ -70,5 +71,5 @@
       "effect_seconds": 2.0
     }
   },
-  "saved_at": "2026-11-08T16:37:28"
+  "saved_at": "2026-11-10T22:21:58"
 }

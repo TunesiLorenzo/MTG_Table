@@ -73,14 +73,19 @@
 
   /* Commander tax rises by 2 each time the commander is cast again. */
   var TAX_STEP = 2;
-  /* Dropped art is re-encoded to this size so four of them still fit in
-     localStorage, which is only a few megabytes. */
-  var IMAGE_MAX_EDGE = 800;
-  var IMAGE_QUALITY = 0.78;
+  /* A picture kept on this device is the whole picture, so its framing can
+     be changed later; it is re-encoded to this size so four of them still
+     fit in localStorage, which is only a few megabytes, and smaller again if
+     even that does not fit. */
+  var IMAGE_MAX_EDGES = [1400, 900];
+  var IMAGE_QUALITY = 0.8;
   /* Commander art is enlarged dramatically during its reveal, so retain
      enough source detail that the center card still reads as printed art. */
   var COMMANDER_IMAGE_MAX_EDGE = 1400;
   var COMMANDER_MOVE_MS = 1700;
+  /* The revealed pair starts heading home this long before its sound ends,
+     so the clip's last second plays under the return instead of a pause. */
+  var COMMANDER_RETURN_LEAD_SECONDS = 1;
   var COMMANDER_FLIP_MS = 650;
   /* The single card arrives face down and comes apart into a mirrored pair —
      one face-up copy for each side of the table. The split (and the flip
@@ -180,6 +185,13 @@
   var LIGHT_FLASH_RENEW_MS = 150;
   /* How far through the burn the commander reaches the middle of the table. */
   var COMMANDER_BURN_ARRIVE = 0.18;
+  /* The range the server accepts for a seat's background brightness, in %,
+     and a background's zoom: 1 fills the panel, up to three times closer.
+     Above loadState, which checks saved seats against them. */
+  var BACKGROUND_BRIGHTNESS_MIN = 20;
+  var BACKGROUND_BRIGHTNESS_MAX = 300;
+  var BACKGROUND_ZOOM_MIN = 1;
+  var BACKGROUND_ZOOM_MAX = 3;
 
   var state = loadState();
   /* The life change each seat is in the middle of, for the statistics: who
@@ -215,6 +227,33 @@
     { background: 100, commander: 70 },
     { background: 100, commander: 70 }
   ];
+  /* A brightness set from a tray is sent to the server, but a poll already on
+     its way would put the old value back for a moment; until then it is held. */
+  var backgroundBrightnessHeld = [0, 0, 0, 0];
+
+
+  function clampBackgroundZoom(value) {
+    var zoom = Number(value);
+    if (!Number.isFinite(zoom)) return 1;
+    return Math.round(Math.min(BACKGROUND_ZOOM_MAX, Math.max(BACKGROUND_ZOOM_MIN, zoom)) * 1000) / 1000;
+  }
+
+  /* "x% y%" as numbers, the centre when blank or unreadable. */
+  function parseFocus(focus) {
+    var match = /^\s*(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%\s*$/.exec(focus || '');
+    return match ? { x: Math.min(100, Number(match[1])), y: Math.min(100, Number(match[2])) } : { x: 50, y: 50 };
+  }
+
+  function clampBackgroundBrightness(value) {
+    return Math.round(Math.min(BACKGROUND_BRIGHTNESS_MAX, Math.max(BACKGROUND_BRIGHTNESS_MIN, Number(value) || 100)));
+  }
+
+  // The phone keeps its own; seen at once, even if the catalogue never loads.
+  if (STATIC_SITE) {
+    state.seats.forEach(function (seat, index) {
+      if (Number.isFinite(seat.backgroundBrightness)) displayBrightness[index].background = seat.backgroundBrightness;
+    });
+  }
   var announcerVoice = null;
   var announcerTimer = null;
   var winnerAnnouncement = null;
@@ -245,8 +284,17 @@
   var compass = { angle: null, seat: null, motion: 0 };
   var reducedMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
+  /* Quiet mode, on the phone tracker: for playing somewhere a speaker and a
+     light show are not wanted. Every sound but the click goes (the effects
+     that answer a tap become the click), and so do the animations, the card
+     effects, and the announced moments: the player entrance, eliminations,
+     and the win and draw sequences, which go straight to the recap. */
+  function quietMode() {
+    return STATIC_SITE && !!(state && state.quietMode);
+  }
+
   function prefersReducedMotion() {
-    return !!(reducedMotion && reducedMotion.matches);
+    return quietMode() || !!(reducedMotion && reducedMotion.matches);
   }
 
   /* A one-off Web Animation for feedback that has to restart on every press,
@@ -329,6 +377,11 @@
   /* An unknown name falls back to the click, so a new action still makes a
      sound before it earns one of its own. */
   function playSound(name, volume, fromSeconds) {
+    if (quietMode()) {
+      name = 'click';
+      volume = undefined;
+      fromSeconds = 0;
+    }
     var entry = soundPools[name] || soundPools.click;
     if (!entry) return;
 
@@ -398,7 +451,7 @@
       if (done) done(ok !== false);
     }
 
-    if (!url) {
+    if (!url || quietMode()) {
       finish(false);
       return;
     }
@@ -456,6 +509,16 @@
      separate from announcerVoice, whose normal job is to prevent voices from
      talking over one another. */
   function playLayeredAudio(collection, url, loop, done, volume, leadSeconds, leadDone) {
+    if (quietMode()) {
+      // Not played, but over as far as anything waiting on it is concerned.
+      var silent = new Audio();
+      silent._level = 0;
+      window.setTimeout(function () {
+        if (leadDone) leadDone();
+        if (done) done(false);
+      }, 0);
+      return silent;
+    }
     var audio = new Audio(url);
     var finished = false;
     var leadFinished = false;
@@ -823,6 +886,7 @@
   }
 
   function announceDeath(seatIndex) {
+    if (quietMode()) return;
     var seat = state.seats[seatIndex];
     if (!deathSoundSettings.announce && !canBurnDeathCard(seatIndex)) return;
     if (seat.out && seat.outReason === 'conceded' && !deathSoundSettings.conceded) return;
@@ -1039,6 +1103,7 @@
       turnClock: true,
       lightsFollowTurn: true,
       entranceMode: false,
+      quietMode: false,
       entranceRevealed: [false, false, false, false],
       eliminationOrder: [],
       gameResultPrompted: false,
@@ -1081,6 +1146,14 @@
           // Where the background is centred: set by a deck preset's crop,
           // empty for a picture dropped and cropped here.
           imageFocus: '',
+          // How far the background is zoomed past filling the panel; 1 is not
+          // at all. With imageFocus it is the crop, kept apart from the
+          // picture so the framing can be changed again later.
+          imageZoom: 1,
+          // Phone tracker only: the background brightness set from the seat's
+          // tray, over the deck preset's. Null follows the preset. With the
+          // server behind the page, the server keeps it instead.
+          backgroundBrightness: null,
           commanderImage: null,
           commanderRevealed: false,
           // The deck preset loaded on the lights page, for the result window.
@@ -1095,7 +1168,8 @@
           // them replaces the art, so a picture dropped here afterwards stays.
           // preset_load is the server's token for the last preset loaded onto
           // the seat: a new one puts the preset's pictures back even unchanged.
-          tablePictures: { background_image: '', commander_image: '', second_commander_image: '', preset_load: '' }
+          tablePictures: { background_image: '', commander_image: '', second_commander_image: '', preset_load: '',
+                           background_focus: null, background_zoom: null }
         };
       })
     };
@@ -1145,6 +1219,7 @@
       if (typeof saved.turnClock === 'boolean') base.turnClock = saved.turnClock;
       if (typeof saved.lightsFollowTurn === 'boolean') base.lightsFollowTurn = saved.lightsFollowTurn;
       if (typeof saved.entranceMode === 'boolean') base.entranceMode = saved.entranceMode;
+      if (typeof saved.quietMode === 'boolean') base.quietMode = saved.quietMode;
       if (Array.isArray(saved.entranceRevealed) && saved.entranceRevealed.length === base.seats.length) {
         base.entranceRevealed = saved.entranceRevealed.map(function (revealed) { return revealed === true; });
       }
@@ -1197,13 +1272,17 @@
           if (isSeatPicture(savedSeat.image)) {
             seat.image = savedSeat.image;
             if (typeof savedSeat.imageFocus === 'string') seat.imageFocus = savedSeat.imageFocus;
+            if (Number.isFinite(savedSeat.imageZoom)) seat.imageZoom = clampBackgroundZoom(savedSeat.imageZoom);
+          }
+          if (Number.isFinite(savedSeat.backgroundBrightness)) {
+            seat.backgroundBrightness = clampBackgroundBrightness(savedSeat.backgroundBrightness);
           }
           if (typeof savedSeat.deck === 'string') seat.deck = savedSeat.deck;
           seat.pick = cleanPick(savedSeat.pick);
           if (savedSeat.tablePictures && typeof savedSeat.tablePictures === 'object') {
             Object.keys(seat.tablePictures).forEach(function (key) {
               var value = savedSeat.tablePictures[key];
-              if (typeof value === 'string') seat.tablePictures[key] = value;
+              if (typeof value === 'string' || Number.isFinite(value)) seat.tablePictures[key] = value;
             });
           }
           seat.twoCommanders = savedSeat.twoCommanders === true;
@@ -1265,6 +1344,9 @@
         marks: seatEl.querySelector('.seat__marks'),
         tray: seatEl.querySelector('.seat__tray'),
         bg: seatEl.querySelector('.seat__bg'),
+        bgArt: seatEl.querySelector('.seat__bg-art'),
+        avatar: seatEl.querySelector('.seat__avatar'),
+        avatarSrc: '',
         commander: seatEl.querySelector('.commander-card'),
         pending: 0,
         pendingTimer: null,
@@ -1322,7 +1404,27 @@
           return;
         }
         if (button.dataset.trayClearImage) {
-          setSeatImage(index, null);
+          clearSeatImage(index);
+          return;
+        }
+        if (button.dataset.trayClearPortrait) {
+          setSeatPortrait(index, null);
+          return;
+        }
+        if (button.dataset.traySwatch) {
+          setSeatColor(index, button.dataset.traySwatch);
+          return;
+        }
+        if (button.dataset.trayReframe) {
+          reframeSeatImage(index);
+          return;
+        }
+        if (button.dataset.trayToggle) {
+          toggleTrayPanel(index, button.dataset.trayToggle);
+          return;
+        }
+        if (button.dataset.trayPanelClose) {
+          toggleTrayPanel(index, null);
           return;
         }
         if (button.dataset.traySetup) {
@@ -1350,6 +1452,34 @@
       view.tray.addEventListener('input', function (event) {
         if (event.target.dataset.trayColor) setSeatColor(index, event.target.value);
         if (event.target.dataset.emblemSearch) renderEmblemPicker(index);
+        if (event.target.dataset.trayBrightness) previewBackgroundBrightness(index, event.target.value);
+      });
+
+      view.tray.addEventListener('change', function (event) {
+        if (event.target.dataset.trayBrightness) {
+          setBackgroundBrightness(index, event.target.value);
+          return;
+        }
+        if (event.target.dataset.trayPortrait) {
+          var picture = event.target.files && event.target.files[0];
+          event.target.value = '';
+          if (!picture || picture.type.slice(0, 6) !== 'image/') return;
+          readImage(picture, function (image) {
+            if (image) setSeatPortrait(index, encodePortrait(image));
+            else gameAlert('That file could not be read as a picture.');
+          });
+          return;
+        }
+        if (event.target.dataset.trayImage) {
+          var file = event.target.files && event.target.files[0];
+          // Cleared so picking the same file again still counts as a change.
+          event.target.value = '';
+          if (!file || file.type.slice(0, 6) !== 'image/') return;
+          readImage(file, function (image) {
+            if (image) openImageCrop(index, image, { file: file });
+            else gameAlert('That file could not be read as a picture.');
+          });
+        }
       });
 
       bindImageDrop(view, index);
@@ -2020,7 +2150,8 @@
     var box = view && !view.tray.hidden && view.tray.querySelector('[data-tray-stats]');
     if (!box) return;
     var stats = seatStats(seatIndex);
-    var html = '<span class="tray__heading">This game</span>' + TRAY_STATS.map(function (row) {
+    if (box.closest('[data-tray-panel]').hidden) return;
+    var html = TRAY_STATS.map(function (row) {
       return '<span class="tray__stat"><strong>' + statText(row, stats[row.key]) + '</strong>' +
         '<small>' + escapeHtml(row.label) + '</small></span>';
     }).join('');
@@ -2507,10 +2638,7 @@
     if (!state.gameResultPrompted || !isAlive(state.seats[winnerIndex])) return;
     if (requireLastStanding && aliveSeatIndexes().length !== 1) return;
     cancelDrawSequence();
-    // Drum roll, reveal and the way home to the house lights: see cues.winner.
-    winnerLightsOut = true;
-    sendLightCue('winner', { seat: winnerIndex, reveal_in: winnerSoundSettings.reveal_at });
-    celebrateWinner(winnerIndex, function () {
+    function afterCelebration() {
       if (requireLastStanding) {
         var stillAlive = state.seats.map(function (seat, index) {
           return isAlive(seat) ? index : null;
@@ -2521,7 +2649,16 @@
       showGameRecap('win', finalRanking(winnerIndex, !requireLastStanding), function () {
         openGameResultDialog(winnerIndex, !requireLastStanding);
       });
-    });
+    }
+    // Quiet: no drum roll, no takeover, straight to how the game went.
+    if (quietMode()) {
+      afterCelebration();
+      return;
+    }
+    // Drum roll, reveal and the way home to the house lights: see cues.winner.
+    winnerLightsOut = true;
+    sendLightCue('winner', { seat: winnerIndex, reveal_in: winnerSoundSettings.reveal_at });
+    celebrateWinner(winnerIndex, afterCelebration);
   }
 
   function aliveSeatIndexes() {
@@ -2540,6 +2677,13 @@
      Draw cue ends, the crowd boos underneath each surviving player's configured
      announcer callout, played one at a time in physical table order. */
   function runDrawSequence(survivors) {
+    if (quietMode()) {
+      drawSequence = null;
+      showGameRecap('draw', drawRanking(survivors), function () {
+        openDrawResultDialog(survivors);
+      });
+      return;
+    }
     var token = {};
     drawSequence = token;
     showAllSeatsCovered();
@@ -3137,6 +3281,158 @@
     }
   }
 
+  /* ---- pictures kept on this device ----
+     The phone tracker has no server to upload to, so a player's profile
+     picture and background stay on the device, in IndexedDB (room for many
+     pictures, unlike the few megabytes of localStorage the game lives in).
+     They belong to the name on the seat and come back whenever that player
+     sits down again, over the deck's own art. Without IndexedDB (some
+     private windows) they last until the page closes. */
+  var PICTURE_DB = 'mtg-table-pictures';
+  var PICTURE_STORE = 'players';
+  var PORTRAIT_EDGE = 320;
+  var devicePictures = {};
+  var pictureDb = null;
+
+  function devicePictureKey(name) {
+    return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function devicePicturesFor(name) {
+    return devicePictures[devicePictureKey(name)] || null;
+  }
+
+  function openPictureDb() {
+    if (pictureDb) return pictureDb;
+    pictureDb = new Promise(function (resolve) {
+      try {
+        if (!window.indexedDB) { resolve(null); return; }
+        var request = window.indexedDB.open(PICTURE_DB, 1);
+        request.onupgradeneeded = function () { request.result.createObjectStore(PICTURE_STORE); };
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = request.onblocked = function () { resolve(null); };
+      } catch (error) {
+        resolve(null);
+      }
+    });
+    return pictureDb;
+  }
+
+  function loadDevicePictures() {
+    return openPictureDb().then(function (db) {
+      if (!db) return;
+      return new Promise(function (resolve) {
+        try {
+          var request = db.transaction(PICTURE_STORE, 'readonly').objectStore(PICTURE_STORE).openCursor();
+          request.onsuccess = function () {
+            var cursor = request.result;
+            if (!cursor) { resolve(); return; }
+            if (cursor.value && typeof cursor.value === 'object') devicePictures[cursor.key] = cursor.value;
+            cursor.continue();
+          };
+          request.onerror = function () { resolve(); };
+        } catch (error) {
+          resolve();
+        }
+      });
+    });
+  }
+
+  /* Merge changes into a player's pictures; null removes a field. Resolves
+     false when the device could not keep them (they still last this visit). */
+  function saveDevicePictures(name, changes) {
+    var key = devicePictureKey(name);
+    if (!key) return Promise.resolve(false);
+    var entry = Object.assign({}, devicePictures[key], changes);
+    Object.keys(entry).forEach(function (field) {
+      if (entry[field] === null || entry[field] === undefined || entry[field] === '') delete entry[field];
+    });
+    var empty = !entry.portrait && !entry.background;
+    if (empty) delete devicePictures[key];
+    else devicePictures[key] = entry;
+    return openPictureDb().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (resolve) {
+        try {
+          var tx = db.transaction(PICTURE_STORE, 'readwrite');
+          var store = tx.objectStore(PICTURE_STORE);
+          if (empty) store.delete(key);
+          else store.put(entry, key);
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = tx.onabort = function () { resolve(false); };
+        } catch (error) {
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  /* The picture by the seat's name: this device's, else the roster's. */
+  function seatPortrait(index) {
+    if (!STATIC_SITE) return '';
+    var name = state.seats[index].name;
+    var own = devicePicturesFor(name);
+    if (own && own.portrait) return own.portrait;
+    var known = catalogPlayer(name);
+    return known && known.portrait ? known.portrait : '';
+  }
+
+  /* Whether the seat shows the background its player keeps on this device. */
+  function showsDeviceBackground(index) {
+    var own = devicePicturesFor(state.seats[index].name);
+    return STATIC_SITE && !!own && !!own.background && own.background === state.seats[index].image;
+  }
+
+  function rememberSeatBackground(index) {
+    var seat = state.seats[index];
+    saveDevicePictures(seat.name, {
+      background: seat.image, focus: seat.imageFocus, zoom: seat.imageZoom, brightness: seat.backgroundBrightness
+    });
+  }
+
+  /* A player sitting down brings their own background, if they have one here. */
+  function applyDeviceBackground(index) {
+    var own = devicePicturesFor(state.seats[index].name);
+    if (!STATIC_SITE || !own || !own.background || showsDeviceBackground(index)) return;
+    setSeatImage(index, own.background, own.focus, own.zoom);
+  }
+
+  /* Clearing a background a player keeps here forgets it and goes back to
+     the deck's art; clearing that leaves the seat bare. */
+  function clearSeatImage(index) {
+    var seat = state.seats[index];
+    if (showsDeviceBackground(index)) {
+      saveDevicePictures(seat.name, { background: null, focus: null, zoom: null, brightness: null });
+      var deckArt = seat.tablePictures.background_image;
+      if (STATIC_SITE && deckArt) {
+        seat.backgroundBrightness = null;
+        setSeatImage(index, pictureUrl(deckArt), seat.tablePictures.background_focus || '', seat.tablePictures.background_zoom);
+        applyStaticPresets();
+        return;
+      }
+    }
+    setSeatImage(index, null);
+  }
+
+  /* A square from the middle of the picture, small: it is shown as a dot. */
+  function encodePortrait(image) {
+    var side = Math.min(image.naturalWidth, image.naturalHeight);
+    var canvas = document.createElement('canvas');
+    canvas.width = canvas.height = Math.min(PORTRAIT_EDGE, side);
+    canvas.getContext('2d').drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2,
+      side, side, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  function setSeatPortrait(index, portrait) {
+    saveDevicePictures(state.seats[index].name, { portrait: portrait }).then(function (kept) {
+      if (!kept && portrait) gameAlert('This device would not keep the picture; it lasts until the page is closed.');
+    });
+    render();
+    updateTray(index);
+    if (setup) renderSetup();
+  }
+
   /* ---- the Player & deck window ---- */
 
   var setup = null;
@@ -3228,9 +3524,12 @@
 
     // Players: the catalogue, then new ones from this device.
     var custom = readCustom();
-    var players = catalog.players.map(function (player) { return { name: player.name, portrait: player.portrait }; });
+    var ownPortrait = function (name) { return (devicePicturesFor(name) || {}).portrait || ''; };
+    var players = catalog.players.map(function (player) {
+      return { name: player.name, portrait: ownPortrait(player.name) || player.portrait };
+    });
     custom.players.forEach(function (name) {
-      if (!catalogPlayer(name)) players.push({ name: name, portrait: '', custom: true });
+      if (!catalogPlayer(name)) players.push({ name: name, portrait: ownPortrait(name), custom: true });
     });
     document.getElementById('seat-setup-players').innerHTML = players.map(function (player) {
       var at = takenBy(player.name, index);
@@ -3368,8 +3667,13 @@
     seat.name = player;
     seat.deck = deck;
     seat.pick = { player: player, deck: deck, custom: custom, at: Date.now().toString(36) };
+    // A new deck brings new art, shown as its preset says until dimmed again,
+    // unless the player keeps their own background on this device.
+    var own = devicePicturesFor(player);
+    seat.backgroundBrightness = own && own.background && own.brightness ? own.brightness : null;
     rememberCustom(setup.newPlayer ? player : null, custom);
     applyStaticPresets();
+    applyDeviceBackground(index);
     render();
     saveState();
 
@@ -3591,28 +3895,78 @@
     };
   }
 
+  /* A seat's picture, framed: positioned like a cropped background, then
+     zoomed about that same point, which is exactly what the crop window
+     previews — and it stays right whatever size the panel becomes. */
+  function paintBackground(art, seat, focus, zoom) {
+    if (!art) return;
+    var image = seat && seat.image;
+    focus = image ? (focus !== undefined ? focus : seat.imageFocus) || '50% 50%' : '';
+    zoom = image ? clampBackgroundZoom(zoom !== undefined ? zoom : seat.imageZoom) : 1;
+    art.style.backgroundImage = image ? 'url("' + image + '")' : '';
+    art.style.backgroundPosition = focus;
+    art.style.transformOrigin = focus;
+    art.style.transform = zoom > 1 ? 'scale(' + zoom + ')' : '';
+  }
+
   function setSeatColor(seatIndex, color) {
     state.seats[seatIndex].color = color;
     render();
     saveState();
+    // Both pickers (the header's dot and the settings' Custom), and which
+    // swatch is lit, follow whichever was used.
+    var tray = seatViews[seatIndex] && seatViews[seatIndex].tray;
+    if (!tray) return;
+    tray.querySelectorAll('[data-tray-color]').forEach(function (input) {
+      if (input.value.toLowerCase() !== color.toLowerCase()) input.value = color;
+    });
+    tray.querySelectorAll('[data-tray-swatch]').forEach(function (swatch) {
+      swatch.setAttribute('aria-pressed', String(swatch.dataset.traySwatch.toLowerCase() === color.toLowerCase()));
+    });
   }
 
-  function setSeatImage(seatIndex, dataUrl) {
-    var previous = state.seats[seatIndex].image;
-    var previousFocus = state.seats[seatIndex].imageFocus;
-    state.seats[seatIndex].image = dataUrl;
-    state.seats[seatIndex].imageFocus = '';
+  /* Puts a picture and its framing on the seat. False, with the seat put
+     back as it was, when there was no room left to keep it. */
+  function setSeatImage(seatIndex, image, focus, zoom) {
+    var seat = state.seats[seatIndex];
+    var previous = { image: seat.image, imageFocus: seat.imageFocus, imageZoom: seat.imageZoom };
+    seat.image = image;
+    seat.imageFocus = image ? focus || '' : '';
+    seat.imageZoom = image ? clampBackgroundZoom(zoom) : 1;
     render();
     updateTray(seatIndex);
+    if (saveState()) return true;
+    // Too big to keep: rather than an image that vanishes on the next reload.
+    Object.assign(seat, previous);
+    render();
+    updateTray(seatIndex);
+    return false;
+  }
 
-    if (!saveState()) {
-      // The picture was too big to keep; put the seat back as it was rather
-      // than leaving an image that vanishes on the next reload.
-      state.seats[seatIndex].image = previous;
-      state.seats[seatIndex].imageFocus = previousFocus;
-      render();
-      updateTray(seatIndex);
-      gameAlert('That image is too large to store. Try a smaller one.');
+  /* While the tray's slider moves, only the seat repaints. */
+  function previewBackgroundBrightness(seatIndex, value) {
+    var percent = clampBackgroundBrightness(value);
+    displayBrightness[seatIndex].background = percent;
+    var view = seatViews[seatIndex];
+    view.el.style.setProperty('--background-brightness', percent / 100);
+    var output = view.tray.querySelector('[data-tray-brightness-value]');
+    if (output) output.textContent = percent + '%';
+    var preview = view.tray.querySelector('[data-tray-bg-preview]');
+    if (preview) preview.style.setProperty('--background-brightness', percent / 100);
+    return percent;
+  }
+
+  /* On release it is kept: by the server when it is there, so the lights
+     page's slider agrees, or else on this device over the deck's preset. */
+  function setBackgroundBrightness(seatIndex, value) {
+    var percent = previewBackgroundBrightness(seatIndex, value);
+    if (STATIC_SITE) {
+      state.seats[seatIndex].backgroundBrightness = percent;
+      saveState();
+      if (showsDeviceBackground(seatIndex)) saveDevicePictures(state.seats[seatIndex].name, { brightness: percent });
+    } else {
+      backgroundBrightnessHeld[seatIndex] = Date.now() + 8000;
+      postJSON('/api/players/' + seatIndex + '/display', { background_brightness: percent });
     }
   }
 
@@ -3670,9 +4024,11 @@
     });
   }
 
-  function playCommanderSound(seatIndex, done) {
-    var file = commanderSounds[seatIndex] || '';
-    playOneShot(file ? 'sound/Commander/' + encodeURIComponent(file) : '', done);
+  /* `nearEnd` runs once, COMMANDER_RETURN_LEAD_SECONDS before the clip ends
+     (or as soon as it ends, fails or is missing) — the sound plays on. */
+  function playCommanderSound(file, nearEnd) {
+    playOneShot(file ? 'sound/Commander/' + encodeURIComponent(file) : '', null,
+      undefined, COMMANDER_RETURN_LEAD_SECONDS, function () { nearEnd(); });
   }
 
   function animateCommanderPhase(element, keyframes, duration, easing, done) {
@@ -3808,6 +4164,13 @@
       return;
     }
 
+    if (quietMode()) {
+      seat.commanderRevealed = !seat.commanderRevealed;
+      saveState();
+      renderSeat(seatIndex);
+      return;
+    }
+
     commanderAnimating[seatIndex] = true;
     var revealing = !seat.commanderRevealed;
     var rect = view.commander.getBoundingClientRect();
@@ -3884,7 +4247,8 @@
          horizontal axis toward the far side — which leaves B's face turned
          180° from A's, readable from across the table — while the seam opens
          between them. Going home waits on the landing, the split and the
-         sound, so a long clip keeps the pair parked until it has ended. */
+         sound's last second, so a long clip keeps the pair parked until it
+         is nearly over and its tail plays under the return. */
       var revealPartFinished = afterAll(3, function () {
         // The room comes back up as the card lands home.
         sendLightCue('release', { group: 'commander', in: (COMMANDER_MERGE_MS + COMMANDER_MOVE_MS) / 1000 });
@@ -3914,8 +4278,7 @@
           { transform: 'rotateX(0deg) rotateZ(180deg)' },
           { transform: 'rotateX(180deg) rotateZ(180deg)' }
         ], COMMANDER_FLIP_MS, 'ease-in-out', splitFinished);
-        if (second) playOneShot(state.seats[seatIndex].secondCommanderSound ? 'sound/Commander/' + encodeURIComponent(state.seats[seatIndex].secondCommanderSound) : '', revealPartFinished);
-        else playCommanderSound(seatIndex, revealPartFinished);
+        playCommanderSound(second ? state.seats[seatIndex].secondCommanderSound : commanderSounds[seatIndex], revealPartFinished);
       }, Math.max(0, COMMANDER_MOVE_MS - COMMANDER_SPLIT_LEAD_MS));
     } else {
       /* A revealed commander does not fly home. It reaches the middle face up,
@@ -3990,7 +4353,7 @@
       var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
       if (!file || file.type.slice(0, 6) !== 'image/') return;
       readImage(file, function (image) {
-        if (image) openImageCrop(seatIndex, image);
+        if (image) openImageCrop(seatIndex, image, { file: file });
       });
     });
   }
@@ -4034,7 +4397,12 @@
     drawImageCrop(document.getElementById('image-crop-preview'), imageCrop.image, x, y, zoom);
   }
 
-  function openImageCrop(seatIndex, image) {
+  /* The crop window frames a picture for a seat without cutting it: what is
+     kept is the whole picture and where it was framed, so the framing can be
+     changed again from the seat's settings. `file` is a newly chosen picture;
+     without one, it reframes the picture the seat already shows. */
+  function openImageCrop(seatIndex, image, options) {
+    options = options || {};
     var dialog = document.getElementById('image-crop-dialog');
     var preview = document.getElementById('image-crop-preview');
     // clientWidth/clientHeight describe the panel before its reading-angle
@@ -4043,39 +4411,119 @@
     var panelHeight = seatViews[seatIndex].inner.clientHeight;
     var previewWidth = Math.min(900, Math.max(320, Math.round(panelWidth)));
     var previewHeight = Math.max(1, Math.round(previewWidth * panelHeight / panelWidth));
+    var focus = parseFocus(options.focus);
 
     preview.width = previewWidth;
     preview.height = previewHeight;
-    document.getElementById('image-crop-x').value = 50;
-    document.getElementById('image-crop-y').value = 50;
-    document.getElementById('image-crop-zoom').value = 100;
-    imageCrop = { seatIndex: seatIndex, image: image, aspect: panelWidth / panelHeight };
+    document.getElementById('image-crop-x').value = focus.x;
+    document.getElementById('image-crop-y').value = focus.y;
+    document.getElementById('image-crop-zoom').value = Math.round(clampBackgroundZoom(options.zoom) * 100);
+    document.getElementById('image-crop-apply').textContent = options.file ? 'Use background' : 'Save framing';
+    imageCrop = { seatIndex: seatIndex, image: image, file: options.file || null };
     renderImageCrop();
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  /* Reframe what the seat shows now, from where it is framed now. */
+  function reframeSeatImage(seatIndex) {
+    var seat = state.seats[seatIndex];
+    if (!seat.image) return;
+    var image = new Image();
+    image.onload = function () {
+      openImageCrop(seatIndex, image, { focus: seat.imageFocus, zoom: seat.imageZoom });
+    };
+    image.onerror = function () { gameAlert('This background could not be loaded to reframe it.'); };
+    image.src = seat.image;
+  }
+
+  /* The whole picture, small enough to keep on this device. */
+  function encodeSeatImage(image, maxEdge) {
+    var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+  }
+
+  function keepImageOnDevice(seatIndex, image, focus, zoom) {
+    var kept = IMAGE_MAX_EDGES.some(function (edge) {
+      return setSeatImage(seatIndex, encodeSeatImage(image, edge), focus, zoom);
+    });
+    if (!kept) gameAlert('That image is too large to store. Try a smaller one.');
+    // On the phone tracker it is the player's background from now on.
+    else if (STATIC_SITE) rememberSeatBackground(seatIndex);
+  }
+
+  /* With the server behind the table, a new picture is uploaded into
+     Backgrounds/Players and the seat names that file, with its framing, as
+     the lights page does; the lights page can then reframe it too. */
+  function uploadSeatImage(seatIndex, file, focus, zoom, done) {
+    var form = new FormData();
+    form.append('picture', file);
+    form.append('folder', 'players');
+    window.fetch('/api/public/pictures', { method: 'POST', body: form }).then(function (response) {
+      return response.json();
+    }).then(function (result) {
+      if (!result || !result.ok || !result.path) throw new Error((result && result.message) || 'Upload failed');
+      saveServerFraming(seatIndex, focus, zoom, result.path);
+      done(true);
+    }).catch(function (error) {
+      done(false, error);
+    });
+  }
+
+  /* Tells the server how the seat's picture is framed (and which picture,
+     when it is a new one), and shows the same here straight away. */
+  function saveServerFraming(seatIndex, focus, zoom, path) {
+    var seat = state.seats[seatIndex];
+    var body = { background_focus: focus, background_zoom: zoom };
+    if (path) {
+      body.background_image = path;
+      seat.tablePictures.background_image = path;
+    }
+    // Noted as already seen, so the next poll does not count it as news.
+    seat.tablePictures.background_focus = focus;
+    seat.tablePictures.background_zoom = zoom;
+    postJSON('/api/players/' + seatIndex + '/deck', body);
+    setSeatImage(seatIndex, path ? pictureUrl(path) : seat.image, focus, zoom);
+  }
+
+  /* Whether the seat shows the picture the server has for it. */
+  function showsServerPicture(seat) {
+    return !STATIC_SITE && !!seat.tablePictures.background_image &&
+      seat.image === pictureUrl(seat.tablePictures.background_image);
   }
 
   function applyImageCrop() {
     if (!imageCrop) return;
-    var output = document.createElement('canvas');
-    if (imageCrop.aspect >= 1) {
-      output.width = IMAGE_MAX_EDGE;
-      output.height = Math.max(1, Math.round(IMAGE_MAX_EDGE / imageCrop.aspect));
-    } else {
-      output.height = IMAGE_MAX_EDGE;
-      output.width = Math.max(1, Math.round(IMAGE_MAX_EDGE * imageCrop.aspect));
-    }
-
-    drawImageCrop(
-      output,
-      imageCrop.image,
-      Number(document.getElementById('image-crop-x').value),
-      Number(document.getElementById('image-crop-y').value),
-      Number(document.getElementById('image-crop-zoom').value) / 100
-    );
-    var seatIndex = imageCrop.seatIndex;
-    var dataUrl = output.toDataURL('image/jpeg', IMAGE_QUALITY);
+    var crop = imageCrop;
+    var seatIndex = crop.seatIndex;
+    var x = Number(document.getElementById('image-crop-x').value);
+    var y = Number(document.getElementById('image-crop-y').value);
+    var focus = x + '% ' + y + '%';
+    var zoom = clampBackgroundZoom(Number(document.getElementById('image-crop-zoom').value) / 100);
     closeImageCrop();
-    setSeatImage(seatIndex, dataUrl);
+
+    if (!crop.file) {
+      if (showsServerPicture(state.seats[seatIndex])) saveServerFraming(seatIndex, focus, zoom);
+      else if (!setSeatImage(seatIndex, state.seats[seatIndex].image, focus, zoom)) {
+        gameAlert('The new framing could not be saved on this device.');
+      } else if (showsDeviceBackground(seatIndex)) {
+        rememberSeatBackground(seatIndex);
+      }
+      return;
+    }
+    if (STATIC_SITE || !window.fetch) {
+      keepImageOnDevice(seatIndex, crop.image, focus, zoom);
+      return;
+    }
+    uploadSeatImage(seatIndex, crop.file, focus, zoom, function (uploaded, error) {
+      if (uploaded) return;
+      // No server to keep it on: this device keeps it instead.
+      keepImageOnDevice(seatIndex, crop.image, focus, zoom);
+      if (error && window.console) window.console.warn('Background upload failed; kept on this device.', error);
+    });
   }
 
   function closeImageCrop() {
@@ -4257,16 +4705,17 @@
     var own = rows.filter(function (row) { return row.kind !== 'commander'; });
 
     view.tray.innerHTML =
-      // Clear art sits at the far end from the close button, so a tap meant
-      // to close the tray cannot wipe the seat's picture instead.
       '<div class="tray__head">' +
-      '<button class="tray__btn tray__btn--wide" type="button" data-tray-clear-image="1"' +
-      ' title="Drop an image on this panel to use it as the background">Clear art</button>' +
       '<input class="tray__color" type="color" data-tray-color="1" value="' + seatColor(seatIndex) + '"' +
       ' title="Seat colour — tap to change" aria-label="Seat colour">' +
       '<span class="tray__title">' + escapeHtml(state.seats[seatIndex].name) + '</span>' +
       (STATIC_SITE ? '<button class="tray__btn tray__btn--wide tray__btn--setup" type="button" data-tray-setup="1"' +
         ' title="Choose who sits here and which deck they play">Player &amp; deck</button>' : '') +
+      // Out of the way of play: this game's numbers, and the seat's settings.
+      '<button class="tray__icon" type="button" data-tray-toggle="stats" aria-pressed="false"' +
+      ' title="This game\'s statistics" aria-label="This game\'s statistics">' + TRAY_ICONS.stats + '</button>' +
+      '<button class="tray__icon" type="button" data-tray-toggle="settings" aria-pressed="false"' +
+      ' title="Seat settings: background" aria-label="Seat settings">' + TRAY_ICONS.settings + '</button>' +
       '<button class="tray__close" type="button" data-tray-close="1" title="Close" aria-label="Close">&times;</button>' +
       '</div>' +
       // More than four damage rows means partner commanders: two abreast.
@@ -4289,14 +4738,101 @@
       ' placeholder="Search ' + emblemList().length + ' emblems…" aria-label="Search emblems">' +
       '<div class="tray__results" data-emblem-results="1"></div>' +
       '</div>' +
-      '<div class="tray__stats" data-tray-stats="1"></div>' +
       '<div class="tray__actions">' +
       '<button class="tray__out" type="button" data-tray-out="out">Eliminate</button>' +
       '<button class="tray__out" type="button" data-tray-out="conceded">Concede</button>' +
       '<button class="tray__winner" type="button" data-tray-winner="1">Declare Winner</button>' +
       '<button class="tray__out tray__out--back" type="button" data-tray-out="back">Back in the game</button>' +
       '<button class="tray__done" type="button" data-tray-close="1">Done</button>' +
-      '</div>';
+      '</div>' +
+      trayPanelsHtml(seatIndex);
+  }
+
+  /* The colours offered in a seat's settings: the four seat defaults among
+     others spread round the wheel, all bright enough to read on the dark
+     panels. Anything else is one tap away through Custom. */
+  var SEAT_PALETTE = ['#d94f4f', '#e07a3a', '#c9a13f', '#e6d35a', '#57b86a', '#3fb8a6',
+                      '#4fb3d9', '#4f8fd9', '#7a6cf0', '#b05fd9', '#e05fa8', '#e4e4ec'];
+
+  /* Small line icons for the tray's header, drawn in the text colour. */
+  var TRAY_ICONS = {
+    stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/>' +
+      '<path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.85 1.85M16.65 16.65l1.85 1.85' +
+      'M5.5 18.5l1.85-1.85M16.65 7.35l1.85-1.85"/><circle cx="12" cy="12" r="6.6"/></svg>'
+  };
+
+  /* The overlays the header's icons open, over the tray and see-through to
+     it: settings that are not for the middle of a game, and the numbers. */
+  function trayPanelsHtml(seatIndex) {
+    var brightness = displayBrightness[seatIndex].background;
+    var color = seatColor(seatIndex);
+    return '<section class="tray__panel" data-tray-panel="settings" hidden aria-label="Seat settings">' +
+      '<div class="tray__panel-head"><span class="tray__heading">Seat settings</span>' +
+      '<button class="tray__close" type="button" data-tray-panel-close="1" title="Back" aria-label="Back">&times;</button></div>' +
+      // The seat's colour: its accents, its turn glow and its life total.
+      '<div class="tray__colors" role="group" aria-label="Seat colour">' +
+      '<span class="tray__heading">Colour</span>' +
+      SEAT_PALETTE.map(function (swatch) {
+        return '<button class="tray__swatch" type="button" data-tray-swatch="' + swatch + '" style="--swatch:' + swatch + '"' +
+          ' aria-pressed="' + (swatch.toLowerCase() === color.toLowerCase()) + '" aria-label="Colour ' + swatch + '"></button>';
+      }).join('') +
+      '<label class="tray__btn tray__btn--wide tray__btn--file tray__custom-color" title="Any colour">Custom' +
+      '<input type="color" data-tray-color="1" value="' + color + '"></label>' +
+      '</div>' +
+      // The phone tracker's players bring their own pictures, kept here.
+      (STATIC_SITE ? '<div class="tray__portrait">' +
+        '<span class="tray__heading">Profile picture</span>' +
+        '<span class="tray__portrait-pic" data-tray-portrait-preview="1"></span>' +
+        '<label class="tray__btn tray__btn--wide tray__btn--file" title="A picture of this player, kept on this device">' +
+        'Change<input type="file" accept="image/*" data-tray-portrait="1" hidden></label>' +
+        '<button class="tray__btn tray__btn--wide" type="button" data-tray-clear-portrait="1"' +
+        ' title="Forget this device\'s picture of this player">Clear</button>' +
+        '</div>' : '') +
+      '<span class="tray__heading tray__bg-heading">Background</span>' +
+      '<div class="tray__bg">' +
+      // The seat's own shape and framing, in miniature.
+      '<div class="tray__bg-preview" data-tray-bg-preview="1"><span class="tray__bg-art"></span>' +
+      '<span class="tray__bg-empty">No picture</span></div>' +
+      '<div class="tray__bg-controls">' +
+      '<div class="tray__bg-buttons">' +
+      '<label class="tray__btn tray__btn--wide tray__btn--file" title="Choose a picture, then frame it">' +
+      'Change picture<input type="file" accept="image/*" data-tray-image="1" hidden></label>' +
+      '<button class="tray__btn tray__btn--wide" type="button" data-tray-reframe="1"' +
+      ' title="Move and zoom the picture this seat shows">Adjust framing</button>' +
+      '<button class="tray__btn tray__btn--wide" type="button" data-tray-clear-image="1"' +
+      ' title="Remove this seat\'s picture">Clear</button>' +
+      '</div>' +
+      '<label class="tray__bg-brightness"><span class="tray__heading">Brightness</span>' +
+      '<input class="tray__brightness" type="range" min="' + BACKGROUND_BRIGHTNESS_MIN + '" max="' +
+      BACKGROUND_BRIGHTNESS_MAX + '" step="5" value="' + brightness + '"' +
+      ' data-tray-brightness="1" aria-label="Background brightness">' +
+      '<output class="tray__brightness-value" data-tray-brightness-value="1">' + brightness + '%</output></label>' +
+      '</div></div>' +
+      (STATIC_SITE ? '' : '<p class="tray__hint">The picture goes into Backgrounds/Players; the lights page can reframe it too.</p>') +
+      '</section>' +
+      '<section class="tray__panel tray__panel--stats" data-tray-panel="stats" hidden aria-label="This game">' +
+      '<div class="tray__panel-head"><span class="tray__heading">This game</span>' +
+      '<button class="tray__close" type="button" data-tray-panel-close="1" title="Back" aria-label="Back">&times;</button></div>' +
+      '<div class="tray__stats" data-tray-stats="1"></div>' +
+      '</section>';
+  }
+
+  /* One overlay at a time; the same icon again, or its ×, puts it away. */
+  function toggleTrayPanel(seatIndex, name) {
+    var tray = seatViews[seatIndex].tray;
+    var head = tray.querySelector('.tray__head');
+    tray.querySelectorAll('[data-tray-panel]').forEach(function (panel) {
+      panel.hidden = panel.dataset.trayPanel !== name || !panel.hidden;
+      // Below the header, so its icons still switch between the two.
+      if (head) panel.style.top = (head.offsetTop + head.offsetHeight) + 'px';
+    });
+    tray.querySelectorAll('[data-tray-toggle]').forEach(function (button) {
+      var panel = tray.querySelector('[data-tray-panel="' + button.dataset.trayToggle + '"]');
+      button.setAttribute('aria-pressed', String(!!panel && !panel.hidden));
+    });
+    updateTray(seatIndex);
+    renderTrayStats(seatIndex);
   }
 
   function designationButtons() {
@@ -4439,8 +4975,36 @@
     var winner = view.tray.querySelector('[data-tray-winner]');
     if (winner) winner.hidden = isOut;
 
+    var seat = state.seats[seatIndex];
     var clear = view.tray.querySelector('[data-tray-clear-image]');
-    if (clear) clear.disabled = !state.seats[seatIndex].image;
+    if (clear) clear.disabled = !seat.image;
+    var reframe = view.tray.querySelector('[data-tray-reframe]');
+    if (reframe) reframe.disabled = !seat.image;
+    var portraitPreview = view.tray.querySelector('[data-tray-portrait-preview]');
+    if (portraitPreview) {
+      var portrait = seatPortrait(seatIndex);
+      portraitPreview.style.backgroundImage = portrait ? 'url("' + portrait + '")' : '';
+      portraitPreview.textContent = portrait ? '' : (seat.name || '?').charAt(0).toUpperCase();
+      var ownPicture = devicePicturesFor(seat.name);
+      view.tray.querySelector('[data-tray-clear-portrait]').disabled = !(ownPicture && ownPicture.portrait);
+    }
+    var preview = view.tray.querySelector('[data-tray-bg-preview]');
+    if (preview) {
+      // The panel's shape before its reading-angle turn, as the seat paints it.
+      var width = view.inner.clientWidth;
+      var height = view.inner.clientHeight;
+      if (width && height) preview.style.aspectRatio = width + ' / ' + height;
+      preview.classList.toggle('is-empty', !seat.image);
+      preview.style.setProperty('--background-brightness', displayBrightness[seatIndex].background / 100);
+      paintBackground(preview.querySelector('.tray__bg-art'), seat);
+    }
+    // Follows the lights page too, unless a finger is on it.
+    var brightness = view.tray.querySelector('[data-tray-brightness]');
+    if (brightness && document.activeElement !== brightness) {
+      brightness.value = displayBrightness[seatIndex].background;
+      var brightnessValue = view.tray.querySelector('[data-tray-brightness-value]');
+      if (brightnessValue) brightnessValue.textContent = displayBrightness[seatIndex].background + '%';
+    }
     renderTrayStats(seatIndex);
   }
 
@@ -4941,6 +5505,8 @@
      always made here, since it has to flutter with a spin that is different
      every time. */
   function coinAudio() {
+    // Quiet: no rush of air, and the landing knocks are the click.
+    if (quietMode()) return null;
     return audioContext && audioContext.state !== 'closed' ? audioContext : null;
   }
 
@@ -6015,6 +6581,7 @@
       setHouseLights(status && status.house_lights);
       // Before the seats re-render below, so they draw with these settings.
       syncCommanderFxSettings(status);
+      syncSeatNames(status);
       syncAnnouncerSounds(status);
       syncCoinSettings(status);
     }).catch(function () {
@@ -6038,6 +6605,7 @@
       second_commander_image: { holder: seat.secondCommander, key: 'commanderImage' }
     };
     var changed = false;
+    var pictureChanged = false;
     var load = typeof player.preset_load === 'string' ? player.preset_load : '';
     // A blank token is a server that has loaded nothing since it started.
     var reloaded = !!load && load !== seat.tablePictures.preset_load;
@@ -6054,12 +6622,24 @@
       if (wanted) slot.holder[slot.key] = pictureUrl(wanted);
       else if (showing === pictureUrl(before)) slot.holder[slot.key] = null;
       if (slot.holder[slot.key] !== showing && slot.key === 'commanderImage') slot.holder.commanderRevealed = false;
+      if (field === 'background_image') pictureChanged = true;
       seat.tablePictures[field] = wanted;
       changed = true;
     });
+    // The framing is taken when the server's changes (the lights page, or
+    // another table), not on every poll, so a picture reframed here on the
+    // phone keeps its framing until a deck is picked again.
     var focus = typeof player.background_focus === 'string' ? player.background_focus : '';
-    if (seat.image === pictureUrl(seat.tablePictures.background_image) && seat.imageFocus !== focus) {
-      seat.imageFocus = focus;
+    var zoom = clampBackgroundZoom(player.background_zoom);
+    if (reloaded || pictureChanged || focus !== seat.tablePictures.background_focus ||
+        zoom !== seat.tablePictures.background_zoom) {
+      seat.tablePictures.background_focus = focus;
+      seat.tablePictures.background_zoom = zoom;
+      if (seat.image === pictureUrl(seat.tablePictures.background_image) &&
+          (seat.imageFocus !== focus || seat.imageZoom !== zoom)) {
+        seat.imageFocus = focus;
+        seat.imageZoom = zoom;
+      }
       changed = true;
     }
     return changed;
@@ -6075,6 +6655,7 @@
   /* One commander card's animation, as the lights page set it. A table with
      no lights server still gets the default foil shimmer. */
   function commanderFxFor(seatIndex, second) {
+    if (quietMode()) return { effect: 'none', focus: '', glow: '', area: 'art' };
     var fx = commanderFx[seatIndex] && commanderFx[seatIndex][second ? 1 : 0];
     return fx || { effect: 'foil', focus: '', glow: '', area: 'art' };
   }
@@ -6105,6 +6686,34 @@
     var options = commanderFxOptions(fx, seat.commanderImage, COMMANDER_FX_PARKED_FPS);
     if (card.commanderFx) card.commanderFx.update(options);
     else card.commanderFx = window.CommanderFx.attach(card.querySelector('.commander-card__face--front'), options);
+  }
+
+  /* The seats' names belong to this page, but the lights page can rename one.
+     Its renames move names_revision; the first poll only notes where it is,
+     because this page has just pushed its own names. */
+  var seenNamesRevision = null;
+
+  function syncSeatNames(status) {
+    if (!status || typeof status.names_revision !== 'number' || !Array.isArray(status.players)) return;
+    var revision = status.names_revision;
+    if (seenNamesRevision === null || revision === seenNamesRevision) {
+      seenNamesRevision = revision;
+      return;
+    }
+    seenNamesRevision = revision;
+    var changed = false;
+    state.seats.forEach(function (seat, index) {
+      var player = status.players[index];
+      var name = player && typeof player.name === 'string' ? player.name.trim().slice(0, 18) : '';
+      var view = seatViews[index];
+      // A name being typed at the table wins; it is pushed when it is left.
+      if (!name || name === seat.name || (view && document.activeElement === view.name)) return;
+      seat.name = name;
+      changed = true;
+    });
+    if (!changed) return;
+    saveState();
+    render();
   }
 
   function syncAnnouncerSounds(status) {
@@ -6155,10 +6764,13 @@
         if (syncSeatPictures(seat, player)) picturesChanged = true;
       });
       if (picturesChanged) saveState();
-      displayBrightness = state.seats.map(function (_, index) {
+      displayBrightness = state.seats.map(function (seat, index) {
         var player = status.players[index] || {};
+        var background = Number.isFinite(player.background_brightness) ? player.background_brightness : 100;
+        if (STATIC_SITE && Number.isFinite(seat.backgroundBrightness)) background = seat.backgroundBrightness;
+        else if (Date.now() < backgroundBrightnessHeld[index]) background = displayBrightness[index].background;
         return {
-          background: Number.isFinite(player.background_brightness) ? player.background_brightness : 100,
+          background: background,
           commander: Number.isFinite(player.commander_brightness) ? player.commander_brightness : 70
         };
       });
@@ -6439,7 +7051,23 @@
     document.body.classList.toggle('is-entrance-active', hasCovers);
   }
 
+  function setQuietMode(enabled) {
+    state.quietMode = !!enabled;
+    // The covers are an announced moment too.
+    if (quietMode() && state.entranceMode) setEntranceMode(false);
+    applyQuietMode();
+    render();
+    renderHub();
+    saveState();
+  }
+
+  /* The stylesheet's half: every animation and transition stopped. */
+  function applyQuietMode() {
+    document.documentElement.classList.toggle('is-quiet', quietMode());
+  }
+
   function setEntranceMode(enabled) {
+    if (quietMode()) enabled = false;
     cancelEntranceSequence();
     state.entranceMode = !!enabled;
     if (enabled) {
@@ -6468,14 +7096,17 @@
       seat.pick = null;
       seat.image = null;
       seat.imageFocus = '';
+      seat.backgroundBrightness = null;
       seat.commanderImage = null;
       seat.commanderRevealed = false;
       seat.commanderNames = ['', ''];
       seat.twoCommanders = false;
       seat.secondCommander.commanderImage = null;
       seat.secondCommander.commanderRevealed = false;
+      seat.imageZoom = 1;
       seat.tablePictures = {
-        background_image: '', commander_image: '', second_commander_image: '', preset_load: ''
+        background_image: '', commander_image: '', second_commander_image: '', preset_load: '',
+        background_focus: null, background_zoom: null
       };
     });
     applyStaticPresets();
@@ -6667,8 +7298,15 @@
     view.entrance.setAttribute('aria-label', 'Reveal ' + seat.name + "'s player panel");
     view.el.style.setProperty('--accent', seatColor(index));
     view.el.style.setProperty('--background-brightness', displayBrightness[index].background / 100);
-    view.bg.style.backgroundImage = seat.image ? 'url("' + seat.image + '")' : '';
-    view.bg.style.backgroundPosition = seat.image && seat.imageFocus ? seat.imageFocus : '';
+    paintBackground(view.bgArt, seat);
+    // The player's picture in place of the colour dot. Set only on a change:
+    // it can be a long data URL and this runs on every life tap.
+    var portrait = seatPortrait(index);
+    if (view.avatar && view.avatarSrc !== portrait) {
+      view.avatarSrc = portrait;
+      view.avatar.style.backgroundImage = portrait ? 'url("' + portrait + '")' : '';
+      view.el.classList.toggle('has-portrait', !!portrait);
+    }
     renderCommanderCard(view.commander, seat, index,
       seat.commanderNames[0] || seat.name, seat.twoCommanders ? 1 : null);
     view.el.classList.toggle('has-partner', !!seat.twoCommanders);
@@ -6908,6 +7546,7 @@
         setEntranceMode(!state.entranceMode);
         setHubOpen(false);
       }
+      if (action === 'quiet-mode') setQuietMode(!state.quietMode);
       if (action === 'entrance-reset') {
         setEntranceMode(true);
         setHubOpen(false);
@@ -7061,6 +7700,11 @@
 
     setSwitch(document.getElementById('lights-follow'), state.lightsFollowTurn);
     setSwitch(document.getElementById('entrance-mode'), state.entranceMode);
+    setSwitch(document.getElementById('quiet-mode'), quietMode());
+    ['entrance-mode', 'entrance-reset'].forEach(function (id) {
+      var button = document.getElementById(id);
+      if (button) button.disabled = quietMode();
+    });
     setSwitch(document.getElementById('turn-timer'), state.turnClock);
     var clockStop = document.getElementById('clock-stop');
     if (clockStop) {
@@ -7180,7 +7824,12 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-static-href]'), function (link) {
       link.setAttribute('href', link.dataset.staticHref);
     });
+    applyQuietMode();
     loadCatalog();
+    loadDevicePictures().then(function () {
+      render();
+      if (setup) renderSetup();
+    });
   } else {
     pushPlayerNames();
     postJSON('/api/turn', { player: state.currentPlayer, apply_lights: false });
