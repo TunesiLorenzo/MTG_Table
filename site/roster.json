@@ -120,10 +120,25 @@
       "art": "Backgrounds/Players/TMNT.png",
       "art_focus": "49.4% 41%",
       "cards": [
-        "Backgrounds/Commander/LeonardoTMNT.webp"
+        "Backgrounds/Commander/LeonardoTMNT.webp",
+        "Backgrounds/Commander/Michelangelo.webp"
       ],
       "sound": "Leonardo_The_Balance.wav",
-      "volume": 47
+      "volume": 47,
+      "card_fx": [
+        {
+          "effect": "wind",
+          "focus": "",
+          "glow": "",
+          "area": "card"
+        },
+        {
+          "effect": "caustics",
+          "focus": "",
+          "glow": "",
+          "area": "card"
+        }
+      ]
     },
     "Narset": {
       "commander": "Narset, Enlightened Master",
@@ -253,13 +268,22 @@
     "Obeka": {
       "commander": "Obeka, Splitter of Seconds",
       "colors": "UBR",
+      "card_colors": "UBR",
+      "type_line": "Legendary Creature \u2014 Ogre Warlock",
       "art": "Backgrounds/Players/Obeka.png",
       "art_focus": "57.2% 13.4%",
       "cards": [
         "Backgrounds/Commander/Obeka.jpg"
       ],
-      "card_colors": "UBR",
-      "type_line": "Legendary Creature \u2014 Ogre Warlock"
+      "sound": "Obeka.mp3",
+      "card_fx": [
+        {
+          "effect": "time",
+          "focus": "58.4% 30.9%",
+          "glow": "58.9% 33.4%",
+          "area": "card"
+        }
+      ]
     },
     "Beamtown Bullies": {
       "commander": "Beamtown Bullies",
@@ -354,10 +378,12 @@
     },
     "Satya": {
       "commander": "Satya, Aetherflux Genius & Cayth, Famed Mechanist",
+      "colors": "WUR",
+      "card_colors": "WUR",
+      "type_line": "Legendary Creature \u2014 Human Artificer // Legendary Creature \u2014 Dwarf Artificer",
       "art": "Backgrounds/Players/Satya.png",
       "cards": [
-        "Backgrounds/Commander/Satya.jpeg",
-        "Backgrounds/Commander/Cayth.jpeg"
+        "Backgrounds/Commander/Satya.jpeg"
       ],
       "sound": "Satya.wav",
       "card_fx": [
@@ -367,10 +393,7 @@
           "glow": "80.8% 25.1%",
           "area": "art"
         }
-      ],
-      "colors": "WUR",
-      "card_colors": "WUR",
-      "type_line": "Legendary Creature \u2014 Human Artificer // Legendary Creature \u2014 Dwarf Artificer"
+      ]
     }
   }
 }
